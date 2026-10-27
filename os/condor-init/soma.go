@@ -98,8 +98,11 @@ func (c *console) somaPage() *page {
 	apText(img, f.serifLarge, mx, 228, apLabel, "Soma")
 	if !soma.linked() {
 		y := 300
-		drawParagraphs(img, f.callout, "Link the tablet to your Soma: on the PC or the phone, open Soma > Settings > Sync, and type its sync address and recovery code here. The tablet then keeps your habits, to-dos, plans and reports in step with them.",
-			mx, y, tw, 44, y+300, apSecondary)
+		how := "Link the tablet to your Soma: in Soma on the phone or the PC, open Settings > Sync, and type its server address and recovery code here. The tablet then keeps your habits, to-dos, plans and reports in step with them."
+		if a := sendAddress(); a != "" {
+			how = "Link the tablet to your Soma. Easiest: on your phone, open Soma > Settings > Sync, copy the server address and the recovery code, then open http://" + a + " in the phone's browser and paste them under Link Soma. Or type them here."
+		}
+		drawParagraphs(img, f.callout, how, mx, y, tw, 44, y+300, apSecondary)
 		y += 240
 		url := su.url
 		if su.typing && su.field == "url" {

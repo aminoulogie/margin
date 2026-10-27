@@ -423,7 +423,10 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       todos@order), reading +min. Views: Today (habits, reading, today/week to-dos), Calendar
       (month; day's plan blocks with times, to-dos, training, food), Reports (training 2
       weeks, nutrition 7 days, habits this week, reading). Link: type address + code in the
-      tab, or soma-link.cmd on the PC (asks both, writes link.txt over ssh; picked up live).
+      tab, or soma-link.cmd on the PC (asks both, writes link.txt over ssh; picked up live),
+      or (no PC: the user's usual case) from the phone: the Send to Books page has a "Link
+      Soma" card (POST /soma-link, same-origin only, code never echoed) to paste both from
+      Soma > Settings > Sync on the iPhone. Updating without a PC: `update` in the Terminal tab.
       Only habits/todos/dayPlans/reading/history/nutrition records are kept (somaFields;
       changing the list bumps somaFieldsVersion → re-pull from seq 0); state.json is written
       700 ms after a change, off the touch path (a full vault rewritten per tap could freeze).

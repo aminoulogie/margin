@@ -42,6 +42,7 @@ func (c *console) serveBooks() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.sendPage)
 	mux.HandleFunc("/upload", c.sendUpload)
+	mux.HandleFunc("/soma-link", c.somaLinkPost)
 	srv := &http.Server{Handler: localOnly(mux)}
 	for _, port := range []int{80, 8080} {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -196,6 +197,47 @@ func (c *console) booksArrived(n int) {
 	}
 }
 
+// somaLinkPost links the Soma tab from a phone: the server address and recovery code are
+// pasted from Soma's Settings > Sync on the phone, so nobody types 56 characters on the
+// tablet. Only the page itself may send them (not another site the phone has open).
+func (c *console) somaLinkPost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	reply := func(code int, v map[string]any) {
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(v)
+	}
+	if r.Method != http.MethodPost {
+		reply(http.StatusMethodNotAllowed, map[string]any{"error": "POST the address and code here"})
+		return
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+		reply(http.StatusForbidden, map[string]any{"error": "only this page can link Soma"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := r.ParseForm(); err != nil {
+		reply(http.StatusBadRequest, map[string]any{"error": "bad form"})
+		return
+	}
+	st := soma
+	if err := st.setLink(r.PostForm.Get("url"), r.PostForm.Get("code")); err != nil {
+		reply(http.StatusOK, map[string]any{"error": err.Error()})
+		return
+	}
+	log.Printf("soma: linked from %s", r.RemoteAddr)
+	go func() {
+		st.sync()
+		drawMu.Lock()
+		defer drawMu.Unlock()
+		c.toastMsg("Soma linked")
+		if c.screenOn && c.mode == modeSoma {
+			c.somaUI.msg = ""
+			c.showPage()
+		}
+	}()
+	reply(http.StatusOK, map[string]any{"ok": true})
+}
+
 func (c *console) sendPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -205,8 +247,13 @@ func (c *console) sendPage(w http.ResponseWriter, r *http.Request) {
 	for _, b := range findBooks() {
 		fmt.Fprintf(&list, "<li><b>%s</b><span>%s</span></li>", html.EscapeString(b.title), html.EscapeString(b.author))
 	}
+	status := "Not linked yet."
+	if soma.linked() {
+		status = "Linked. " + soma.status() + ". Paste again to link to another Soma."
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, strings.Replace(sendHTML, "<!--BOOKS-->", list.String(), 1))
+	page := strings.Replace(sendHTML, "<!--BOOKS-->", list.String(), 1)
+	io.WriteString(w, strings.Replace(page, "<!--SOMA-->", html.EscapeString(status), 1))
 }
 
 const sendHTML = `<!doctype html>
@@ -235,6 +282,8 @@ ul{list-style:none;margin:0;padding:0}
 li{padding:12px 0;border-top:1px solid var(--sep)}
 li:first-child{border-top:0}
 li span{display:block;color:var(--second);font-size:15px}
+input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-radius:12px;padding:14px;background:var(--fill);color:var(--label);font:17px/1.2 inherit}
+#smsg{margin-top:12px;font-size:15px}
 </style></head><body>
 <h1>Send to Books</h1>
 <p class="sub">Pick EPUB books on this phone: they appear in condor's Library.</p>
@@ -247,6 +296,13 @@ li span{display:block;color:var(--second);font-size:15px}
 <div id="msg"></div>
 </div>
 <div class="card"><h2>On the tablet</h2><ul><!--BOOKS--></ul></div>
+<div class="card"><h2>Link Soma</h2>
+<p class="sub" style="margin-bottom:12px">In Soma on this phone: Settings &rsaquo; Sync. Copy the server address and the recovery code, and paste them here. The tablet's Soma tab then stays in step with your phone and PC. <span id="sstate"><!--SOMA--></span></p>
+<input id="surl" type="url" placeholder="Server address (https://…)" autocapitalize="off" autocorrect="off" spellcheck="false">
+<input id="scode" type="password" placeholder="Recovery code" autocapitalize="characters" autocorrect="off" spellcheck="false" autocomplete="off">
+<button id="slink">Link Soma</button>
+<div id="smsg"></div>
+</div>
 <script>
 var f=document.getElementById('f'),go=document.getElementById('go'),msg=document.getElementById('msg'),
 bar=document.querySelector('.bar'),fill=document.querySelector('.bar i'),files=document.getElementById('files');
@@ -263,4 +319,17 @@ go.onclick=function(){
     if(s)setTimeout(function(){location.reload()},1500);else go.disabled=false};
   x.onerror=function(){msg.textContent='Sending failed: is the phone on the same Wi-Fi as the tablet?';msg.className='err';go.disabled=false};
   x.send(d)};
+var sl=document.getElementById('slink'),sm=document.getElementById('smsg');
+sl.onclick=function(){
+  var u=document.getElementById('surl').value.trim(),k=document.getElementById('scode').value.trim();
+  if(!u||!k){sm.textContent='Paste both: the server address and the recovery code.';sm.className='err';return}
+  var x=new XMLHttpRequest();x.open('POST','/soma-link');
+  x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+  sl.disabled=true;sm.textContent='Linking…';sm.className='';
+  x.onload=function(){var r={};try{r=JSON.parse(x.responseText)}catch(e){}
+    sl.disabled=false;
+    if(r.ok){sm.textContent='Linked: open the Soma tab on the tablet.';sm.className='ok';document.getElementById('scode').value=''}
+    else{sm.textContent=r.error||'Linking failed.';sm.className='err'}};
+  x.onerror=function(){sl.disabled=false;sm.textContent='Is the phone on the same Wi-Fi as the tablet?';sm.className='err'};
+  x.send('url='+encodeURIComponent(u)+'&code='+encodeURIComponent(k))};
 </script></body></html>`

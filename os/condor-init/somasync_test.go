@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -301,5 +304,55 @@ func TestSomaLinkFromThePC(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(somaDir, "link.txt")); err == nil {
 		t.Error("link.txt should be replaced by link.json (readable by root only)")
+	}
+}
+
+// Linking from the phone: the Send to Books page takes the address and code pasted from
+// Soma on the phone; a mistyped code says so; another site can't do it; the page never
+// shows the code.
+func TestSomaLinkFromThePhone(t *testing.T) {
+	c := testConsole(t)
+	oldDir, oldSoma := somaDir, soma
+	somaDir, soma = t.TempDir(), &somaStore{Recs: map[string]somaRec{}}
+	t.Cleanup(func() { somaDir, soma = oldDir, oldSoma })
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", c.sendPage)
+	mux.HandleFunc("/soma-link", c.somaLinkPost)
+	srv := httptest.NewServer(localOnly(mux))
+	defer srv.Close()
+	post := func(origin, code string) map[string]any {
+		form := url.Values{"url": {"soma-sync.example.workers.dev"}, "code": {code}}
+		req, _ := http.NewRequest("POST", srv.URL+"/soma-link", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var v map[string]any
+		json.NewDecoder(resp.Body).Decode(&v)
+		return v
+	}
+	if v := post("http://evil.example", somaVecCode); v["ok"] == true || soma.linked() {
+		t.Fatalf("another site linked Soma: %v", v)
+	}
+	if v := post(srv.URL, somaVecCode[:len(somaVecCode)-1]+"2"); v["ok"] == true || !strings.Contains(fmt.Sprint(v["error"]), "typo") {
+		t.Fatalf("a mistyped code: %v", v)
+	}
+	if v := post(srv.URL, somaVecCode); v["ok"] != true || !soma.linked() || soma.keys.vault != somaVecVault {
+		t.Fatalf("linking from the phone: %v", v)
+	}
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	page := string(b)
+	if !strings.Contains(page, "Link Soma") || !strings.Contains(page, "Linked.") || strings.Contains(page, somaVecCode[:9]) {
+		t.Fatal("the page should say Soma is linked, and never show the code")
 	}
 }

@@ -313,8 +313,6 @@ func (s *somaStore) saveLocked() {
 	time.AfterFunc(700*time.Millisecond, func() { s.saveTo(dir) })
 }
 
-// saveNow writes the records to flash.
-func (s *somaStore) saveNow() { s.saveTo(somaDir) }
 
 func (s *somaStore) saveTo(dir string) {
 	s.saveMu.Lock() // one writer of state.json at a time
@@ -435,6 +433,7 @@ func (s *somaStore) call(ctx context.Context, method, path string, body []byte) 
 
 // sync pulls what's new from the other devices, then pushes what changed here. One at a time.
 func (s *somaStore) sync() {
+	dir := somaDir // where this store lives, whatever happens meanwhile
 	if !s.linked() {
 		return
 	}
@@ -461,7 +460,7 @@ func (s *somaStore) sync() {
 	}
 	changed := s.changed
 	s.mu.Unlock()
-	s.saveNow()
+	s.saveTo(dir)
 	if got > 0 && changed != nil {
 		changed()
 	}
