@@ -296,7 +296,7 @@ input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-
 <div id="msg"></div>
 </div>
 <div class="card"><h2>On the tablet</h2><ul><!--BOOKS--></ul></div>
-<div class="card"><h2>Link Soma</h2>
+<div class="card" id="soma"><h2>Link Soma</h2>
 <p class="sub" style="margin-bottom:12px">In Soma on this phone: Settings &rsaquo; Sync. Copy the server address and the recovery code, and paste them here. The tablet's Soma tab then stays in step with your phone and PC. <span id="sstate"><!--SOMA--></span></p>
 <input id="surl" type="url" placeholder="Server address (https://…)" autocapitalize="off" autocorrect="off" spellcheck="false">
 <input id="scode" type="password" placeholder="Recovery code" autocapitalize="characters" autocorrect="off" spellcheck="false" autocomplete="off">

@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"margin-init/ui"
+
+	"rsc.io/qr"
 )
 
 // The Soma tab: Soma (the PC and iPhone app) on the tablet, kept in step with them through
@@ -117,6 +120,13 @@ func (c *console) somaPage() *page {
 		pill("so:link", "Link", image.Rect(mx, y+260, w-mx, y+356), true)
 		if su.msg != "" {
 			drawParagraphs(img, f.callout, su.msg, mx, y+420, tw, 44, y+560, apRed)
+		}
+		if a := sendAddress(); a != "" {
+			// Scanned with the phone's camera: opens the page where the address and code are pasted.
+			const size = 440
+			x0 := (w - size) / 2
+			drawQR(img, "http://"+a+"/#soma", image.Rect(x0, y+600, x0+size, y+600+size))
+			apText(img, f.callout, mx, y+600+size+60, apSecondary, "Scan with the iPhone camera, then paste the address and code.")
 		}
 		return p
 	}
@@ -780,6 +790,28 @@ func (c *console) somaDone() {
 		if at, ok := strings.CutPrefix(su.field, "at:"); ok {
 			m, _ := strconv.Atoi(at)
 			somaAddTodoAt(text, su.sel, m, 30)
+		}
+	}
+}
+
+// drawQR draws text as a QR code filling r (a square), black on white with a quiet border.
+func drawQR(img *image.RGBA, text string, r image.Rectangle) {
+	code, err := qr.Encode(text, qr.M)
+	if err != nil {
+		return
+	}
+	n := code.Size + 8 // 4 modules of white all round
+	m := r.Dx() / n
+	if m < 1 {
+		return
+	}
+	draw.Draw(img, r, image.White, image.Point{}, draw.Src)
+	o := r.Min.Add(image.Pt((r.Dx()-code.Size*m)/2, (r.Dy()-code.Size*m)/2))
+	for y := 0; y < code.Size; y++ {
+		for x := 0; x < code.Size; x++ {
+			if code.Black(x, y) {
+				draw.Draw(img, image.Rect(o.X+x*m, o.Y+y*m, o.X+(x+1)*m, o.Y+(y+1)*m), image.Black, image.Point{}, draw.Src)
+			}
 		}
 	}
 }
