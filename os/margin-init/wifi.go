@@ -16,7 +16,7 @@ const wifiScript = `#!/bin/sh
 #   wifi connect SSID [password]  join (saved: reconnects at every boot)
 #   wifi status | off | forget | debug
 CONF=/etc/margin/wpa.conf
-RUNCONF=/etc/margin/wpa-android.conf
+RUNCONF=/etc/condor/wpa-android.conf # where it was when Wi-Fi was verified: the supplicant (uid 1010) reads it there
 OLDCONF=/etc/condor/wpa.conf # before Margin was renamed: carried over, kept
 SOCK=/run/wpa_supplicant
 WIFI_UID=1010
@@ -71,6 +71,7 @@ join() {
 	# The supplicant runs as the wifi user: give it its config and socket directory.
 	rm -rf $SOCK; mkdir -p $SOCK
 	chown $WIFI_UID:$WIFI_UID $SOCK; chmod 770 $SOCK
+	mkdir -p /etc/condor
 	sed "s#^ctrl_interface=.*#ctrl_interface=$SOCK#" $CONF > $RUNCONF
 	chown $WIFI_UID:$WIFI_UID $RUNCONF; chmod 600 $RUNCONF
 	$SUP -B -i $IF -Dnl80211 -c $RUNCONF >>$LOG 2>&1 || {
