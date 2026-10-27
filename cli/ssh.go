@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-// condor ssh: log in to the tablet's Alpine over Wi-Fi, no cable needed after setup.
+// margin ssh: log in to the tablet's Alpine over Wi-Fi, no cable needed after setup.
 //
-//	condor ssh setup   install openssh on the tablet, put this PC's key in root's
-//	                   authorized_keys, start sshd (condor-init starts it at every boot)
-//	condor ssh         connect (finds the tablet's Wi-Fi address over USB)
+//	margin ssh setup   install openssh on the tablet, put this PC's key in root's
+//	                   authorized_keys, start sshd (margin-init starts it at every boot)
+//	margin ssh         connect (finds the tablet's Wi-Fi address over USB)
 //
 // Root logs in with keys only: Alpine's sshd defaults to PermitRootLogin prohibit-password.
 func sshCmd(args []string) error {
@@ -51,10 +51,10 @@ var reAlpineExit = regexp.MustCompile(`alpine-run: exit (\d+)\s*$`)
 
 // alpineRun runs a shell command inside the tablet's Alpine and prints its output. The command
 // is double-quoted for the tablet's outer shell (so ; > || $ reach Alpine's shell intact), and
-// success is read from condor-init's "alpine-run: exit N" line, since adb drops exit codes.
+// success is read from margin-init's "alpine-run: exit N" line, since adb drops exit codes.
 func alpineRun(cmdline string) error {
 	if strings.Contains(sh("su -c 'ls "+initPath+"'"), "No such") {
-		return fmt.Errorf("%s is missing; install condor-init first (dev.cmd)", initPath)
+		return fmt.Errorf("%s is missing; install margin-init first (dev.cmd)", initPath)
 	}
 	q := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`").Replace(cmdline)
 	out, _ := adb("shell", "su -c '"+initPath+" alpine-run \""+q+"\"'")
@@ -65,7 +65,7 @@ func alpineRun(cmdline string) error {
 	}
 	switch {
 	case m == nil:
-		return fmt.Errorf("no result from the tablet (is condor-init up to date? run dev.cmd)")
+		return fmt.Errorf("no result from the tablet (is margin-init up to date? run dev.cmd)")
 	case m[1] != "0":
 		return fmt.Errorf("command failed on the tablet (exit %s): %s", m[1], cmdline)
 	}
@@ -80,12 +80,12 @@ func sshSetup() error {
 		return fmt.Errorf("su doesn't give root on the tablet")
 	}
 	if v := sh("su -c 'cat " + alpineRoot + "/etc/alpine-release'"); v == "" || strings.Contains(v, "No such") {
-		return fmt.Errorf("Alpine isn't installed (condor alpine install)")
+		return fmt.Errorf("Alpine isn't installed (margin alpine install)")
 	}
 
 	fmt.Println("==> installing openssh on the tablet")
 	if err := alpineRun("apk add openssh"); err != nil {
-		return fmt.Errorf("apk add openssh failed (is the tablet online? wifi status, or run condor net): %w", err)
+		return fmt.Errorf("apk add openssh failed (is the tablet online? wifi status, or run margin net): %w", err)
 	}
 
 	pub, err := pcPublicKey()
@@ -115,7 +115,7 @@ func sshSetup() error {
 		return fmt.Errorf("starting sshd: %w", err)
 	}
 	if ip, err := tabletIP(); err == nil {
-		fmt.Printf("\nReady. Connect over Wi-Fi with:  condor ssh   (or: ssh root@%s)\n", ip)
+		fmt.Printf("\nReady. Connect over Wi-Fi with:  margin ssh   (or: ssh root@%s)\n", ip)
 	} else {
 		fmt.Println("\nReady. Connect with:  ssh root@<tablet address>  (wifi status on the tablet shows it)")
 	}
@@ -146,7 +146,7 @@ func pcPublicKey() (string, error) {
 	os.MkdirAll(dir, 0o700)
 	key := filepath.Join(dir, "id_ed25519")
 	fmt.Println("==> creating an SSH key for this PC:", key)
-	c := exec.Command(keygen, "-t", "ed25519", "-N", "", "-C", "condor-pc", "-f", key)
+	c := exec.Command(keygen, "-t", "ed25519", "-N", "", "-C", "margin-pc", "-f", key)
 	c.Stdout, c.Stderr = os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		return "", fmt.Errorf("ssh-keygen: %w", err)

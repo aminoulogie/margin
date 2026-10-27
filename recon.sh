@@ -10,7 +10,7 @@
 #        ./recon.sh --fastboot  also reboot to the bootloader and read `fastboot getvar all`
 set -u
 
-OUT="condor-recon-$(date +%Y%m%d-%H%M%S)"
+OUT="margin-recon-$(date +%Y%m%d-%H%M%S)"
 WANT_FASTBOOT=0
 [ "${1:-}" = "--fastboot" ] && WANT_FASTBOOT=1
 
@@ -103,15 +103,15 @@ dump_part() { # dump_part <name> : dd the partition to /sdcard, pull, delete
     dev=$(awk -v n="$name" '$0 ~ (" " n " ->") {print $NF}' "$OUT/storage/by-name.txt" | head -1)
     [ -z "$dev" ] && dev=$(grep -h " $name -> " "$OUT/storage/by-name-platform.txt" | awk '{print $NF}' | head -1)
     [ -z "$dev" ] && { warn "no partition named '$name'"; return; }
-    local cmd="dd if=$dev of=/sdcard/condor-$name.img bs=4096"
+    local cmd="dd if=$dev of=/sdcard/margin-$name.img bs=4096"
     if [ "$ROOT" = "su" ]; then sh_ su -c "$cmd" >/dev/null; else sh_ "$cmd" >/dev/null; fi
     mkdir -p "$OUT/dumps"
-    if adb pull "/sdcard/condor-$name.img" "$OUT/dumps/$name.img" >/dev/null 2>&1; then
+    if adb pull "/sdcard/margin-$name.img" "$OUT/dumps/$name.img" >/dev/null 2>&1; then
         echo "  $name ($dev) -> dumps/$name.img  $(du -h "$OUT/dumps/$name.img" | cut -f1)"
     else
         warn "dump of $name failed"
     fi
-    sh_ rm -f "/sdcard/condor-$name.img" >/dev/null
+    sh_ rm -f "/sdcard/margin-$name.img" >/dev/null
 }
 
 if [ -n "$ROOT" ]; then

@@ -1,23 +1,23 @@
-// condor: command-line control of a Condor TRA-901G tablet (Android 4.2.2) over USB.
+// margin: command-line control of Margin on a Condor TRA-901G tablet (Android 4.2.2) over USB.
 // Wraps adb/fastboot; downloads Google's platform-tools on first use if they aren't installed.
 //
-//	condor doctor                  check adb, cable, and that the tablet is authorized
-//	condor info                    model, Android, kernel, battery, storage
-//	condor books <file|dir>...     copy .epub/.pdf/.mobi/.fb2/.txt to /sdcard/Books
-//	condor install <app.apk>...    install or update apps
-//	condor apps                    list installed (non-system) apps
-//	condor shell [command...]      open a shell on the tablet, or run one command
-//	condor screenshot [out.png]    save the tablet's screen to a PNG
-//	condor recon                   read-only inspection + backup for the Linux project
-//	condor backup [folder]         copy the tablet's internal storage (/sdcard) to the PC
-//	condor reboot [bootloader|recovery]
-//	condor bootimg info|unpack|pack  Intel OSIP boot images (files on the PC only)
-//	condor takeover status|arm|disarm|hook  one-shot boot into our own userspace via /system
-//	condor net                     internet for the tablet over USB, via this PC (leave running)
-//	condor ssh [setup]             log in to the tablet's Alpine over Wi-Fi (setup once over USB)
-//	condor alpine install|status|remove  Alpine Linux root for the console (/data/alpine)
-//	condor term                    open condor-init's root shell over USB (takeover mode)
-//	condor setup                  install so 'condor' works in any cmd window (also runs on double-click)
+//	margin doctor                  check adb, cable, and that the tablet is authorized
+//	margin info                    model, Android, kernel, battery, storage
+//	margin books <file|dir>...     copy .epub/.pdf/.mobi/.fb2/.txt to /sdcard/Books
+//	margin install <app.apk>...    install or update apps
+//	margin apps                    list installed (non-system) apps
+//	margin shell [command...]      open a shell on the tablet, or run one command
+//	margin screenshot [out.png]    save the tablet's screen to a PNG
+//	margin recon                   read-only inspection + backup for the Linux project
+//	margin backup [folder]         copy the tablet's internal storage (/sdcard) to the PC
+//	margin reboot [bootloader|recovery]
+//	margin bootimg info|unpack|pack  Intel OSIP boot images (files on the PC only)
+//	margin takeover status|arm|disarm|hook  one-shot boot into our own userspace via /system
+//	margin net                     internet for the tablet over USB, via this PC (leave running)
+//	margin ssh [setup]             log in to the tablet's Alpine over Wi-Fi (setup once over USB)
+//	margin alpine install|status|remove  Alpine Linux root for the console (/data/alpine)
+//	margin term                    open margin-init's root shell over USB (takeover mode)
+//	margin setup                  install so 'margin' works in any cmd window (also runs on double-click)
 package main
 
 import (
@@ -38,24 +38,43 @@ import (
 const toolsURL = "https://dl.google.com/android/repository/platform-tools-latest-%s.zip"
 
 var (
-	home     = condorHome()
-	toolsDir = filepath.Join(home, "platform-tools")
+	home     = marginHome()
+	toolsDir = homePath("platform-tools")
 	adbPath  string
 
 	bookExts = map[string]bool{".epub": true, ".pdf": true, ".mobi": true, ".fb2": true, ".txt": true, ".djvu": true, ".cbz": true}
 )
 
-func condorHome() string {
+// marginHome is ~/.margin, the tool's own folder: adb (platform-tools), downloads, bin.
+func marginHome() string { return userDir(".margin") }
+
+// oldHome is the same folder from before the rename to Margin (~/.condor). What isn't in
+// ~/.margin yet is still read from there (homePath), so nothing is downloaded or set up again.
+func oldHome() string { return userDir(".condor") }
+
+func userDir(name string) string {
 	if p := os.Getenv("USERPROFILE"); p != "" {
-		return filepath.Join(p, ".condor")
+		return filepath.Join(p, name)
 	}
 	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".condor")
+	return filepath.Join(h, name)
+}
+
+// homePath is name in ~/.margin, or in ~/.condor when only the old folder has it.
+func homePath(name string) string {
+	p := filepath.Join(home, name)
+	if exists(p) {
+		return p
+	}
+	if old := filepath.Join(oldHome(), name); exists(old) {
+		return old
+	}
+	return p
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		// Double-clicked in Explorer: install so 'condor' works in every cmd window.
+		// Double-clicked in Explorer: install so 'margin' works in every cmd window.
 		if runtime.GOOS == "windows" && !onPath() {
 			err := setup()
 			if err != nil {
@@ -130,35 +149,35 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`condor - control the Condor tablet over USB
+	fmt.Print(`margin - control the Condor tablet over USB
 
-  condor doctor                  check adb, cable, and authorization
-  condor info                    model, Android, kernel, battery, storage
-  condor books <file|dir>...     copy ebooks to /sdcard/Books
-  condor install <app.apk>...    install or update apps
-  condor apps                    list installed apps
-  condor shell [command...]      shell on the tablet (or run one command)
-  condor screenshot [out.png]    save the tablet's screen
-  condor recon                   read-only inspection + backup (Linux project)
-  condor backup [folder]         copy the tablet's files (/sdcard) to the PC
-  condor reboot [bootloader|recovery]
-  condor bootimg info <img>              show an Intel boot image's layout
-  condor bootimg unpack <img> [dir]      split it into cmdline, kernel, ramdisk...
-  condor bootimg pack <dir> <out.img>    rebuild an image from an unpacked folder
-  condor takeover status                 /system hook, condor-init, trigger, logs
-  condor takeover arm [condor-init]      next boot (once) stops Android, runs condor-init
-  condor takeover auto on|off [binary]   boot straight into condor every time (on) / Android (off)
-  condor takeover install-hook           update the startup hook in /system (writes one file)
-  condor takeover disarm                 autostart off + next boot is normal Android
-  condor takeover push <condor-init>     install a new condor-init without arming
-  condor takeover restart                restart condor-init in place (takeover mode only)
-  condor takeover hook                   print the hook script that lives in /system
-  condor net                     internet for the tablet over USB (leave it running)
-  condor ssh setup | condor ssh  log in to the tablet over Wi-Fi (setup once, over USB)
-  condor alpine install|status|remove  Alpine Linux for the console (apk etc.)
-  condor alpine run <command>    run a command inside the tablet's Alpine
-  condor term                    open condor-init's root shell (takeover mode, over USB)
-  condor setup                   make 'condor' work in any cmd window
+  margin doctor                  check adb, cable, and authorization
+  margin info                    model, Android, kernel, battery, storage
+  margin books <file|dir>...     copy ebooks to /sdcard/Books
+  margin install <app.apk>...    install or update apps
+  margin apps                    list installed apps
+  margin shell [command...]      shell on the tablet (or run one command)
+  margin screenshot [out.png]    save the tablet's screen
+  margin recon                   read-only inspection + backup (Linux project)
+  margin backup [folder]         copy the tablet's files (/sdcard) to the PC
+  margin reboot [bootloader|recovery]
+  margin bootimg info <img>              show an Intel boot image's layout
+  margin bootimg unpack <img> [dir]      split it into cmdline, kernel, ramdisk...
+  margin bootimg pack <dir> <out.img>    rebuild an image from an unpacked folder
+  margin takeover status                 /system hook, margin-init, trigger, logs
+  margin takeover arm [margin-init]      next boot (once) stops Android, runs margin-init
+  margin takeover auto on|off [binary]   boot straight into Margin every time (on) / Android (off)
+  margin takeover install-hook           update the startup hook in /system (writes one file)
+  margin takeover disarm                 autostart off + next boot is normal Android
+  margin takeover push <margin-init>     install a new margin-init without arming
+  margin takeover restart                restart margin-init in place (takeover mode only)
+  margin takeover hook                   print the hook script that lives in /system
+  margin net                     internet for the tablet over USB (leave it running)
+  margin ssh setup | margin ssh  log in to the tablet over Wi-Fi (setup once, over USB)
+  margin alpine install|status|remove  Alpine Linux for the console (apk etc.)
+  margin alpine run <command>    run a command inside the tablet's Alpine
+  margin term                    open margin-init's root shell (takeover mode, over USB)
+  margin setup                   make 'margin' work in any cmd window
 `)
 }
 
@@ -167,22 +186,22 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// ---------- setup: put condor on the user's PATH ----------
+// ---------- setup: put margin on the user's PATH ----------
 
 var binDir = filepath.Join(home, "bin")
 
 func onPath() bool {
-	p, err := exec.LookPath("condor")
+	p, err := exec.LookPath("margin")
 	return err == nil && p != ""
 }
 
-// setup copies this executable to %USERPROFILE%\.condor\bin and adds that folder to the user PATH.
+// setup copies this executable to %USERPROFILE%\.margin\bin and adds that folder to the user PATH.
 func setup() error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	name := "condor"
+	name := "margin"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -194,7 +213,7 @@ func setup() error {
 			return err
 		}
 		if err := os.WriteFile(dst, data, 0o755); err != nil {
-			return fmt.Errorf("copy to %s: %w (close other condor windows and retry)", dst, err)
+			return fmt.Errorf("copy to %s: %w (close other margin windows and retry)", dst, err)
 		}
 	}
 	fmt.Println("installed", dst)
@@ -212,7 +231,7 @@ func setup() error {
 	if strings.TrimSpace(string(out)) == "added" {
 		fmt.Println("added", binDir, "to your PATH")
 	}
-	fmt.Println("\nDone. Open a NEW cmd window and type:  condor doctor")
+	fmt.Println("\nDone. Open a NEW cmd window and type:  margin doctor")
 	return nil
 }
 
@@ -322,7 +341,7 @@ func needDevice() error {
 		time.Sleep(time.Second)
 	}
 	out, _ := adb("devices")
-	return fmt.Errorf("tablet not ready (state %q).\n%s\nRun 'condor doctor' for help", state(), out)
+	return fmt.Errorf("tablet not ready (state %q).\n%s\nRun 'margin doctor' for help", state(), out)
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
@@ -405,7 +424,7 @@ func info() error {
 
 func books(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: condor books <file-or-folder>...")
+		return fmt.Errorf("usage: margin books <file-or-folder>...")
 	}
 	if err := needDevice(); err != nil {
 		return err
@@ -449,7 +468,7 @@ func sortedKeys(m map[string]bool) []string {
 
 func install(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: condor install <app.apk>...")
+		return fmt.Errorf("usage: margin install <app.apk>...")
 	}
 	if err := needDevice(); err != nil {
 		return err
@@ -507,14 +526,14 @@ func screenshot(args []string) error {
 	if err := needDevice(); err != nil {
 		return err
 	}
-	out := "condor-" + time.Now().Format("20060102-150405") + ".png"
+	out := "margin-" + time.Now().Format("20060102-150405") + ".png"
 	if len(args) > 0 {
 		out = args[0]
 	}
 	// Android 4.2 has no 'adb exec-out', so capture to the tablet first.
-	sh("screencap -p /sdcard/condor-shot.png")
-	defer sh("rm /sdcard/condor-shot.png")
-	if o, err := adb("pull", "/sdcard/condor-shot.png", out); err != nil {
+	sh("screencap -p /sdcard/margin-shot.png")
+	defer sh("rm /sdcard/margin-shot.png")
+	if o, err := adb("pull", "/sdcard/margin-shot.png", out); err != nil {
 		return fmt.Errorf("pull screenshot: %s", strings.TrimSpace(o))
 	}
 	fmt.Println("saved", out)
@@ -525,7 +544,7 @@ func backup(args []string) error {
 	if err := needDevice(); err != nil {
 		return err
 	}
-	dst := "condor-files-" + time.Now().Format("20060102-150405")
+	dst := "margin-files-" + time.Now().Format("20060102-150405")
 	if len(args) > 0 {
 		dst = args[0]
 	}
@@ -558,7 +577,7 @@ func recon() error {
 	if err := needDevice(); err != nil {
 		return err
 	}
-	out := "condor-recon-" + time.Now().Format("20060102-150405")
+	out := "margin-recon-" + time.Now().Format("20060102-150405")
 	save := func(name, cmd string) string {
 		p := filepath.Join(out, filepath.FromSlash(name))
 		os.MkdirAll(filepath.Dir(p), 0o755)
@@ -657,7 +676,7 @@ func recon() error {
 				name = name + "-2"
 			}
 			dumped[name] = true
-			tmp := "/sdcard/condor-" + name + ".img"
+			tmp := "/sdcard/margin-" + name + ".img"
 			sh(asRoot("dd " + ddArgs + " of=" + tmp))
 			dst := filepath.Join(out, "dumps", name+".img")
 			os.MkdirAll(filepath.Dir(dst), 0o755)

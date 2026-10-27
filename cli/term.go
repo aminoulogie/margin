@@ -13,16 +13,16 @@ import (
 
 const termPort = "2323"
 
-// term joins the console shown on the tablet's screen (condor-init serves it on
-// 127.0.0.1:2323), reached over USB with 'adb forward': PC and tablet share one session. Only works in takeover mode: condor-init must
-// be running (condor takeover arm <condor-init>, then condor reboot).
+// term joins the console shown on the tablet's screen (margin-init serves it on
+// 127.0.0.1:2323), reached over USB with 'adb forward': PC and tablet share one session. Only works in takeover mode: margin-init must
+// be running (margin takeover arm <margin-init>, then margin reboot).
 func term(args []string) error {
 	if err := needDevice(); err != nil {
 		return err
 	}
-	if !strings.Contains(sh("ps"), "condor-init") {
-		return fmt.Errorf("condor-init isn't running; arm takeover and reboot:\n" +
-			"  condor takeover arm <condor-init>\n  condor reboot")
+	if !strings.Contains(sh("ps"), initProc) {
+		return fmt.Errorf("margin-init isn't running; arm takeover and reboot:\n" +
+			"  margin takeover arm <margin-init>\n  margin reboot")
 	}
 	if out, err := adb("forward", "tcp:"+termPort, "tcp:"+termPort); err != nil {
 		return fmt.Errorf("adb forward: %s", strings.TrimSpace(out))
@@ -31,7 +31,7 @@ func term(args []string) error {
 
 	c, err := net.Dial("tcp", "127.0.0.1:"+termPort)
 	if err != nil {
-		return fmt.Errorf("connect to condor-init shell: %w", err)
+		return fmt.Errorf("connect to margin-init shell: %w", err)
 	}
 	defer c.Close()
 	// In a real console, go raw: every key goes straight to the tablet, which does the echo

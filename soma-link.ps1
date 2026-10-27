@@ -2,11 +2,12 @@
 # phone). It asks for the two things Soma shows in Settings > Sync on the PC: the server
 # address and the recovery code, and sends them to the tablet over Wi-Fi. They aren't kept
 # on this PC.
-#   condor-linux\soma-link.cmd [ip]
+#   soma-link.cmd [ip]
 param([string]$Ip = "")
-$ipFile = "$HOME\.condor\tablet-ip"
-if ($Ip -eq "" -and (Test-Path $ipFile)) { $Ip = (Get-Content $ipFile -Raw).Trim() }
-if ($Ip -notmatch '^\d+\.\d+\.\d+\.\d+$') { Write-Host "Which IP? condor-linux\soma-link.cmd 192.168.x.y" -ForegroundColor Red; exit 1 }
+$ipFile = "$HOME\.margin\tablet-ip"
+$ipOld = "$HOME\.condor\tablet-ip" # where it was kept before the rename to Margin
+if ($Ip -eq "") { foreach ($f in $ipFile, $ipOld) { if (Test-Path $f) { $Ip = (Get-Content $f -Raw).Trim(); break } } }
+if ($Ip -notmatch '^\d+\.\d+\.\d+\.\d+$') { Write-Host "Which IP? soma-link.cmd 192.168.x.y" -ForegroundColor Red; exit 1 }
 Write-Host "In Soma on this PC: Settings > Sync. Copy the Server address, then Show recovery code." -ForegroundColor Cyan
 $url = (Read-Host "Server address").Trim()
 $code = (Read-Host "Recovery code").Trim()

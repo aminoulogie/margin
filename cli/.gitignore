@@ -1,0 +1,5 @@
+# built here: go build -o margin.exe .
+/margin
+/margin.exe
+/condor
+/margin.exe

@@ -1,4 +1,4 @@
-module condor
+module margin
 
 go 1.26.0
 

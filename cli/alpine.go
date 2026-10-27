@@ -21,13 +21,13 @@ const (
 // files written into the Alpine root after unpacking.
 var alpineFiles = map[string]string{
 	"/etc/resolv.conf":           "nameserver 1.1.1.1\nnameserver 8.8.8.8\n",
-	"/etc/hostname":              "condor\n",
-	"/root/.condor-installed-by": "condor alpine install\n",
+	"/etc/hostname":              "margin\n",
+	"/root/.margin-installed-by": "margin alpine install\n",
 }
 
 func alpine(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: condor alpine install [alpine-minirootfs-*-x86.tar.gz] | status | remove | run <command>")
+		return fmt.Errorf("usage: margin alpine install [alpine-minirootfs-*-x86.tar.gz] | status | remove | run <command>")
 	}
 	if err := needDevice(); err != nil {
 		return err
@@ -39,22 +39,22 @@ func alpine(args []string) error {
 	case "status":
 		v := sh("su -c 'cat " + alpineRoot + "/etc/alpine-release'")
 		if v == "" || strings.Contains(v, "No such") {
-			fmt.Println("Alpine: not installed (condor alpine install)")
+			fmt.Println("Alpine: not installed (margin alpine install)")
 		} else {
 			fmt.Println("Alpine:", v, "in", alpineRoot)
 			fmt.Println(sh("su -c 'df " + alpineRoot + "'"))
 		}
 		return nil
 	case "remove":
-		if strings.Contains(sh("ps"), "condor-init") && !strings.Contains(sh("ps"), "system_server") {
-			return fmt.Errorf("the console is using Alpine; reboot into Android first (condor reboot), then remove")
+		if strings.Contains(sh("ps"), initProc) && !strings.Contains(sh("ps"), "system_server") {
+			return fmt.Errorf("the console is using Alpine; reboot into Android first (margin reboot), then remove")
 		}
 		sh("su -c 'for m in proc sys dev/pts dev tmp; do umount " + alpineRoot + "/$m; done; rm -r " + alpineRoot + "'")
 		fmt.Println("removed", alpineRoot)
 		return nil
 	case "run":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: condor alpine run <command> (e.g. condor alpine run apk add htop)")
+			return fmt.Errorf("usage: margin alpine run <command> (e.g. margin alpine run apk add htop)")
 		}
 		return alpineRun(strings.Join(args[1:], " "))
 	case "install":
@@ -64,15 +64,15 @@ func alpine(args []string) error {
 		}
 		return alpineInstall(local)
 	}
-	return fmt.Errorf("unknown: condor alpine %s", args[0])
+	return fmt.Errorf("unknown: margin alpine %s", args[0])
 }
 
 func alpineInstall(local string) error {
 	if v := sh("su -c 'cat " + alpineRoot + "/etc/alpine-release'"); v != "" && !strings.Contains(v, "No such") {
-		return fmt.Errorf("Alpine %s is already installed in %s (condor alpine remove first)", v, alpineRoot)
+		return fmt.Errorf("Alpine %s is already installed in %s (margin alpine remove first)", v, alpineRoot)
 	}
 	if strings.Contains(sh("su -c 'ls "+initPath+"'"), "No such") {
-		return fmt.Errorf("%s is missing; install condor-init first (dev.cmd)", initPath)
+		return fmt.Errorf("%s is missing; install margin-init first (dev.cmd)", initPath)
 	}
 	if local == "" {
 		var err error
@@ -99,20 +99,20 @@ func alpineInstall(local string) error {
 	}
 	v := sh("su -c 'cat " + alpineRoot + "/etc/alpine-release'")
 	fmt.Println("==> Alpine", v, "installed in", alpineRoot)
-	fmt.Println("Restart the console to enter it:  condor takeover restart   (then: condor term)")
+	fmt.Println("Restart the console to enter it:  margin takeover restart   (then: margin term)")
 	return nil
 }
 
 // writeRoot writes content to a root-owned path on the tablet through a temp file.
 func writeRoot(path, content string) error {
-	f, err := os.CreateTemp("", "condor-*")
+	f, err := os.CreateTemp("", "margin-*")
 	if err != nil {
 		return err
 	}
 	f.WriteString(content)
 	f.Close()
 	defer os.Remove(f.Name())
-	tmp := shellTmp + "/condor-file"
+	tmp := shellTmp + "/margin-file"
 	if out, err := adb("push", f.Name(), tmp); err != nil {
 		return fmt.Errorf("push %s: %s", path, strings.TrimSpace(out))
 	}
@@ -140,7 +140,7 @@ func pickMinirootfs(index string) (file, sum string, err error) {
 	return "", "", fmt.Errorf("no x86 minirootfs in Alpine's release index")
 }
 
-// downloadAlpine fetches the latest x86 minirootfs into ~/.condor/cache (reused next time)
+// downloadAlpine fetches the latest x86 minirootfs into ~/.margin/cache (reused next time)
 // and checks its sha256.
 func downloadAlpine() (string, error) {
 	fmt.Println("==> looking up the latest Alpine (x86)")
@@ -152,7 +152,7 @@ func downloadAlpine() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cache := filepath.Join(home, "cache")
+	cache := homePath("cache")
 	os.MkdirAll(cache, 0o755)
 	dst := filepath.Join(cache, file)
 	if fileSHA256(dst) == sum {

@@ -1,7 +1,7 @@
 # Knowledge base: Condor TRA-901G
 
 Everything learned so far, with sources. Treat "verified" items as facts; "likely" items
-need confirming with `condor recon`.
+need confirming with `margin recon`.
 
 ## 1. Hardware
 
@@ -75,7 +75,7 @@ chip ROM → IFWI (firmware, SCU/PMIC) → OSIP header on eMMC → droidboot (fa
         → boot.img (Intel format: OSIP + cmdline + bootstub + bzImage + initrd) → /init
         └ key combo → recovery.img
 ```
-- Standard `mkbootimg`/`abootimg` won't handle Intel images; `condor bootimg` does (verified
+- Standard `mkbootimg`/`abootimg` won't handle Intel images; `margin bootimg` does (verified
   byte-identical on this tablet's and the Ramos i9 images). Layout and OSIP slot map: CLAUDE.md.
 - `fastboot boot`: **not supported** (droidboot 0.5: "boot command stubbed on this platform").
 - Signatures: every image carries a signed Intel manifest covering the exact payload size

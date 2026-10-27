@@ -19,14 +19,17 @@ import (
 // so every takeover is one-shot and the next reboot is plain Android again.
 const (
 	hookPath      = "/system/etc/install-recovery.sh"
-	condorDir     = "/data/condor"
-	triggerPath   = condorDir + "/takeover"  // one-shot: next boot only
-	autostartPath = condorDir + "/autostart" // persistent: every boot
-	bootfailPath  = condorDir + "/bootfail"  // crash-loop counter
-	initPath      = condorDir + "/condor-init"
+	dataDir       = "/data/condor"
+	triggerPath   = dataDir + "/takeover"  // one-shot: next boot only
+	autostartPath = dataDir + "/autostart" // persistent: every boot
+	bootfailPath  = dataDir + "/bootfail"  // crash-loop counter
+	initPath      = dataDir + "/condor-init"
+	// initProc is margin-init's process name on the tablet: the /system hook starts it from
+	// /data/condor/condor-init, so that's what ps shows (see the hook below).
+	initProc      = "condor-init"
 	systemDev     = "/dev/block/mmcblk0p8"
 	shellTmp      = "/data/local/tmp"
-	takeoverUsage = "usage: condor takeover status | arm [binary] | auto on|off [binary] | install-hook | disarm | push <binary> | restart | hook"
+	takeoverUsage = "usage: margin takeover status | arm [binary] | auto on|off [binary] | install-hook | disarm | push <binary> | restart | hook"
 )
 
 const takeoverHook = `#!/system/bin/sh
@@ -87,14 +90,14 @@ func takeover(args []string) error {
 			fmt.Println("warning: the hook isn't installed in /system yet, so arming does nothing")
 		}
 		if strings.Contains(sh("su -c 'ls "+initPath+"'"), "No such") {
-			return fmt.Errorf("%s is missing: run 'condor takeover arm <condor-init binary>'", initPath)
+			return fmt.Errorf("%s is missing: run 'margin takeover arm <margin-init binary>'", initPath)
 		}
-		sh("su -c 'mkdir " + condorDir + "; touch " + triggerPath + "'")
+		sh("su -c 'mkdir " + dataDir + "; touch " + triggerPath + "'")
 		if strings.Contains(sh("su -c 'ls "+triggerPath+"'"), "No such") {
 			return fmt.Errorf("couldn't create %s", triggerPath)
 		}
-		fmt.Println("armed: the next boot stops Android and starts condor-init (once).")
-		fmt.Println("reboot with:  condor reboot")
+		fmt.Println("armed: the next boot stops Android and starts margin-init (once).")
+		fmt.Println("reboot with:  margin reboot")
 		return nil
 	case "auto":
 		return takeoverAuto(args[1:])
@@ -104,27 +107,27 @@ func takeover(args []string) error {
 		sh("su -c 'rm -f " + triggerPath + " " + autostartPath + " " + bootfailPath + "'")
 		fmt.Println("disarmed: autostart off, next boot is normal Android.")
 		return nil
-	case "push": // install a new condor-init without arming
+	case "push": // install a new margin-init without arming
 		if len(args) < 2 {
-			return fmt.Errorf("usage: condor takeover push <condor-init binary>")
+			return fmt.Errorf("usage: margin takeover push <margin-init binary>")
 		}
 		return pushRoot(args[1], initPath, "755")
-	case "restart": // replace the running condor-init without rebooting
+	case "restart": // replace the running margin-init without rebooting
 		return takeoverRestart()
 	}
 	return fmt.Errorf(takeoverUsage)
 }
 
-// takeoverAuto turns persistent boot-into-condor on or off. "on" installs condor-init (if a
+// takeoverAuto turns persistent boot-into-Margin on or off. "on" installs margin-init (if a
 // binary is given), checks the hook is present, and creates /data/condor/autostart so every
-// boot starts condor-init. "off" removes it so the next boot is Android.
+// boot starts margin-init. "off" removes it so the next boot is Android.
 func takeoverAuto(args []string) error {
 	if len(args) == 0 || (args[0] != "on" && args[0] != "off") {
-		return fmt.Errorf("usage: condor takeover auto on|off [condor-init binary]")
+		return fmt.Errorf("usage: margin takeover auto on|off [margin-init binary]")
 	}
 	if args[0] == "off" {
 		sh("su -c 'rm -f " + autostartPath + " " + bootfailPath + "'")
-		fmt.Println("autostart off: the next boot is normal Android (condor takeover auto on to re-enable).")
+		fmt.Println("autostart off: the next boot is normal Android (margin takeover auto on to re-enable).")
 		return nil
 	}
 	if len(args) > 1 {
@@ -134,18 +137,18 @@ func takeoverAuto(args []string) error {
 	}
 	if !hookCurrent() {
 		return fmt.Errorf("the startup hook in /system is missing or an older version that ignores autostart.\n" +
-			"Update it first (writes one file in /system):  condor takeover install-hook")
+			"Update it first (writes one file in /system):  margin takeover install-hook")
 	}
 	if strings.Contains(sh("su -c 'ls "+initPath+"'"), "No such") {
-		return fmt.Errorf("%s is missing: run 'condor takeover auto on <condor-init binary>'", initPath)
+		return fmt.Errorf("%s is missing: run 'margin takeover auto on <margin-init binary>'", initPath)
 	}
-	sh("su -c 'mkdir " + condorDir + "; rm -f " + bootfailPath + "; touch " + autostartPath + "'")
+	sh("su -c 'mkdir " + dataDir + "; rm -f " + bootfailPath + "; touch " + autostartPath + "'")
 	if strings.Contains(sh("su -c 'ls "+autostartPath+"'"), "No such") {
 		return fmt.Errorf("couldn't create %s", autostartPath)
 	}
-	fmt.Println("autostart ON: every boot now goes straight into condor.")
-	fmt.Println("to go back to Android:  condor takeover auto off   (then condor reboot)")
-	fmt.Println("safety net: if condor-init ever fails to start 5 boots running, the tablet")
+	fmt.Println("autostart ON: every boot now goes straight into Margin.")
+	fmt.Println("to go back to Android:  margin takeover auto off   (then margin reboot)")
+	fmt.Println("safety net: if margin-init ever fails to start 5 boots running, the tablet")
 	fmt.Println("falls back to Android and turns autostart off by itself.")
 	return nil
 }
@@ -164,7 +167,7 @@ func installHook() error {
 		fmt.Println("hook is already the current version; nothing to do.")
 		return nil
 	}
-	f, err := os.CreateTemp("", "condor-hook-*")
+	f, err := os.CreateTemp("", "margin-hook-*")
 	if err != nil {
 		return err
 	}
@@ -191,7 +194,7 @@ func installHook() error {
 	m := mountOpts(sh("cat /proc/mounts"), "/system")
 	fmt.Println("hook updated and verified; /system:", m)
 	if f := strings.Fields(m); len(f) < 2 || !strings.HasPrefix(f[1], "ro") {
-		fmt.Println("warning: /system is still read-write; run: condor shell \"su -c 'mount -o remount,ro -t ext4 " + systemDev + " /system'\"")
+		fmt.Println("warning: /system is still read-write; run: margin shell \"su -c 'mount -o remount,ro -t ext4 " + systemDev + " /system'\"")
 	}
 	return nil
 }
@@ -226,43 +229,43 @@ func pushRoot(local, remote, mode string) error {
 	return nil
 }
 
-// condorInitPids returns the pids of running condor-init processes.
-func condorInitPids() []string {
+// initPids returns the pids of running margin-init processes.
+func initPids() []string {
 	var pids []string
 	for _, l := range strings.Split(sh("ps"), "\n") {
-		if f := strings.Fields(l); len(f) > 1 && strings.HasSuffix(strings.TrimSpace(l), "condor-init") {
+		if f := strings.Fields(l); len(f) > 1 && strings.HasSuffix(strings.TrimSpace(l), initProc) {
 			pids = append(pids, f[1])
 		}
 	}
 	return pids
 }
 
-// takeoverRestart stops condor-init (it clears the screen on SIGTERM) and starts the
+// takeoverRestart stops margin-init (it clears the screen on SIGTERM) and starts the
 // installed binary again, detached. Only in takeover mode: with Android running it would
 // draw over SurfaceFlinger.
 func takeoverRestart() error {
 	if strings.Contains(sh("ps"), "system_server") {
 		return fmt.Errorf("Android is running; restart only works in takeover mode (arm + reboot)")
 	}
-	for _, pid := range condorInitPids() {
+	for _, pid := range initPids() {
 		sh("su -c 'kill " + pid + "'")
 	}
-	for i := 0; i < 10 && len(condorInitPids()) > 0; i++ {
+	for i := 0; i < 10 && len(initPids()) > 0; i++ {
 		time.Sleep(300 * time.Millisecond)
 	}
-	if p := condorInitPids(); len(p) > 0 {
-		return fmt.Errorf("condor-init still running (pid %v)", p)
+	if p := initPids(); len(p) > 0 {
+		return fmt.Errorf("margin-init still running (pid %v)", p)
 	}
 	// Let init start it, exactly like at boot: the hook *is* the flash_recovery service, and
-	// that service stopped when condor-init (which the hook exec'd into) exited. Starting it
+	// that service stopped when margin-init (which the hook exec'd into) exited. Starting it
 	// from 'su ... &' doesn't work: su tears the child down when it returns.
 	sh("su -c 'touch " + triggerPath + "; start flash_recovery'")
 	time.Sleep(2 * time.Second)
-	p := condorInitPids()
+	p := initPids()
 	if len(p) == 0 {
-		return fmt.Errorf("condor-init didn't start; see: condor takeover status")
+		return fmt.Errorf("margin-init didn't start; see: margin takeover status")
 	}
-	fmt.Println("condor-init restarted, pid", p[0])
+	fmt.Println("margin-init restarted, pid", p[0])
 	return nil
 }
 
@@ -283,10 +286,10 @@ func takeoverStatus() error {
 	if strings.Contains(ci, "No such") {
 		ci = "missing"
 	}
-	fmt.Println("condor-init: " + ci)
+	fmt.Println("margin-init: " + ci)
 	auto := "off (next boot is Android unless armed)"
 	if !strings.Contains(sh("su -c 'ls "+autostartPath+"'"), "No such") {
-		auto = "ON (every boot goes into condor)"
+		auto = "ON (every boot goes into Margin)"
 	}
 	fmt.Println("autostart:   " + auto)
 	armed := "no"
@@ -296,13 +299,13 @@ func takeoverStatus() error {
 	fmt.Println("armed:       " + armed)
 	running := "no"
 	for _, l := range strings.Split(sh("ps"), "\n") {
-		if strings.HasSuffix(strings.TrimSpace(l), "condor-init") {
+		if strings.HasSuffix(strings.TrimSpace(l), initProc) {
 			running = "yes: " + strings.Join(strings.Fields(l)[:2], " pid ")
 		}
 	}
 	fmt.Println("running:     " + running)
 	for _, f := range []string{"hook.log", "init.log"} {
-		if l := sh("su -c 'cat " + condorDir + "/" + f + "'"); !strings.Contains(l, "No such") && l != "" {
+		if l := sh("su -c 'cat " + dataDir + "/" + f + "'"); !strings.Contains(l, "No such") && l != "" {
 			lines := strings.Split(l, "\n")
 			if len(lines) > 8 {
 				lines = lines[len(lines)-8:]

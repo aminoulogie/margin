@@ -1,65 +1,86 @@
-# condor-linux: project memory
+# Margin: project memory
 
 Turning an old **Condor TRA-901G** tablet into its own little Linux machine: it boots straight
-into our userspace (Alpine Linux + our Go `condor-init`) on top of Condor's signed kernel, with
+into our userspace (Alpine Linux + our Go `margin-init`) on top of Condor's signed kernel, with
 Wi-Fi, SSH and a console on its screen. Plan and what's next: `PLAN.md`. Everything learned,
 with sources: `docs/KNOWLEDGE.md` (read it before suggesting anything about OS options,
 firmware or flashing). **Start with "How the system works" below.**
+
+## Names (2026-10-27: the OS is Margin)
+The OS was called condor until 2026-10-27; it is **Margin** now (repo aminoulogie/margin;
+the PC tool `margin.exe`, the tablet program `margin-init`, the GPU helpers `os/margin-gl`
+and `marginsf`). "Condor" (capital C) is the tablet's maker and model: Condor TRA-901G,
+Condor's kernel and boot logo. Keep those.
+
+A few old names stay **on purpose**, because the tablet's /system startup hook depends on them
+and rewriting the hook needs the PC over USB (`margin takeover install-hook`, safety rule 3):
+- `/data/condor/` is still Margin's folder on the tablet (`marginHome`); the hook checks
+  `/data/condor/autostart|takeover|bootfail` and execs **`/data/condor/condor-init`**, so
+  margin-init is installed under that file name and runs as process `condor-init`
+  (`initProc` in cli/takeover.go; `pidof condor-init` in update.sh / wifi-update.ps1).
+- `takeoverHook` in cli/takeover.go is byte-identical to the hook on the tablet (md5
+  9ed5cd11...): `margin takeover status` compares it, so never edit its text casually.
+- Kept for a smooth move: the PC tool reads `~/.condor` when `~/.margin` doesn't have something
+  yet (`homePath`), the scripts read the old `~/.condor\tablet-ip`, the wifi script copies
+  `/etc/condor/wpa.conf` to `/etc/margin/` once, and margin-init deletes the old
+  `/etc/profile.d/condor.sh`. Real folders keep their names too: the PC backup
+  `C:\Users\pro\condor-backup` and the microSD's `condor/`.
 
 ## How the system works (2026-10-03)
 ```
 power on → signed kernel + ramdisk (stock, can't change) → Android init
   → init runs /system/etc/install-recovery.sh as root (service flash_recovery, class main)
       = our hook (cli/takeover.go: takeoverHook). If /data/condor/autostart (every boot) or
-        /data/condor/takeover (one-shot) exists: stop bootanim + zygote, exec condor-init.
+        /data/condor/takeover (one-shot) exists: stop bootanim + zygote, exec margin-init.
         Crash-loop guard: /data/condor/bootfail counter; at 5 the hook boots Android and
-        deletes autostart. condor-init clears it after 25 s (bootguard.go).
-  → /data/condor/condor-init (os/condor-init, Go, linux/386, runs as root, logs to init.log)
-      - fixes the clock (no RTC battery: floor = its own install mtime), hostname "condor"
+        deletes autostart. margin-init clears it after 25 s (bootguard.go).
+  → /data/condor/condor-init (os/margin-init, Go, linux/386, runs as root, logs to init.log)
+      - fixes the clock (no RTC battery: floor = its own install mtime), hostname "margin"
       - screen: Linux console on fb0 (console.go + vt/), Go Mono, 73x57 cells, portrait
       - shell: Alpine login shell in a chroot of /data/alpine on a pty (pty_linux.go),
         with /proc /sys /dev /tmp(tmpfs) /system(bind) mounted (alpine_linux.go)
       - alpineBoot: writes Alpine config (prompt, proxy env, /usr/local/bin/wifi), runs
         `wifi boot` (rejoin saved network), starts sshd if openssh is installed
       - ports (all 127.0.0.1 except sshd):
-          2323 console: `condor term` joins the screen's session (PC + tablet share it)
+          2323 console: `margin term` joins the screen's session (PC + tablet share it)
           2324 plain root shell (no pty), back door for tools
-          2325 tunnel: `condor net` control/data connections (internet over USB)
-          3128 HTTP proxy: via the PC when condor net runs, else direct over Wi-Fi
+          2325 tunnel: `margin net` control/data connections (internet over USB)
+          3128 HTTP proxy: via the PC when margin net runs, else direct over Wi-Fi
           22   sshd inside Alpine (keys only), reachable over Wi-Fi
   adbd keeps running the whole time, so the PC can always fix things over USB.
 ```
-- On the tablet: `/data/condor/` (condor-init, autostart, bootfail, hook.log, init.log, shrc),
-  `/data/alpine/` (Alpine 3.24 x86 root; `/etc/condor/wpa.conf` = saved Wi-Fi network).
+- On the tablet: `/data/condor/` (margin-init, autostart, bootfail, hook.log, init.log, shrc),
+  `/data/alpine/` (Alpine 3.24 x86 root; `/etc/margin/wpa.conf` = saved Wi-Fi network, carried
+  over from `/etc/condor/` by the wifi script).
 - Without Alpine installed, the console falls back to Android's `/system/bin/sh`; if the
   fonts fail, to the `ui` launcher; if the console fails entirely, the touch test screen.
 
 ## Daily workflow (PowerShell on the PC)
 ```
-.\condor-linux\dev.cmd           build condor-init for linux/386, push + restart (or arm + reboot)
-condor-linux\wifi-update.cmd <ip>  same over Wi-Fi, no USB (IP remembered after the first time)
+.\dev.cmd           build margin-init for linux/386, push + restart (or arm + reboot)
+wifi-update.cmd <ip>  same over Wi-Fi, no USB (IP remembered after the first time)
 update  (in the tablet's Terminal tab)  the tablet fetches, builds and installs it by itself
-condor term                      the tablet's console from the PC (Ctrl+] leaves)
-ssh root@<tablet ip> / condor ssh  same over Wi-Fi (keys set up by condor ssh setup)
-condor alpine run <cmd>          run one command inside Alpine (exit code checked)
-condor net                       internet over USB for the tablet (leave running)
-condor takeover status           hook, autostart, condor-init md5, last log lines
-condor takeover auto on|off      boot into condor every time / back to Android
-condor takeover install-hook     update the /system hook (one file, md5-checked, ro after)
-condor reboot
+margin term                      the tablet's console from the PC (Ctrl+] leaves)
+ssh root@<tablet ip> / margin ssh  same over Wi-Fi (keys set up by margin ssh setup)
+margin alpine run <cmd>          run one command inside Alpine (exit code checked)
+margin net                       internet over USB for the tablet (leave running)
+margin takeover status           hook, autostart, margin-init md5, last log lines
+margin takeover auto on|off      boot into Margin every time / back to Android
+margin takeover install-hook     update the /system hook (one file, md5-checked, ro after)
+margin reboot
 ```
-Rebuild the CLI after pulling CLI changes: `cd cli; go build -o condor.exe .; .\condor.exe setup`
-(close `condor term` windows first, the exe is locked while they run).
+Rebuild the CLI after pulling CLI changes: `cd cli; go build -o margin.exe .; .\margin.exe setup`
+(close `margin term` windows first, the exe is locked while they run).
 GitHub is often unreachable from this PC: pull with a retry loop, or use a git bundle.
 
 ## The machine you're running on
 - Windows PC, PowerShell. The tablet is attached over **micro-USB**. A WSL Linux environment
   is available but USB devices aren't visible in WSL without `usbipd`, so use Windows tools.
-- `condor` CLI (Go, `cli/main.go`) is on PATH after `condor setup`; it wraps adb/fastboot
-  from `%USERPROFILE%\.condor\platform-tools` (auto-downloaded). Use `condor` commands
+- `margin` CLI (Go, `cli/main.go`) is on PATH after `margin setup`; it wraps adb/fastboot
+  from `%USERPROFILE%\.margin\platform-tools` (auto-downloaded). Use `margin` commands
   first; call `adb`/`fastboot` directly from that folder when you need something it lacks,
-  then consider adding it as a `condor` subcommand.
-- Rebuild the CLI: `cd cli; go build -o condor.exe .; .\condor.exe setup`.
+  then consider adding it as a `margin` subcommand.
+- Rebuild the CLI: `cd cli; go build -o margin.exe .; .\margin.exe setup`.
 
 ## Device facts (verified)
 - Condor TRA-901G, made in Algeria, ~2014. Intel Atom **Z2580** (Clover Trail+, 32-bit x86
@@ -77,8 +98,8 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
 - Display: framebuffer `psbfb` (fb0, Intel MID PowerVR/psb driver), GPU module `sgx`.
   **Native scanout is 1920x1200 landscape** (mode `U:1920x1200p-0`, 32 bpp XRGB: r16 g8 b0,
   stride 7680, one page, fb rotate 0, panel mm unknown), but the tablet is used **portrait**:
-  framebuffer x=0 is the top edge, its bottom rows are the left edge. condor-init draws in
-  logical portrait 1200x1920 via one setting, `rotation` = Rot90 (`os/condor-init/screen.go`,
+  framebuffer x=0 is the top edge, its bottom rows are the left edge. margin-init draws in
+  logical portrait 1200x1920 via one setting, `rotation` = Rot90 (`os/margin-init/screen.go`,
   override in /data/condor/rotation). Goodix touch reports native X 0–1920, Y 0–1200 (protocol
   B, slots 0–254), so touch maps through the same setting.
   Backlight: /sys/class/backlight/psb-bl, max 100.
@@ -94,7 +115,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
   wext scans fail. Condor's `/system/bin/wpa_supplicant -Dnl80211` works from inside Alpine
   (/system is bind-mounted); it runs as uid 1010 (wifi), so its config + socket dir must be
   owned by 1010 and `wpa_cli` needs `umask 0`. busybox `udhcpc` gets the lease. All of this is
-  the `wifi` command (`os/condor-init/wifi.go`); the saved network reconnects at boot.
+  the `wifi` command (`os/margin-init/wifi.go`); the saved network reconnects at boot.
 
 ## Boot chain findings (2026-10-03, verified)
 - GPT on mmcblk0: reserved(p1, sector 40) panic factory misc config cache logs system data.
@@ -104,7 +125,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
   splash 48050 (1642, 0x04), boot 70050 (15014, 0x00). Load 0x01100000, entry +0x1000.
 - Image layout: 480-byte signature block (Intel manifest + RSA, records payload size) +
   4 KB header (cmdline, kernel size, ramdisk size) + 4 KB bootstub + bzImage + gzip ramdisk.
-  Flash-tool files add a 512-byte single-entry OSIP sector in front. `condor bootimg` handles
+  Flash-tool files add a 512-byte single-entry OSIP sector in front. `margin bootimg` handles
   both; all tablet and Ramos images repack byte-identical.
 - droidboot 0.5 (`product: clovertrail`): **`fastboot boot` is disabled** ("boot command
   stubbed on this platform"), `getvar all` returns nothing. Windows needs the Google driver's
@@ -124,7 +145,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
   PC with a fake-screen window, then on `/dev/fb0` + `/dev/input/event*` on the tablet.
 - ~~Our Linux image goes in the recovery slot~~: impossible, the firmware rejects any
   modified boot/recovery image. Route in use: keep the signed kernel + ramdisk, hook early
-  boot from **/system**, stop Android's zygote, run condor-init + Alpine (chroot).
+  boot from **/system**, stop Android's zygote, run margin-init + Alpine (chroot).
 - The user first wanted a **Linux-style system** (console, terminal-first); now (2026-10-03)
   the tablet is a Kindle-like **Books app that is the whole system**, dark by default, with
   Terminal and Settings as its tabs. Exception they asked for later (2026-10-03):
@@ -135,18 +156,18 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
 - Fallback ladder in PLAN.md if a phase is blocked.
 
 ## Current status
-- [x] Phase 0: `condor` CLI built (doctor, info, books, install, apps, shell, screenshot, recon, reboot, setup, term)
+- [x] Phase 0: `margin` CLI built (doctor, info, books, install, apps, shell, screenshot, recon, reboot, setup, term)
 - [x] Tablet charges and boots to Android
 - [x] USB data works (needed reseating/another cable; first tries gave "Device Descriptor Request Failed")
 - [x] adb already enabled + PC authorized, works through the pattern lock; **su root available**
-- [x] First `condor recon` (2026-10-03): kernel, modules, firmware pulled. Partition dumps
+- [x] First `margin recon` (2026-10-03): kernel, modules, firmware pulled. Partition dumps
       were skipped because /dev/block/by-name doesn't exist. Fixed in CLI; re-run recon.
-- [x] `condor backup`: internal storage (1.55 GB) in `C:\Users\pro\condor-backup\sdcard`
+- [x] `margin backup`: internal storage (1.55 GB) in `C:\Users\pro\condor-backup\sdcard`
       (Defender quarantined `rootauthor_8.1.1.3.apk`). microSD backup skipped by the user.
 - [x] Boot/recovery/fastboot dumped (read-only) and partition table + OSIP mapped (see above).
-      `condor recon` fixed to dump OSIP images, reserved, factory, eMMC boot areas, and to read
+      `margin recon` fixed to dump OSIP images, reserved, factory, eMMC boot areas, and to read
       root-only init*.rc/fstab via su; not re-run yet.
-- [x] `condor bootimg info|unpack|pack`: byte-identical repacks verified
+- [x] `margin bootimg info|unpack|pack`: byte-identical repacks verified
 - [x] `fastboot boot`: not available on this droidboot
 - [x] Signature test (2026-10-03): **signatures are enforced.** Recovery slot (sector 26050)
       overwritten via `dd` with a 1-byte-changed cmdline (same size): `reboot recovery` fell
@@ -160,42 +181,42 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       (md5 dd3e7835e36b8120435a62b099ed404a, equals the partition)
 - [x] Takeover hook installed: `/system/etc/install-recovery.sh` (stock flash_recovery service
       runs it as root at class main). Verified harmless when not armed.
-- [x] **Milestone 1** (2026-10-03): `condor takeover arm` + reboot → zygote/system_server
+- [x] **Milestone 1** (2026-10-03): `margin takeover arm` + reboot → zygote/system_server
       stopped, `/data/condor/condor-init` (Go, linux/386) as root draws a test pattern on
       psbfb (colours correct, but drawn in native coordinates it appeared rotated 90°) and
       serves a root shell on 127.0.0.1:2323 (`adb forward`).
       adbd keeps running. Backlight: /sys/class/backlight/psb-bl (was 23).
 - [x] Display fix: the panel scans out the read()/write() view of fb0; the mmap view is shifted
-      299 rows and ends early. condor-init draws into a RAM back buffer and flushes dirty rows
+      299 rows and ends early. margin-init draws into a RAM back buffer and flushes dirty rows
       with write(); verified by read-back. Backlight set to 80/100 at start.
-- [x] `condor takeover push <bin>` / `restart` (restart = touch trigger + `start flash_recovery`,
+- [x] `margin takeover push <bin>` / `restart` (restart = touch trigger + `start flash_recovery`,
       so init launches it detached; `su ... &` doesn't survive).
 - [x] **Milestone 2** (2026-10-03): touch works. Goodix event2, protocol B, raw X 0..1920 /
       Y 0..1200 in native fb orientation, mapped through the same Rot90 → strokes follow the
       finger. Follow-up: some touch-downs arrive with raw Y=0 in their first frame (logged as
       logical x=1199) → stray dot at the right edge; wait for both axes before drawing.
-- [x] `condor term` (2026-10-03): bridges to condor-init's root shell (127.0.0.1:2323) via
-      `adb forward`; requires takeover mode (condor-init running). Windows sends CRLF; term.go
+- [x] `margin term` (2026-10-03): bridges to margin-init's root shell (127.0.0.1:2323) via
+      `adb forward`; requires takeover mode (margin-init running). Windows sends CRLF; term.go
       strips `\r` from stdin or every command arrives as "id\r" (": not found"). `cli/term.go`.
-- [x] Clock: tablet boots at **2013** (no RTC battery), which breaks TLS. condor-init sets the
-      clock forward to its own install time at start (timefix_linux.go); `condor takeover push`
+- [x] Clock: tablet boots at **2013** (no RTC battery), which breaks TLS. margin-init sets the
+      clock forward to its own install time at start (timefix_linux.go); `margin takeover push`
       refreshes that. Manual alternative: `date -s` takes **local** time (fixed CET = UTC+1);
       `date -u +%s` is a toolbox bug (1 h off), verify with `date +%s`.
-- [x] Text + launcher (`os/condor-init/ui`, Go fonts): status bar, app list. Kept as a fallback;
+- [x] Text + launcher (`os/margin-init/ui`, Go fonts): status bar, app list. Kept as a fallback;
       the user preferred a Linux console. `go run ./cmd/ui-preview` renders it to PNG.
 - [x] **Linux console on the screen** (console.go, vt/): pty shell, VT100/xterm subset, colours,
-      Go Mono; `condor term` shares the session (raw mode on Windows, VT output, Ctrl+] leaves).
-      Known: htop etc. render for 73x57, so a smaller PowerShell window scrolls; condor-init
+      Go Mono; `margin term` shares the session (raw mode on Windows, VT output, Ctrl+] leaves).
+      Known: htop etc. render for 73x57, so a smaller PowerShell window scrolls; margin-init
       redraws glyphs from the font each time (CPU-heavy under htop; a glyph cache would fix it).
-- [x] **Alpine 3.24 (x86)** in /data/alpine: `condor alpine install` downloads the minirootfs
-      (sha256-checked), `condor-init untar` unpacks it (Android has no tar). Console = Alpine
-      login shell. apk uses http mirrors through condor-init's proxy.
-- [x] **Internet over USB**: `condor net` (no adb reverse on 4.2: reverse tunnel, see tunnel.go).
-- [x] **Autostart**: `condor takeover auto on` → every boot goes into condor, with the
+- [x] **Alpine 3.24 (x86)** in /data/alpine: `margin alpine install` downloads the minirootfs
+      (sha256-checked), `margin-init untar` unpacks it (Android has no tar). Console = Alpine
+      login shell. apk uses http mirrors through margin-init's proxy.
+- [x] **Internet over USB**: `margin net` (no adb reverse on 4.2: reverse tunnel, see tunnel.go).
+- [x] **Autostart**: `margin takeover auto on` → every boot goes into Margin, with the
       crash-loop fallback. Needed `install-hook` (the old one-shot hook ignored autostart).
 - [x] **Wi-Fi**: `wifi scan|connect|status|off|forget|debug` (see Recon findings for why it uses
       Condor's wpa_supplicant). Rejoins at boot; give it ~30-40 s after boot. Proxy retries once.
-- [x] **SSH over Wi-Fi**: `condor ssh setup` (openssh, PC's ed25519 key, sshd), sshd at boot.
+- [x] **SSH over Wi-Fi**: `margin ssh setup` (openssh, PC's ed25519 key, sshd), sshd at boot.
       Don't run `setup-alpine` (it's for real installs).
 - [x] **On-screen keyboard** (keyboard.go): bottom 616 px, console above it (73x38), terminal
       layout (esc tab ctrl alt arrows / numbers / letters / sym layer), one-shot shift/ctrl/alt,
@@ -207,7 +228,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       while off), volume keys = brightness (power.go), NTP at boot after Wi-Fi (busybox ntpd),
       shell TZ=WAT-1.
 - [x] **Launcher + settings** (pages.go, screens.go): boots to the launcher (terminal,
-      settings, books "coming soon"); "≡ condor" corner of the status bar = home from anywhere;
+      settings, books "coming soon"); "≡ Margin" corner of the status bar = home from anywhere;
       the terminal keeps running in the background. Settings: brightness, auto screen-off
       (never/1/5/10 min, idleLoop), Wi-Fi status + reconnect, battery, system, power (restart,
       power off, android = autostart off + reboot; two taps; via `setprop sys.powerctl`).
@@ -236,7 +257,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       lending-only = info; description fetched on demand). Full books first. Covers cached in
       /data/condor/covers, 3 loads at a time, 40 scaled in memory. Downloads try the no-images
       Gutenberg EPUB first; "read preview" = /data/condor/previews (newest 5), "download" =
-      /data/media/0/Books. HTTPS via condor-init's proxy with Alpine's CA bundle. Gutenberg OPFs
+      /data/media/0/Books. HTTPS via margin-init's proxy with Alpine's CA bundle. Gutenberg OPFs
       have `<meta property>text</meta>`: no xml.HTMLAutoClose in the epub package. Paid-book
       page previews (Google's viewer) need a browser: we show description + price instead.
 - [x] **Reader = Soma's reader** (reader.go core/layout/cache, readerui.go gestures+overlays,
@@ -290,41 +311,41 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
 - [x] **Update over Wi-Fi** (wifi-update.cmd/.ps1): git pull, build, scp to Alpine /tmp, md5
       check, then a detached (setsid) busybox script on the tablet installs into
       /proc/1/root/data/condor (init's root: the real /data/condor seen from the chroot), keeps
-      condor-init.bak, restarts via /system/bin/start flash_recovery (bind-mounted Android
-      toolbox) and rolls back if no condor-init runs 15 s later. PC polls /tmp/condor-update.log.
+      margin-init.bak, restarts via /system/bin/start flash_recovery (bind-mounted Android
+      toolbox) and rolls back if no margin-init runs 15 s later. PC polls /tmp/margin-update.log.
       Tested in simulation (good, broken, damaged); not yet on the tablet.
 - [x] Animations off by default (cfg.Animations, Settings > Display & Brightness > Motion):
       without a GPU every frame is CPU-pushed; instant changes feel fastest (e-reader style).
-- [x] **GPU works without Android's UI** (2026-10-03, os/condor-gl/gltest): PowerVR SGX 544MP,
+- [x] **GPU works without Android's UI** (2026-10-03, os/margin-gl/gltest): PowerVR SGX 544MP,
       OpenGL ES 2.0, swap 62 fps, full-screen texture upload 9.6 ms, full-screen slide 61.6 fps.
       Needs: Android's root + environment (ANDROID_PROPERTY_WORKSPACE from init; run via the
-      2324 shell or from condor-init), SurfaceFlinger stopped, and `-mstackrealign` (bionic 4.2
+      2324 shell or from margin-init), SurfaceFlinger stopped, and `-mstackrealign` (bionic 4.2
       enters main with a 4-byte aligned stack; clang's movaps faulted). Crash reports:
       /data/tombstones + logcat (gl-run.sh prints both). A crashed GL program can leave the
       display grey/green: reboot (don't FBIOPAN by hand; that made it green).
 - [x] **GPU animations: dead end on this panel** (2026-10-03). glanim (gpu.go, gpu_linux.go,
-      os/condor-gl/glanim.c → glanim.bin) works and gpu_test.go matches its quads to the CPU
+      os/margin-gl/glanim.c → glanim.bin) works and gpu_test.go matches its quads to the CPU
       frames, but on the tablet the screen goes black. gl-show proved it: the GPU renders
-      correctly (glReadPixels matches condor's screen) yet nothing it posts through
+      correctly (glReadPixels matches Margin's screen) yet nothing it posts through
       FramebufferNativeWindow is shown (fb0 virtual 1920x1200, pan 0,0; power off/on doesn't
-      restore condor either; reboot does). Android displays via Intel's hardware composer,
+      restore Margin either; reboot does). Android displays via Intel's hardware composer,
       which only SurfaceFlinger drives. Readback + write() would cost what the CPU path costs.
       (Superseded 2026-10-06: the SurfaceFlinger route below works; glanim is no longer used.)
 - [x] **Books is the whole system, dark by default** (2026-10-03, user: "boot to kindle directly
       with dark mode, no launcher; terminal and settings as tabs"). No home screen (launcher,
-      wallpaper and app icons deleted). condor starts on Books Home; tab bar: Home · Library ·
+      wallpaper and app icons deleted). Margin starts on Books Home; tab bar: Home · Library ·
       Store · Words · Terminal · Settings · search. Settings' "‹ Books" and the left of the
       status bar ("‹ Books" in Terminal) go back. Dark Mode (Settings > Display & Brightness,
       or the reader's half moon; cfg "light", default dark) switches every screen
       (setPalette: iOS dark colours, apBand/apCard/apGrouped) and books (Night theme;
       ThemeSet 3 migration puts books in Night once).
 - [x] **Update from the tablet itself** (2026-10-04): `update` in the Terminal tab (Alpine,
-      /usr/local/bin/update = os/condor-init/update.sh, embedded and written at boot). It
-      installs go + curl with apk (once), downloads the public repo's condor-linux branch as
-      a codeload tarball into /root/condor-src (not git: Alpine's git needs getrandom(),
-      ENOSYS on kernel 3.4), builds condor-init on the tablet (GOTMPDIR on flash,
+      /usr/local/bin/update = os/margin-init/update.sh, embedded and written at boot). It
+      installs go + curl with apk (once), downloads the public margin repo's main branch as
+      a codeload tarball into /root/margin-src (not git: Alpine's git needs getrandom(),
+      ENOSYS on kernel 3.4), builds margin-init on the tablet (GOTMPDIR on flash,
       GOTOOLCHAIN=auto), then the same detached installer as wifi-update (backup, restart,
-      rollback); log in /tmp/condor-update.log. **Verified on the tablet 2026-10-04 (DONE).** First time (before condor-init carries it):
+      rollback); log in /tmp/margin-update.log. **Verified on the tablet 2026-10-04 (DONE).** First time (before margin-init carries it):
       curl the raw update.sh (busybox wget https went through the proxy's own fetch, which had no CA certs before c930cc5). Dry-run tested on the PC (fetch, build, installer syntax).
 - [x] **Easier terminal** (2026-10-04, termui.go, vt scrollback): 3000 lines of scrollback
       (vt keeps lines that scroll off a full-screen region; `clear`'s ESC[3J forgets them),
@@ -339,7 +360,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       names (letters/marks/digits, " (2)" for duplicates), kept only if epub.Open works, max
       300 MB; Library + Settings > Wi-Fi show the address; toast "N books received".
 - [x] **Lock screen + power save** (2026-10-04, lock.go): waking shows time, date and the book
-      being read (cover, title, progress) on the cover's colour; tap opens condor where it was
+      being read (cover, title, progress) on the cover's colour; tap opens Margin where it was
       (Settings > Display > Lock Screen switch, cfg no_lock_screen). Screen off: cpufreq
       governors → powersave and `iw dev wlan0 set power_save on`, restored on wake (only when
       /system/bin/linker exists, i.e. on the tablet). Not verified on the tablet yet.
@@ -364,18 +385,18 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Library: 48 books per tall page; Store: 24 per tall page, 26 topics in a sideways capsule
       row. Tests: scroll_test.go; tests switch off Home's background loads/redraws
       (homeLoads/backgroundRedraws) and get longer waits under -race (raceOn).
-- [x] **GPU through SurfaceFlinger works** (2026-10-06, os/condor-gl/glsf.cpp): on this panel only
+- [x] **GPU through SurfaceFlinger works** (2026-10-06, os/margin-gl/glsf.cpp): on this panel only
       SurfaceFlinger reaches the screen. glsf asks it for a full-screen layer (libgui's C++ API
       called by mangled name through dlsym: sp<T> returns use a callee-popped hidden pointer on
       i386; EGL needs the ANativeWindow found by its '_wnd' magic 8 bytes into the Surface).
       SurfaceFlinger is commented out of init.rc (Android runs it in system_server), so
-      /system/bin/surfaceflinger is run directly. Verified on the tablet: 58-59 fps, condor's
+      /system/bin/surfaceflinger is run directly. Verified on the tablet: 58-59 fps, Margin's
       screen, red, gradient all shown (gl-sf.cmd).
-- [x] **condor draws through the GPU** (2026-10-06, gpu.go, gpu_linux.go, gpuscroll.go,
-      os/condor-gl/condorsf.cpp → condorsf.bin): Settings > Display & Brightness > "Draw With the
-      GPU" (flag /data/condor/gpu, off by default). condor-init starts SurfaceFlinger + the
-      condorsf helper, which keeps a layer; the screen buffer (s.buf) moves into shared memory
-      (/dev/condor-gl.shm) and Screen.dev becomes gpuWriter: Flush = upload the changed rows +
+- [x] **Margin draws through the GPU** (2026-10-06, gpu.go, gpu_linux.go, gpuscroll.go,
+      os/margin-gl/marginsf.cpp → marginsf.bin): Settings > Display & Brightness > "Draw With the
+      GPU" (flag /data/condor/gpu, off by default). margin-init starts SurfaceFlinger + the
+      marginsf helper, which keeps a layer; the screen buffer (s.buf) moves into shared memory
+      (/dev/margin-gl.shm) and Screen.dev becomes gpuWriter: Flush = upload the changed rows +
       show. Tall pages (≤ 10000 rows) go to the GPU in 1024-row slices, only those on screen, at
       most 4 at a time (the whole Home page at once, ~37 MB, made touch unresponsive), and scroll as an
       overlay quad at 60 fps, always following the finger, with a fling (tau 0.45 s); sideways
@@ -384,7 +405,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       the layer is up (found at boot = GPU turned off). **Once SurfaceFlinger has had the panel,
       the framebuffer never shows again until a reboot** (verified 2026-10-06: killing it +
       FBIOBLANK powerdown/unblank left the screen black). So: a SurfaceFlinger already running
-      (left by the condor before an update) means the screen goes through the GPU for that
+      (left by the Margin before an update) means the screen goes through the GPU for that
       session, whatever the setting; a helper failure or failed start while SurfaceFlinger runs
       → flag removed + reboot (gpuReboot). Turning it off restarts the tablet. Tests:
       gpuscroll_test.go (software model of the helper; overlay pixels == blitPage). **Not yet
@@ -443,17 +464,18 @@ Update this checklist as things are done.
    `fastboot flash|erase|format|oem|update`, `dd of=/dev/block/...`, wipe/reset actions.
    Reading (`getvar`, `dd if=`, `pull`, `getprop`) is fine.
 2. Before the first flash: we must have the **stock TRA-901G 4.2.2 firmware** + Intel
-   flash tool downloaded and a recon backup (`condor-recon-*.zip`) saved off the tablet.
+   flash tool downloaded and a recon backup (`margin-recon-*.zip`) saved off the tablet.
 3. `fastboot boot` is unavailable here. Don't use `fastboot flash` (it rewrites the OSIP in
    sector 0). Never touch sector 0 or the boot/fastboot/recovery OSIP slots: the firmware
    enforces signatures, so changing them gains nothing. The only /system change is the hook
-   file, written with `condor takeover install-hook` (md5-checked, /system back to ro).
+   file, written with `margin takeover install-hook` (md5-checked, /system back to ro).
    /system backup: `C:\Users\pro\condor-backup\dumps\system.img` (+ microSD `condor/`).
 4. Explain risk in plain words before anything that could fail to boot.
 5. The user is a beginner-to-intermediate: short steps, exact commands, PowerShell syntax.
 
 ## Conventions
 - Go code in `cli/` (Windows tool) and `os/` (tablet userspace). `gofmt`, `go vet` before commit.
-- The tablet is **32-bit (386)**: before pushing condor-init, `GOOS=linux GOARCH=386 go build` and
+- The tablet is **32-bit (386)**: before pushing margin-init, `GOOS=linux GOARCH=386 go build` and
   `GOARCH=386 go test ./...` (a 1<<62 constant once broke the tablet's own `update` build).
-- Commit to the `condor-linux` branch. No model names in commits.
+- Work in github.com/aminoulogie/margin, branch `main` (the project moved there from the
+  condor-linux folder of aminoulogie/ipakill, which is private now). No model names in commits.

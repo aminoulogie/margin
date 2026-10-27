@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// condor net: internet for the tablet over USB. Android 4.2 has no "adb reverse", so this
-// keeps a control connection open to condor-init (127.0.0.1:2325 on the tablet). Each time a
-// program on the tablet uses the proxy (127.0.0.1:3128 there), condor-init sends "OPEN n";
+// margin net: internet for the tablet over USB. Android 4.2 has no "adb reverse", so this
+// keeps a control connection open to margin-init (127.0.0.1:2325 on the tablet). Each time a
+// program on the tablet uses the proxy (127.0.0.1:3128 there), margin-init sends "OPEN n";
 // we connect back with "DATA n" and act as an HTTP proxy on that connection, using the PC's
 // internet. Leave it running in its own window.
 const netPort = "2325"
@@ -30,7 +30,7 @@ func netCmd(args []string) error {
 	for {
 		err := netSession("127.0.0.1:" + netPort)
 		if !waiting {
-			fmt.Printf("waiting for condor-init on the tablet (%v)...\n", err)
+			fmt.Printf("waiting for margin-init on the tablet (%v)...\n", err)
 			waiting = true
 		}
 		time.Sleep(2 * time.Second)
@@ -56,7 +56,7 @@ func netSession(addr string) error {
 		line, err := r.ReadString('\n')
 		if err != nil {
 			if !connected {
-				return fmt.Errorf("tablet closed the connection: is the new condor-init running? (dev.cmd)")
+				return fmt.Errorf("tablet closed the connection: is the new margin-init running? (dev.cmd)")
 			}
 			fmt.Println("tablet disconnected")
 			return err

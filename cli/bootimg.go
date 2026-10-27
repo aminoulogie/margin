@@ -144,7 +144,7 @@ func allZero(b []byte) bool {
 
 func bootimg(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: condor bootimg info <img> | unpack <img> [dir] | pack <dir> <out.img>")
+		return fmt.Errorf("usage: margin bootimg info <img> | unpack <img> [dir] | pack <dir> <out.img>")
 	}
 	switch args[0] {
 	case "info":
@@ -166,7 +166,7 @@ func bootimg(args []string) error {
 		return bootimgUnpack(args[1], dir)
 	case "pack":
 		if len(args) < 3 {
-			return fmt.Errorf("usage: condor bootimg pack <dir> <out.img>")
+			return fmt.Errorf("usage: margin bootimg pack <dir> <out.img>")
 		}
 		return bootimgPack(args[1], args[2])
 	}
