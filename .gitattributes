@@ -1,2 +1,5 @@
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+# Shell scripts run on the tablet: Windows line endings break them ("update: not found"
+# when the #!/bin/sh line ends in a CR).
+*.sh text eol=lf

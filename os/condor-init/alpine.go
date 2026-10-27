@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"log"
 	"os"
@@ -59,7 +60,9 @@ func configureAlpine() {
 	os.MkdirAll(alpineRoot+"/usr/local/bin", 0o755)
 	os.WriteFile(alpineRoot+"/usr/local/bin/wifi", []byte(wifiScript), 0o755)
 	os.Chmod(alpineRoot+"/usr/local/bin/wifi", 0o755)
-	os.WriteFile(alpineRoot+"/usr/local/bin/update", updateScript, 0o755) // condor updates itself
+	// condor updates itself. Without carriage returns: a condor built on Windows can carry the
+	// script with CRLF line endings, and "#!/bin/sh\r" made the shell say "update: not found".
+	os.WriteFile(alpineRoot+"/usr/local/bin/update", bytes.ReplaceAll(updateScript, []byte("\r"), nil), 0o755)
 	os.Chmod(alpineRoot+"/usr/local/bin/update", 0o755)
 	repos := alpineRoot + "/etc/apk/repositories"
 	if b, err := os.ReadFile(repos); err == nil {

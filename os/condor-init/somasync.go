@@ -313,7 +313,6 @@ func (s *somaStore) saveLocked() {
 	time.AfterFunc(700*time.Millisecond, func() { s.saveTo(dir) })
 }
 
-
 func (s *somaStore) saveTo(dir string) {
 	s.saveMu.Lock() // one writer of state.json at a time
 	defer s.saveMu.Unlock()
