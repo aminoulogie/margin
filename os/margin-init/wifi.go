@@ -71,7 +71,7 @@ join() {
 	# The supplicant runs as the wifi user: give it its config and socket directory.
 	rm -rf $SOCK; mkdir -p $SOCK
 	chown $WIFI_UID:$WIFI_UID $SOCK; chmod 770 $SOCK
-	mkdir -p /etc/condor
+	mkdir -p /etc/condor; chown $WIFI_UID:$WIFI_UID /etc/condor # the supplicant needs its folder
 	sed "s#^ctrl_interface=.*#ctrl_interface=$SOCK#" $CONF > $RUNCONF
 	chown $WIFI_UID:$WIFI_UID $RUNCONF; chmod 600 $RUNCONF
 	$SUP -B -i $IF -Dnl80211 -c $RUNCONF >>$LOG 2>&1 || {
