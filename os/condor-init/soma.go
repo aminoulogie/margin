@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type somaUI struct {
 	editing string
 	url     string // the sync address, typed before the code
 	msg     string // the last thing that went wrong
+	slotY   int    // page y under the to-do being typed on the timeline
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -63,10 +65,7 @@ func (c *console) somaPage() *page {
 	}
 	soma.mu.Unlock()
 
-	h := 3000
-	if su.view == "today" {
-		h = 2400
-	}
+	h := map[string]int{"today": 2400, "calendar": 4800, "reports": 3000}[su.view]
 	img := canvas(w, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -378,21 +377,6 @@ func (c *console) somaCalendar(p *page, y int) int {
 	// The chosen day.
 	sel, _ := time.ParseInLocation("2006-01-02", su.sel, displayZone)
 	y = somaSection(img, mx, y, sel.Format("Monday 2 January"), "")
-	if plan := somaPlan(su.sel); len(plan) > 0 {
-		for _, b := range plan {
-			r := image.Rect(mx, y, w-mx, y+76)
-			ui.RoundRect(img, r, 18, apCard)
-			ui.RoundRect(img, image.Rect(r.Min.X, r.Min.Y, r.Min.X+12, r.Max.Y), 6, somaColour(b.Color, apBlue))
-			apText(img, f.headline, r.Min.X+36, r.Min.Y+50, apLabel, clockOf(b.Start)+" – "+clockOf(b.Start+b.Hours))
-			apText(img, f.body, r.Min.X+320, r.Min.Y+50, apLabel, clip(f.body, b.Label, r.Dx()-500))
-			apText(img, f.caption, r.Max.X-130, r.Min.Y+48, apSecondary, fmt.Sprintf("%.2gh", b.Hours))
-			y += 86
-		}
-	} else {
-		apText(img, f.callout, mx, y+30, apSecondary, "No plan for this day (plan it in Soma).")
-		y += 60
-	}
-	y += 10
 	if s := somaTraining(su.sel); s != nil {
 		apText(img, f.headline, mx, y+40, apLabel, "Training: "+s.Split)
 		apText(img, f.callout, mx, y+84, apSecondary, fmt.Sprintf("%s  ·  %d sets  ·  %.0f kg volume  ·  %.0f kcal", s.Duration, s.Sets, s.Volume, s.Calories))
@@ -403,16 +387,158 @@ func (c *console) somaCalendar(p *page, y int) int {
 		apText(img, f.callout, mx, y+84, apSecondary, fmt.Sprintf("%.0f / %.0f kcal  ·  protein %.0f / %.0f g  ·  carbs %.0f g  ·  fat %.0f g", n.Cals, n.GoalCals, n.P, n.GoalP, n.C, n.F))
 		y += 110
 	}
+	y = c.somaTimeline(p, y+10, todos)
 	var items []somaTodo
 	for _, t := range todos {
-		if t.on(su.sel) && !t.Cleared {
+		if t.on(su.sel) && !t.Cleared && t.SlotDate != su.sel { // the rest are on the timeline
 			items = append(items, t)
 		}
 	}
-	y = somaSection(img, mx, y, "To-dos", "")
+	y = somaSection(img, mx, y, "To-dos", "not at a time")
 	y = c.somaTodoRows(p, items, y)
 	y = c.somaAddRow(p, "day", "Add a to-do for this day", y)
 	return y
+}
+
+// --- the day, hour by hour --------------------------------------------------------------------
+
+const somaHourH = 84 // pixels an hour on the timeline
+
+type somaEvent struct {
+	start, end      int // minutes from midnight
+	label           string
+	col             color.RGBA
+	done            bool
+	id              string // a to-do's: tapping ticks it
+	column, columns int
+}
+
+// somaTimeline draws the chosen day the way Soma's day view does (lib/timeline.ts): the day
+// plan faintly behind, the training session when it happened, and to-dos at their times.
+// Tapping an empty half hour puts a new to-do there. Returns the y under it.
+func (c *console) somaTimeline(p *page, y int, todos []somaTodo) int {
+	f := apple()
+	img := p.img
+	w, mx := c.s.W, 48
+	su := &c.somaUI
+	date := su.sel
+	var evs []somaEvent
+	for _, t := range todos {
+		if t.SlotDate == date && !t.Cleared {
+			evs = append(evs, somaEvent{start: t.SlotStart, end: t.SlotStart + max(t.SlotMins, 15), label: t.Text, col: apBlue, done: t.Done, id: t.ID})
+		}
+	}
+	if s := somaTraining(date); s != nil && !s.Ended.IsZero() && somaDate(s.Ended) == date {
+		end := s.Ended.Hour()*60 + s.Ended.Minute()
+		start := max(min(end-int(s.minutes()+0.5), end-15), 0)
+		evs = append(evs, somaEvent{start: start, end: max(end, start+15), label: "Workout · " + s.Split, col: rgb(0xff9f0a), done: true})
+	}
+	if m, ok := strings.CutPrefix(su.field, "at:"); ok && su.typing { // the one being typed
+		at, _ := strconv.Atoi(m)
+		evs = append(evs, somaEvent{start: at, end: at + 30, label: su.editing + "|", col: rgb(0x30d158)})
+	}
+	first := 5
+	for _, e := range evs {
+		first = min(first, e.start/60)
+	}
+	y = somaSection(img, mx, y, "Plan the day", "tap a time to add a to-do there")
+	top := y + 10
+	x0, x1 := mx+120, w-mx
+	yOf := func(min int) int { return top + (min-first*60)*somaHourH/60 }
+
+	// The plan, behind: each block from its start, around midnight if it crosses it.
+	for _, b := range somaPlan(date) {
+		s0 := int(b.Start*60 + 0.5)
+		e0 := s0 + int(b.Hours*60+0.5)
+		col := somaColour(b.Color, apBlue)
+		for _, seg := range [][2]int{{s0, min(e0, 1440)}, {0, e0 - 1440}} {
+			a, z := max(seg[0], first*60), min(seg[1], 1440)
+			if a >= z {
+				continue
+			}
+			r := image.Rect(x0, yOf(a), x1, yOf(z))
+			ui.Fill(img, r, blend(col, apBG, 0.84))
+			ui.Fill(img, image.Rect(x1-8, r.Min.Y, x1, r.Max.Y), blend(col, apBG, 0.5))
+			if r.Dy() >= 34 && a == max(s0, first*60) {
+				apText(img, f.caption, x1-24-ui.TextWidth(f.caption, b.Label), r.Min.Y+28, blend(col, apLabel, 0.45), b.Label)
+			}
+		}
+	}
+	for h := first; h <= 24; h++ {
+		yy := yOf(h * 60)
+		ui.Fill(img, image.Rect(x0, yy, x1, yy+1), apSeparator)
+		if h < 24 {
+			apText(img, f.caption, mx, yy+20, apSecondary, fmt.Sprintf("%02d:00", h))
+		}
+	}
+	if date == somaToday() { // now
+		now := time.Now().In(displayZone)
+		if m := now.Hour()*60 + now.Minute(); m >= first*60 {
+			ny := yOf(m)
+			ui.Fill(img, image.Rect(x0, ny-1, x1, ny+2), apRed)
+			ui.Circle(img, x0, ny, 7, apRed)
+		}
+	}
+
+	// Events side by side where they overlap, as Calendar lays out a double booking.
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].start < evs[j].start })
+	for i := 0; i < len(evs); {
+		j, end := i, evs[i].end
+		var colEnds []int
+		for ; j < len(evs) && (j == i || evs[j].start < end); j++ {
+			e := &evs[j]
+			e.column = -1
+			for k, ce := range colEnds {
+				if ce <= e.start {
+					e.column, colEnds[k] = k, e.end
+					break
+				}
+			}
+			if e.column < 0 {
+				e.column = len(colEnds)
+				colEnds = append(colEnds, e.end)
+			}
+			end = max(end, e.end)
+		}
+		for k := i; k < j; k++ {
+			evs[k].columns = len(colEnds)
+		}
+		i = j
+	}
+	for _, e := range evs {
+		cw := (x1 - x0 - 8) / e.columns
+		r := image.Rect(x0+4+e.column*cw, yOf(e.start)+2, x0+4+(e.column+1)*cw-4, yOf(e.end)-2)
+		r.Max.Y = max(r.Max.Y, r.Min.Y+40)
+		bg, fg := blend(e.col, apBG, 0.55), apLabel
+		if e.done && e.id != "" {
+			bg, fg = apCard2, apSecondary
+		}
+		ui.RoundRect(img, r, 12, bg)
+		ui.RoundRect(img, image.Rect(r.Min.X, r.Min.Y, r.Min.X+8, r.Max.Y), 4, e.col)
+		tx := r.Min.X + 22
+		if e.id != "" { // a to-do: its tick
+			cy := r.Min.Y + 20
+			ui.Circle(img, tx+12, cy, 13, e.col)
+			if e.done {
+				iconCheck(img, tx+3, cy, rgb(0xffffff))
+			} else {
+				ui.Circle(img, tx+12, cy, 10, bg)
+			}
+			tx += 46
+		}
+		label := clockOf(float64(e.start)/60) + "  " + e.label
+		apText(img, f.callout, tx, r.Min.Y+30, fg, clip(f.callout, label, r.Max.X-tx-12))
+		if m, ok := strings.CutPrefix(su.field, "at:"); ok && su.typing && e.id == "" && e.col == rgb(0x30d158) && m == strconv.Itoa(e.start) {
+			su.slotY = r.Max.Y
+		}
+		if e.id != "" {
+			p.buttons = append(p.buttons, button{"so:todo:" + e.id, r})
+		}
+	}
+	for m := first * 60; m < 1440; m += 30 { // the empty half hours (after the events: they win)
+		p.buttons = append(p.buttons, button{fmt.Sprintf("so:at:%d", m), image.Rect(x0, yOf(m), x1, yOf(m+30))})
+	}
+	return yOf(1440) + 40
 }
 
 func (c *console) somaReports(p *page, y int) int {
@@ -541,7 +667,11 @@ func (c *console) somaTap(id string) bool {
 	}
 	su := &c.somaUI
 	su.msg = ""
-	if su.typing && !strings.HasPrefix(id, "so:type:") {
+	field := strings.TrimPrefix(id, "so:type:")
+	if at, ok := strings.CutPrefix(id, "so:at:"); ok {
+		field = "at:" + at
+	}
+	if su.typing && field != su.field {
 		c.somaDone() // a tap elsewhere: what was typed is kept
 	}
 	switch {
@@ -564,6 +694,16 @@ func (c *console) somaTap(id string) bool {
 		su.month = su.month.AddDate(0, d, 0)
 	case strings.HasPrefix(id, "so:day:"):
 		su.sel = strings.TrimPrefix(id, "so:day:")
+	case strings.HasPrefix(id, "so:at:"):
+		if !su.typing {
+			su.typing, su.field, su.editing = true, field, ""
+		}
+		c.skb.visible = true
+		c.showPage()
+		// Keep the slot being typed in above the keyboard.
+		if sy := c.barH + su.slotY - c.scrollY(); sy > c.skb.y0-30 {
+			c.setScroll(modeSoma, c.scrollY()+sy-(c.skb.y0-30))
+		}
 	case strings.HasPrefix(id, "so:type:"):
 		f := strings.TrimPrefix(id, "so:type:")
 		if !su.typing || su.field != f {
@@ -632,6 +772,11 @@ func (c *console) somaDone() {
 		} else {
 			su.msg = ""
 			go soma.sync()
+		}
+	default:
+		if at, ok := strings.CutPrefix(su.field, "at:"); ok {
+			m, _ := strconv.Atoi(at)
+			somaAddTodoAt(text, su.sel, m, 30)
 		}
 	}
 }

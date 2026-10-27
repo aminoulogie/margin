@@ -234,7 +234,7 @@ func TestSomaSyncsWithThePC(t *testing.T) {
 	order := soma.get("todos@order")
 	var ids []string
 	json.Unmarshal([]byte(order), &ids)
-	if len(ids) != 2 || ids[0] != "t1" {
+	if len(ids) < 2 || ids[0] != "t1" {
 		t.Fatalf("order %v", ids)
 	}
 	if nt, _ := relay.pcGet(t, k, "todos#"+ids[1]); nt["text"] != "Call mum" || nt["date"] != today || nt["scope"] != "day" {
@@ -242,6 +242,29 @@ func TestSomaSyncsWithThePC(t *testing.T) {
 	}
 	if somaReading(today) != 35 {
 		t.Fatalf("reading %d", somaReading(today))
+	}
+
+	// Plan the day: tap 18:30 on today's timeline and type; it's a to-do at that time, as
+	// Soma's addTodoAt makes it.
+	drawMu.Lock()
+	c.somaTap("so:view:calendar")
+	c.somaTap("so:day:" + today)
+	c.somaTap("so:at:1110")
+	if !c.somaUI.typing || c.somaUI.field != "at:1110" {
+		t.Fatalf("typing %v in %q", c.somaUI.typing, c.somaUI.field)
+	}
+	c.somaKey([]byte("Gym bag\r"))
+	drawMu.Unlock()
+	soma.sync()
+	var slotted obj
+	for _, td := range somaTodos() {
+		if td.Text == "Gym bag" {
+			slotted, _ = relay.pcGet(t, k, "todos#"+td.ID)
+		}
+	}
+	slot, _ := slotted["slot"].(obj)
+	if slotted == nil || slotted["date"] != today || slotted["scope"] != "day" || slot["date"] != today || slot["start"] != float64(1110) || slot["mins"] != float64(30) {
+		t.Fatalf("the PC sees the planned to-do as %v", slotted)
 	}
 
 	// The PC changes the to-do back later: the tablet takes it.

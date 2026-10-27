@@ -47,17 +47,20 @@ type somaLink struct {
 }
 
 type somaStore struct {
-	mu      sync.Mutex
-	loaded  bool
-	link    *somaLink
-	keys    *somaKeys
-	Device  string             `json:"device"`
-	Seq     int64              `json:"seq"`
-	Recs    map[string]somaRec `json:"recs"`
-	LastOK  time.Time          `json:"last_ok"`
-	lastErr string
-	running bool
-	changed func() // called (without locks) after a pull brought something new
+	mu          sync.Mutex
+	saveMu      sync.Mutex
+	savePending bool
+	loaded      bool
+	Fields      int `json:"fields"` // somaFieldsVersion the records were pulled with
+	link        *somaLink
+	keys        *somaKeys
+	Device      string             `json:"device"`
+	Seq         int64              `json:"seq"`
+	Recs        map[string]somaRec `json:"recs"`
+	LastOK      time.Time          `json:"last_ok"`
+	lastErr     string
+	running     bool
+	changed     func() // called (without locks) after a pull brought something new
 }
 
 var soma = &somaStore{Recs: map[string]somaRec{}}
@@ -222,6 +225,14 @@ func (s *somaStore) load() {
 		if s.Recs == nil {
 			s.Recs = map[string]somaRec{}
 		}
+		for k, r := range s.Recs { // kinds no longer kept (older condors kept everything)
+			if !somaFields[somaField(k)] && !r.Dirty {
+				delete(s.Recs, k)
+			}
+		}
+		if s.Fields != somaFieldsVersion { // kinds kept now that weren't: pull them again
+			s.Fields, s.Seq = somaFieldsVersion, 0
+		}
 		var l somaLink
 		if b, err := os.ReadFile(filepath.Join(somaDir, "link.json")); err == nil && json.Unmarshal(b, &l) == nil {
 			s.setLinkLocked(l)
@@ -291,16 +302,53 @@ func (s *somaStore) saveLinkLocked() {
 	os.Remove(filepath.Join(somaDir, "link.txt"))
 }
 
+// saveLocked writes the records to flash a moment from now, off whatever called it (a tap
+// on the Soma tab must not wait for that). Caller holds s.mu.
 func (s *somaStore) saveLocked() {
-	os.MkdirAll(somaDir, 0o700)
+	if s.savePending {
+		return
+	}
+	s.savePending = true
+	dir := somaDir
+	time.AfterFunc(700*time.Millisecond, func() { s.saveTo(dir) })
+}
+
+// saveNow writes the records to flash.
+func (s *somaStore) saveNow() { s.saveTo(somaDir) }
+
+func (s *somaStore) saveTo(dir string) {
+	s.saveMu.Lock() // one writer of state.json at a time
+	defer s.saveMu.Unlock()
+	s.mu.Lock()
+	s.savePending = false
 	b, err := json.Marshal(s)
+	s.mu.Unlock()
 	if err != nil {
 		return
 	}
-	f := filepath.Join(somaDir, "state.json")
+	os.MkdirAll(dir, 0o700)
+	f := filepath.Join(dir, "state.json")
 	if os.WriteFile(f+".new", b, 0o600) == nil {
 		os.Rename(f+".new", f)
 	}
+}
+
+// somaFields are the kinds of record the Soma tab shows or changes; the rest of Soma (face
+// scans, money, pantry...) isn't kept on the tablet. somaFieldsVersion changes with the list,
+// which makes the tablet pull everything again to pick up the kinds it didn't keep.
+var somaFields = map[string]bool{"habits": true, "todos": true, "dayPlans": true, "reading": true, "history": true, "nutrition": true}
+
+const somaFieldsVersion = 1
+
+// somaField is the part of Soma's state a record belongs to (records.ts, fieldOf).
+func somaField(key string) string {
+	if strings.HasPrefix(key, "settings.") {
+		return "settings"
+	}
+	if i := strings.IndexAny(key, "#/@"); i > 0 {
+		return key[:i]
+	}
+	return key
 }
 
 func (s *somaStore) linked() bool {
@@ -411,9 +459,9 @@ func (s *somaStore) sync() {
 	} else {
 		s.lastErr, s.LastOK = "", time.Now()
 	}
-	s.saveLocked()
 	changed := s.changed
 	s.mu.Unlock()
+	s.saveNow()
 	if got > 0 && changed != nil {
 		changed()
 	}
@@ -451,6 +499,9 @@ func (s *somaStore) pull(ctx context.Context) (int, error) {
 			e, err := s.keys.open(it.Blob)
 			if err != nil || e.Device == s.Device {
 				continue // not ours to read, or our own echo
+			}
+			if !somaFields[somaField(e.Key)] {
+				continue // a part of Soma the tablet doesn't show
 			}
 			r, have := s.Recs[e.Key]
 			if r.Dirty || !newer(e, r, have) {

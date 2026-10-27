@@ -424,6 +424,13 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       (month; day's plan blocks with times, to-dos, training, food), Reports (training 2
       weeks, nutrition 7 days, habits this week, reading). Link: type address + code in the
       tab, or soma-link.cmd on the PC (asks both, writes link.txt over ssh; picked up live).
+      Only habits/todos/dayPlans/reading/history/nutrition records are kept (somaFields;
+      changing the list bumps somaFieldsVersion → re-pull from seq 0); state.json is written
+      700 ms after a change, off the touch path (a full vault rewritten per tap could freeze).
+      Calendar day = "Plan the day" timeline like Soma's (timeline.ts): plan blocks faint
+      behind, the workout from history.timestamp − duration, slotted to-dos (overlaps in
+      columns); tapping an empty half hour types a to-do there (somaAddTodoAt = addTodoAt +
+      setTodoSlot: date = slot.date, scope day, cleanSlot to 15 min).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

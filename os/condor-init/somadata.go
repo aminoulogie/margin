@@ -229,6 +229,26 @@ func somaAddTodo(text, scope, date string) {
 	somaPut("todos@order", order)
 }
 
+// somaAddTodoAt is Soma's addTodoAt: a to-do put on a day at a time (start and length in
+// minutes from midnight), on that day's list (setTodoSlot, with timeline.ts's cleanSlot).
+func somaAddTodoAt(text, date string, start, mins int) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	const day, step = 24 * 60, 15
+	start = min(max((start+step/2)/step*step, 0), day-step)
+	mins = min(max((mins+step/2)/step*step, step), day-start)
+	id := somaNewID()
+	somaPut("todos#"+id, obj{"id": id, "text": text, "done": false, "date": date, "scope": "day",
+		"cleared": false, "slot": obj{"date": date, "start": start, "mins": mins}})
+	var order []string
+	for _, t := range somaList("todos") {
+		order = append(order, str(t["id"]))
+	}
+	somaPut("todos@order", order)
+}
+
 // --- reading, plans, reports ----------------------------------------------------------------
 
 func somaReading(date string) int { return int(num(jsonValue(soma.get("reading/" + date)))) }
@@ -299,6 +319,16 @@ type somaSession struct {
 	Date, Split, Duration string
 	Sets                  int
 	Volume, Calories      float64
+	Ended                 time.Time // when it was saved (Train's timestamp); zero if unknown
+}
+
+// minutes is how long it ran: "45:30" is 45.5 minutes (timeline.ts, durationMinutes).
+func (s *somaSession) minutes() float64 {
+	var m, sec int
+	if n, _ := fmt.Sscanf(s.Duration, "%d:%d", &m, &sec); n == 2 && sec < 60 {
+		return float64(m) + float64(sec)/60
+	}
+	return 0
 }
 
 func somaTraining(date string) *somaSession {
@@ -306,8 +336,12 @@ func somaTraining(date string) *somaSession {
 	if o == nil {
 		return nil
 	}
-	return &somaSession{Date: date, Split: str(o["split"]), Duration: str(o["durationFormatted"]),
+	s := &somaSession{Date: date, Split: str(o["split"]), Duration: str(o["durationFormatted"]),
 		Sets: int(num(o["totalSets"])), Volume: num(o["totalVol"]), Calories: num(o["caloriesBurned"])}
+	if ts := num(o["timestamp"]); ts > 0 {
+		s.Ended = time.UnixMilli(int64(ts)).In(displayZone)
+	}
+	return s
 }
 
 type somaFood struct {
