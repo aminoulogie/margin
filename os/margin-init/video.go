@@ -1802,8 +1802,8 @@ func setupSound() {
 				continue
 			}
 			ctl := m[1] + "," + m[2]
-			if err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "85%", "unmute").Run(); err != nil {
-				alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "on").Run()
+			if err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", card, "sset", ctl, "85%", "unmute").Run(); err != nil {
+				alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", card, "sset", ctl, "on").Run()
 			}
 		}
 		log.Printf("playbox: mixer set up")
