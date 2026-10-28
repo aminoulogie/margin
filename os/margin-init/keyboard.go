@@ -346,7 +346,7 @@ func (kb *keyboard) touch(p TouchPoint) {
 	}
 	prev := kb.pressed[p.Slot]
 	// The space bar is a trackpad, as on iOS: hold it and slide, and the cursor follows.
-	if prev != nil && prev.out == " " && prev.act == actType && kb.dark {
+	if prev != nil && prev.out == " " && prev.act == actType {
 		if p.Moved {
 			if _, on := kb.track[p.Slot]; !on && abs(p.X-kb.downX[p.Slot]) > trackStep {
 				kb.track[p.Slot] = kb.downX[p.Slot]

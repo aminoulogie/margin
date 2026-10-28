@@ -60,6 +60,7 @@ type console struct {
 	winding          bool                     // wind-down: warm and dim
 	weather          weatherNow               // Algiers, for the morning
 	somaReadSecs     float64                  // reading time not yet added to Soma (reader.go)
+	fieldBack        int                      // the cursor in the field being typed in, from its end (lineedit.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)

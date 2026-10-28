@@ -200,7 +200,7 @@ func (c *console) wordsPage() *page {
 		section("Meaning")
 		meaning := w.Meaning
 		if st.edit {
-			meaning = st.editText + "|"
+			meaning = withCursor(st.editText, c.fieldBack)
 		}
 		col := apLabel
 		if meaning == "" {
@@ -427,7 +427,7 @@ func (c *console) wordsTapNow(id string) bool {
 		}
 	case id == "w:edit":
 		if w := wb.find(st.sel); w != nil {
-			st.edit, st.editText = true, w.Meaning
+			st.edit, st.editText, c.fieldBack = true, w.Meaning, 0
 			c.skb.visible = true
 		}
 	case id == "w:editdone":
@@ -450,21 +450,13 @@ func (c *console) wordsTapNow(id string) bool {
 // wordsKey types a meaning with the keyboard. Caller holds drawMu.
 func (c *console) wordsKey(b []byte) {
 	st := &c.wui
-	if len(b) == 0 || b[0] == 0x1b {
+	if len(b) == 0 {
 		return
 	}
-	for _, ch := range string(b) {
-		switch {
-		case ch == '\r' || ch == '\n':
-			c.wordsTap("w:editdone")
-			return
-		case ch == 0x7f || ch == 0x08:
-			if r := []rune(st.editText); len(r) > 0 {
-				st.editText = string(r[:len(r)-1])
-			}
-		case ch >= ' ' && len(st.editText) < 400:
-			st.editText += string(ch)
-		}
+	var done bool
+	if st.editText, done = editLine(st.editText, &c.fieldBack, b, 400); done {
+		c.wordsTap("w:editdone")
+		return
 	}
 	c.showPage()
 }

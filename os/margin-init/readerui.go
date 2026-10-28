@@ -655,7 +655,7 @@ func (c *console) toastMsg(s string) {
 		defer drawMu.Unlock()
 		if c.rd.toast == s && time.Now().After(c.rd.toastUntil) {
 			c.rd.toast = ""
-			if c.mode != modeTerminal {
+			if c.mode != modeTerminal && c.screenOn {
 				c.showPage()
 			}
 		}

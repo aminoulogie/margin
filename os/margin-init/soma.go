@@ -324,7 +324,7 @@ func (c *console) somaAddRow(p *page, id, label string, y int) int {
 	ui.RoundRect(img, r, 22, apCard2)
 	text, col := "+  "+label, apBlue
 	if su.typing && su.field == id {
-		text, col = su.editing+"|", apLabel
+		text, col = withCursor(su.editing, c.fieldBack), apLabel
 	}
 	apText(img, f.body, r.Min.X+34, (r.Min.Y+r.Max.Y)/2+14, col, clip(f.body, text, r.Dx()-60))
 	p.buttons = append(p.buttons, button{"so:type:" + id, r})
@@ -507,7 +507,7 @@ func (c *console) somaTimeline(p *page, y int, todos []somaTodo) int {
 	}
 	if m, ok := strings.CutPrefix(su.field, "at:"); ok && su.typing { // the one being typed
 		at, _ := strconv.Atoi(m)
-		evs = append(evs, somaEvent{start: at, end: at + 30, label: su.editing + "|", col: rgb(0x30d158)})
+		evs = append(evs, somaEvent{start: at, end: at + 30, label: withCursor(su.editing, c.fieldBack), col: rgb(0x30d158)})
 	}
 	first := 5
 	for _, e := range evs {
@@ -918,7 +918,7 @@ func (c *console) somaTap(id string) bool {
 		su.sel = strings.TrimPrefix(id, "so:day:")
 	case strings.HasPrefix(id, "so:at:"):
 		if !su.typing {
-			su.typing, su.field, su.editing = true, field, ""
+			su.typing, su.field, su.editing, c.fieldBack = true, field, "", 0
 		}
 		c.skb.visible = true
 		c.showPage()
@@ -929,7 +929,7 @@ func (c *console) somaTap(id string) bool {
 	case strings.HasPrefix(id, "so:type:"):
 		f := strings.TrimPrefix(id, "so:type:")
 		if !su.typing || su.field != f {
-			su.typing, su.field, su.editing = true, f, ""
+			su.typing, su.field, su.editing, c.fieldBack = true, f, "", 0
 			if f == "url" {
 				su.editing = su.url
 			}
@@ -947,24 +947,12 @@ func (c *console) somaTap(id string) bool {
 // somaKey takes the keyboard's output while typing in Soma. Caller holds drawMu.
 func (c *console) somaKey(b []byte) {
 	su := &c.somaUI
-	if len(b) == 0 || b[0] == 0x1b {
+	if len(b) == 0 {
 		return
 	}
-	for _, ch := range string(b) {
-		switch {
-		case ch == '\r' || ch == '\n':
-			c.somaDone()
-			c.showPage()
-			return
-		case ch == 0x7f || ch == 0x08:
-			if r := []rune(su.editing); len(r) > 0 {
-				su.editing = string(r[:len(r)-1])
-			}
-		case ch == 0x15:
-			su.editing = ""
-		case ch >= ' ' && len([]rune(su.editing)) < 200:
-			su.editing += string(ch)
-		}
+	var done bool
+	if su.editing, done = editLine(su.editing, &c.fieldBack, b, 200); done {
+		c.somaDone()
 	}
 	c.showPage()
 }

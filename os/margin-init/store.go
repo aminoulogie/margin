@@ -311,23 +311,13 @@ func (c *console) openFromStore(path string) {
 // storeKey takes the keyboard's output while typing a search. Caller holds drawMu.
 func (c *console) storeKey(b []byte) {
 	st := &c.store
-	if len(b) == 0 || b[0] == 0x1b { // arrows, esc: nothing to do in a one-line box
+	if len(b) == 0 {
 		return
 	}
-	for _, ch := range string(b) {
-		switch {
-		case ch == '\r' || ch == '\n':
-			c.storeSearch()
-			return
-		case ch == 0x7f || ch == 0x08:
-			if r := []rune(st.editing); len(r) > 0 {
-				st.editing = string(r[:len(r)-1])
-			}
-		case ch == 0x15: // ctrl+u clears
-			st.editing = ""
-		case ch >= ' ' && len(st.editing) < 80:
-			st.editing += string(ch)
-		}
+	var done bool
+	if st.editing, done = editLine(st.editing, &c.fieldBack, b, 80); done {
+		c.storeSearch()
+		return
 	}
 	c.drawSearchBox()
 }
@@ -378,7 +368,7 @@ func (c *console) searchBox(img *image.RGBA) {
 	line(img, cx+10, cy+10, cx+20, cy+20, 6, apSecondary)
 	text, col := st.query, apLabel
 	if st.typing {
-		text = st.editing + "|"
+		text = withCursor(st.editing, c.fieldBack)
 	}
 	if text == "" {
 		text, col = "Books, Authors", apSecondary
@@ -758,7 +748,7 @@ func (c *console) storeTap(id string) bool {
 		return true
 	case id == "s:search":
 		if !st.typing {
-			st.typing, st.editing = true, st.query
+			st.typing, st.editing, c.fieldBack = true, st.query, 0
 			c.skb.visible = true
 		}
 	case id == "s:go":
@@ -770,7 +760,7 @@ func (c *console) storeTap(id string) bool {
 			st.query, st.editing = "", ""
 			c.storeLoad(false)
 		} else {
-			st.typing, st.editing = true, ""
+			st.typing, st.editing, c.fieldBack = true, "", 0
 			c.skb.visible = true
 		}
 	case id == "s:retry":

@@ -21,10 +21,12 @@ func testConsole(t *testing.T) *console {
 	// Covers from a temp folder, in a fresh cache.
 	oldCovDir, oldCovers := coverDir, covers
 	coverDir, covers = t.TempDir(), newCoverCache()
-	t.Cleanup(func() { // under drawMu: a redraw still queued reads covers
-		drawMu.Lock()
+	t.Cleanup(func() { // under drawMu (a redraw still queued reads covers), unless the test holds it
+		if drawMu.TryLock() {
+			defer drawMu.Unlock()
+		}
 		coverDir, covers = oldCovDir, oldCovers
-		drawMu.Unlock()
+		c.screenOn = false // a toast's timer left running draws nothing after the test
 	})
 	// Nothing from Home in the background (not put back: stray arrivals read them later).
 	backgroundRedraws, homeLoads = false, false
