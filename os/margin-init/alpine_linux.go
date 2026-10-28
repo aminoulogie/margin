@@ -89,6 +89,7 @@ func outputInAlpine(args ...string) ([]byte, error) {
 // outputInAlpineDirect is outputInAlpine without margin-init's proxy: straight out over
 // Wi-Fi, for when the proxy can't reach a mirror (update does the same).
 func outputInAlpineDirect(args ...string) ([]byte, error) {
+	args = alpineArgs(args)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = "/root"
 	cmd.Env = []string{"HOME=/root", "TERM=xterm", "USER=root",
