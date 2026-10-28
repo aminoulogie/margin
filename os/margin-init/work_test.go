@@ -75,6 +75,21 @@ func workFixture(t *testing.T) *console {
 		e["id"], e["date"] = id, day(-i)
 		somaPut("ledger#"+id, e)
 	}
+	// A month of the body: food, sleep, weight, reading and sessions every other day.
+	for i := 0; i < 28; i++ {
+		d := day(-i)
+		somaPut("nutrition/"+d, obj{"items": []any{obj{"name": "Chicken wrap", "cals": 1800 + float64(i%5)*90, "p": 150 + float64(i%4)*8, "meal": "Lunch", "eatenAt": ms(now.AddDate(0, 0, -i))}},
+			"water": 2400, "sleep": obj{"hours": 6.5 + float64(i%3)*0.5}, "bodyWeight": 79.6 - float64(i)*0.03})
+		somaPut("reading/"+d, 20+i%3*10)
+		if i%2 == 0 {
+			somaPut("history/"+d, obj{"split": "Push A", "durationFormatted": "54:12", "totalSets": 16, "totalVol": 8000 + i*90, "timestamp": ms(now.AddDate(0, 0, -i)),
+				"exercises": []any{obj{"name": "Incline pressing", "sets": []any{obj{"kg": 90 + float64(i%3)*5, "reps": 8}}}, obj{"name": "Rows", "sets": []any{obj{"kg": 70, "reps": 10}}}}})
+		}
+	}
+	somaPut("shifts#sh1", obj{"id": "sh1", "client": "Northbank Ltd", "start": ms(dayStart(now).Add(8 * time.Hour)), "end": ms(dayStart(now).Add(12 * time.Hour)), "breaks": []any{}})
+	somaPut("shifts#sh2", obj{"id": "sh2", "client": "Northbank Ltd", "start": ms(dayStart(now).Add(13 * time.Hour)), "end": ms(dayStart(now).Add(16 * time.Hour)), "breaks": []any{}})
+	somaPut("shifts@order", []string{"sh1", "sh2"})
+	somaPut("settings.clientRates", obj{"Northbank Ltd": 35})
 	return c
 }
 
@@ -84,7 +99,7 @@ func TestWorkPages(t *testing.T) {
 	defer drawMu.Unlock()
 	c.setMode(modeSoma)
 	c.somaUI.view = "work"
-	for _, pg := range []string{"overview", "projects", "project", "time", "planner", "reports", "money"} {
+	for _, pg := range []string{"overview", "projects", "project", "time", "planner", "reports", "money", "worklog", "findings", "health", "training", "nutrition", "mind", "stats"} {
 		c.somaUI.work, c.somaUI.workProj = pg, "p1"
 		c.showPage()
 		shot(t, c, "work-"+pg)

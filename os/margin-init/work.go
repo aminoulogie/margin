@@ -403,6 +403,11 @@ func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 
 // --- the rail ---------------------------------------------------------------------------------
 
+var wkPersonal = []struct{ id, label, icon string }{
+	{"health", "Health", "heart-pulse"}, {"today", "Today", "layout-grid"}, {"training", "Training", "dumbbell"},
+	{"nutrition", "Nutrition", "utensils"}, {"mind", "Mind", "brain-circuit"}, {"stats", "Stats", "trending-up"},
+}
+
 var wkPages = []struct{ id, label, icon string }{
 	{"overview", "Overview", "gauge"}, {"projects", "Projects", "folder-kanban"}, {"planner", "Planner", "calendar-days"},
 	{"time", "Time", "timer"}, {"money", "Money", "wallet"}, {"reports", "Reports", "file-text"},
@@ -437,12 +442,26 @@ func (k *wk) rail(h int, badges map[string]int) {
 		}
 		k.btn("wk:go:"+id, r)
 	}
-	for _, it := range wkPages {
-		item(it.id, it.label, it.icon, y)
-		y += 91
+	personal := false
+	for _, it := range wkPersonal {
+		personal = personal || it.id == page
 	}
-	ui.Fill(img, k.R(40, 896, 84, 898), rgb(0x24252b))
-	item("personal", "Personal", "heart-pulse", 912)
+	if personal { // Personal's pages, Workspace above them
+		item("workspace", "Workspace", "briefcase", y)
+		ui.Fill(img, k.R(40, y+96, 84, y+98), rgb(0x24252b))
+		y += 112
+		for _, it := range wkPersonal {
+			item(it.id, it.label, it.icon, y)
+			y += 91
+		}
+	} else {
+		for _, it := range wkPages {
+			item(it.id, it.label, it.icon, y)
+			y += 91
+		}
+		ui.Fill(img, k.R(40, 896, 84, 898), rgb(0x24252b))
+		item("personal", "Personal", "heart-pulse", 912)
+	}
 	item("search", "Search", "search", 1645)
 	item("settings", "Settings", "settings", 1735)
 	av := image.Pt(61, k.Y(1868))
@@ -527,6 +546,20 @@ func (c *console) workPage() *page {
 		end = k.money()
 	case "reports":
 		end = k.reports()
+	case "worklog":
+		end = k.worklog()
+	case "findings":
+		end = k.findingsPage()
+	case "health":
+		end = k.health()
+	case "training":
+		end = k.training()
+	case "nutrition":
+		end = k.nutrition()
+	case "mind":
+		end = k.mindPage()
+	case "stats":
+		end = k.stats()
 	default:
 		end = k.overview()
 	}
@@ -567,12 +600,16 @@ func (c *console) workTap(id string) bool {
 		to := strings.TrimPrefix(id, "wk:go:")
 		switch to {
 		case "personal":
+			su.workGroup, su.work = "personal", "health"
+		case "workspace":
+			su.workGroup, su.work = "", "overview"
+		case "today":
 			su.view = "home"
 		case "settings":
 			c.setMode(modeSettings)
 			return true
-		case "findings", "worklog", "search":
-			c.toastMsg("Open it in Soma on the PC: this page isn't on the tablet yet")
+		case "search":
+			c.toastMsg("Search isn't on the tablet yet")
 			return true
 		default:
 			su.work = to
@@ -583,6 +620,14 @@ func (c *console) workTap(id string) bool {
 		su.work = "projects"
 	case id == "wk:stop":
 		wkStopTimer()
+	case id == "wk:clockout":
+		wkClockOut()
+	case strings.HasPrefix(id, "wk:finding:"):
+		wkFindingNext(strings.TrimPrefix(id, "wk:finding:"))
+	case strings.HasPrefix(id, "wk:water:"):
+		ml := 0
+		fmt.Sscan(strings.TrimPrefix(id, "wk:water:"), &ml)
+		somaAddWater(float64(ml))
 	case strings.HasPrefix(id, "wk:start:"):
 		wkStartTimer(strings.TrimPrefix(id, "wk:start:"))
 	case strings.HasPrefix(id, "wk:tab:"), strings.HasPrefix(id, "wk:chip:"), strings.HasPrefix(id, "wk:seg:"), strings.HasPrefix(id, "wk:week:"), strings.HasPrefix(id, "wk:client:"):
