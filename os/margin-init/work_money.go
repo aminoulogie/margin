@@ -415,15 +415,13 @@ func shortMoney(v float64) string {
 
 // --- reports ----------------------------------------------------------------------------------
 
-func (k *wk) reports() int {
+// wkReportClients is the clients, the one with the most hours this month first.
+func wkReportClients() []string {
 	now := time.Now().In(displayZone)
-	projects := wkProjects()
-	entries := wkEntries()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, displayZone)
-	mh := wkHours(entries, month, month.AddDate(0, 1, 0), now)
-	// The clients, the one with the most hours this month first.
+	mh := wkHours(wkEntries(), month, month.AddDate(0, 1, 0), now)
 	hours := map[string]float64{}
-	for _, p := range projects {
+	for _, p := range wkProjects() {
 		if p.Client != "" {
 			hours[p.Client] += mh[p.ID].Hours()
 		}
@@ -432,7 +430,22 @@ func (k *wk) reports() int {
 	for c := range hours {
 		clients = append(clients, c)
 	}
-	sort.Slice(clients, func(i, j int) bool { return hours[clients[i]] > hours[clients[j]] })
+	sort.SliceStable(clients, func(i, j int) bool {
+		if hours[clients[i]] != hours[clients[j]] {
+			return hours[clients[i]] > hours[clients[j]]
+		}
+		return clients[i] < clients[j]
+	})
+	return clients
+}
+
+func (k *wk) reports() int {
+	now := time.Now().In(displayZone)
+	projects := wkProjects()
+	entries := wkEntries()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, displayZone)
+	mh := wkHours(entries, month, month.AddDate(0, 1, 0), now)
+	clients := wkReportClients()
 	ci := k.sel("client", 0)
 	client := ""
 	if len(clients) > 0 {
@@ -677,7 +690,7 @@ func (k *wk) reports() int {
 	k.text(wkFont("regular", 14), 313, 1595, rgb(0xa0a3aa), "Made with SOMA")
 	k.textR(wkFont("regular", 14), 1010, 1595, rgb(0xa0a3aa), "Page 1 of 3")
 
-	k.boxBtn("wk:pdf", wkX0, 1713, 532, 1776, "file-down", "Save as PDF", wkLime, wkInk)
+	k.boxBtn("wk:pdf", wkX0, 1713, 532, 1776, "file-down", "Save as PDF", wkLime, wkOnLime)
 	k.boxBtn("wk:excel", 549, 1713, 848, 1776, "file-spreadsheet", "Excel", color.RGBA{}, wkFG)
 	k.boxBtn("wk:email", 866, 1713, wkX1, 1776, "send", "Email to client", color.RGBA{}, wkFG)
 	return 1776

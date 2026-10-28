@@ -49,6 +49,7 @@ type page struct {
 	footer  int                 // rows at the page's end shown fixed at the screen's bottom (a dock)
 	rows    []hrow              // rows that scroll sideways (scroll.go)
 	rowBtns map[string][]button // their buttons, replaced when a row moves
+	swipes  []swipeZone         // where a sideways swipe turns a page (the next week, say)
 }
 
 func (p *page) hit(x, y int) string {

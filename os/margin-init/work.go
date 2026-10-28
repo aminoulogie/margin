@@ -158,8 +158,8 @@ func (k *wk) primary(id, icon, label string, right int) int {
 	w := 64 + ui.TextWidth(f, label) + 28
 	r := k.R(right-w, 103, right, 166)
 	ui.RoundRect(k.img, r, 14, wkLime)
-	lucideIcon(k.img, icon, r.Min.X+40, (r.Min.Y+r.Max.Y)/2, 26, wkInk)
-	apText(k.img, f, r.Min.X+64, (r.Min.Y+r.Max.Y)/2+8, wkInk, label)
+	lucideIcon(k.img, icon, r.Min.X+40, (r.Min.Y+r.Max.Y)/2, 26, wkOnLime)
+	apText(k.img, f, r.Min.X+64, (r.Min.Y+r.Max.Y)/2+8, wkOnLime, label)
 	k.btn(id, r)
 	return r.Min.X
 }
@@ -215,7 +215,7 @@ func (k *wk) chips(prefix string, y int, labels []string, icons []string, sel in
 		fg := wkText2
 		if i == sel {
 			ui.RoundRect(k.img, r, 12, wkLime)
-			fg = wkInk
+			fg = wkOnLime
 		} else {
 			ui.RoundRect(k.img, r, 12, wkRim)
 			ui.RoundRect(k.img, r.Inset(2), 10, rgb(0x15161c))
@@ -404,7 +404,7 @@ func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 // --- the rail ---------------------------------------------------------------------------------
 
 var wkPersonal = []struct{ id, label, icon string }{
-	{"health", "Health", "heart-pulse"}, {"training", "Training", "dumbbell"},
+	{"habits", "Habits", "circle-check"}, {"health", "Health", "heart-pulse"}, {"training", "Training", "dumbbell"},
 	{"nutrition", "Nutrition", "utensils"}, {"mind", "Mind", "brain-circuit"}, {"stats", "Stats", "trending-up"},
 }
 
@@ -508,8 +508,10 @@ func (c *console) workPage() *page {
 	if su.need == nil {
 		su.need = map[string]int{}
 	}
+	wkApplyAccent()
 	w := c.s.W
-	h := max(c.viewH(), su.need["work:"+su.work])
+	needKey := "work:" + su.work + "/" + su.workSub
+	h := max(c.viewH(), su.need[needKey])
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
 	p := &page{img: img, header: tabsH}
@@ -544,6 +546,8 @@ func (c *console) workPage() *page {
 		end = k.mindPage()
 	case "stats":
 		end = k.stats()
+	case "habits":
+		end = k.habits()
 	case "settings":
 		end = k.settingsPage()
 	default:
@@ -552,7 +556,7 @@ func (c *console) workPage() *page {
 	end = k.Y(end) + 160         // room for the timer
 	k.oy = c.barH - (tabsH - 24) // a page may have moved its lower part down
 	if end > h {
-		su.need["work:"+su.work] = end
+		su.need[needKey] = end
 		return c.workPage()
 	}
 	if end < h && h > c.viewH() {
@@ -577,29 +581,66 @@ func (c *console) workPage() *page {
 		k.timerPill(min(p.img.Rect.Dy(), c.viewH()))
 	}
 	c.booksTabs(p, "tab:soma")
+	sy := 0
+	if p.img.Rect.Dy() > c.viewH() {
+		sy = min(max(c.scrollY(), 0), p.img.Rect.Dy()-c.viewH())
+	}
+	k.undoPill(sy + c.viewH())
+	k.drawSheet(p)
 	return p
 }
 
-// workTap handles the Work tab's buttons. Caller holds drawMu.
+// workTap handles the Work tab's buttons: "wk:<action>:<arg>", an action registered in
+// wkActions, or one of the page's own below. Caller holds drawMu.
 func (c *console) workTap(id string) bool {
+	su := &c.somaUI
+	if su.typing {
+		c.somaDone() // a tap elsewhere: what was typed is kept
+	}
+	prev := su.sheet
+	su.keep, su.toTop = false, false
+	name, arg, _ := strings.Cut(strings.TrimPrefix(id, "wk:"), ":")
+	if f := wkActions[name]; f != nil {
+		f(c, arg)
+	} else if !c.workTapPage(id) {
+		return false
+	}
+	if prev != "" && su.sheet == prev && !su.keep {
+		c.sheetPop() // done with it: back to the sheet it came from, if any
+	}
+	if su.toTop {
+		c.setScroll(modeSoma, 0)
+	}
+	c.showPage()
+	return true
+}
+
+// wkGo opens a page of the workstation (and a page within it), at its top.
+func (c *console) wkGo(page, sub string) {
+	su := &c.somaUI
+	su.work, su.workSub, su.sheet, su.sheetStack, su.toTop = page, sub, "", nil, true
+}
+
+func (c *console) workTapPage(id string) bool {
 	su := &c.somaUI
 	switch {
 	case strings.HasPrefix(id, "wk:go:"):
-		to := strings.TrimPrefix(id, "wk:go:")
-		switch to {
-		default:
-			su.work = to
-		}
+		c.wkGo(strings.TrimPrefix(id, "wk:go:"), "")
 	case strings.HasPrefix(id, "wk:proj:"):
-		su.work, su.workProj = "project", strings.TrimPrefix(id, "wk:proj:")
+		c.wkGo("project", "")
+		su.workProj = strings.TrimPrefix(id, "wk:proj:")
 	case id == "wk:back":
-		su.work = "projects"
+		if su.workSub != "" {
+			su.workSub, su.toTop = "", true
+		} else {
+			c.wkGo("projects", "")
+		}
 	case id == "wk:stop":
 		wkStopTimer()
 	case id == "wk:clockout":
 		wkClockOut()
 	case strings.HasPrefix(id, "wk:finding:"):
-		wkFindingNext(strings.TrimPrefix(id, "wk:finding:"))
+		c.openSheet("finding:" + strings.TrimPrefix(id, "wk:finding:"))
 	case strings.HasPrefix(id, "wk:water:"):
 		ml := 0
 		fmt.Sscan(strings.TrimPrefix(id, "wk:water:"), &ml)
@@ -611,7 +652,12 @@ func (c *console) workTap(id string) bool {
 			su.workSel = map[string]string{}
 		}
 		i := strings.LastIndex(id, ":")
-		su.workSel[su.work+id[:i]] = id[i+1:]
+		key := su.work + id[:i]
+		if su.workSub != "" && !strings.HasPrefix(id, "wk:week:") {
+			key = su.work + "/" + strings.SplitN(su.workSub, ":", 2)[0] + id[:i]
+		}
+		su.workSel[key] = id[i+1:]
+		su.toTop = strings.HasPrefix(id, "wk:tab:") || strings.HasPrefix(id, "wk:chip:")
 	case strings.HasPrefix(id, "wk:step:"):
 		parts := strings.SplitN(strings.TrimPrefix(id, "wk:step:"), ":", 2)
 		if len(parts) == 2 {
@@ -622,15 +668,17 @@ func (c *console) workTap(id string) bool {
 	default:
 		return false
 	}
-	c.setScroll(modeSoma, 0)
-	c.showPage()
 	return true
 }
 
 // sel is which tab, chip or segment of a group is chosen on this page (def until one is).
 func (k *wk) sel(group string, def int) int {
 	su := &k.c.somaUI
-	v, ok := su.workSel[su.work+"wk:"+group]
+	key := su.work + "wk:" + group
+	if su.workSub != "" && group != "week" {
+		key = su.work + "/" + strings.SplitN(su.workSub, ":", 2)[0] + "wk:" + group
+	}
+	v, ok := su.workSel[key]
 	if !ok {
 		return def
 	}
@@ -650,13 +698,4 @@ func wkStopTimer() {
 }
 
 // wkStartTimer starts a timer on a project, stopping any other (startTimer: one at a time).
-func wkStartTimer(projectID string) {
-	wkStopTimer()
-	id := "te-" + somaNewID()
-	somaPut("timeEntries#"+id, obj{"id": id, "projectId": projectID, "start": float64(time.Now().UnixMilli())})
-	var order []string
-	for _, o := range somaList("timeEntries") {
-		order = append(order, str(o["id"]))
-	}
-	somaPut("timeEntries@order", order)
-}
+func wkStartTimer(projectID string) { wkStartTimerOn(projectID, "", "") }

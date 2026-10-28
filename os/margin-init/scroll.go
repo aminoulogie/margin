@@ -68,6 +68,8 @@ type scrollState struct {
 	motionT  time.Time
 	frameN   int
 	frameSum time.Duration
+	zone     string // the swipe zone the finger touched down in ("" none)
+	swiping  bool   // ...and it's moving sideways across it
 }
 
 const (
@@ -191,6 +193,12 @@ func (c *console) pageTouch(p TouchPoint) {
 		sc.x0, sc.y0, sc.ox0, sc.oy0, sc.from = p.X, p.Y, p.X, p.Y, c.scrollY()
 		c.edgeDown(p.X, p.Y)
 		py := c.pageY(p.Y)
+		sc.zone, sc.swiping = "", false
+		for _, z := range c.page.swipes {
+			if (image.Point{p.X, py}).In(z.r) {
+				sc.zone = z.id
+			}
+		}
 		for i := range c.page.rows {
 			if r := &c.page.rows[i]; (image.Point{p.X, py}).In(r.r) && r.contentW > r.r.Dx() {
 				sc.row = r
@@ -208,6 +216,10 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 			sc.moved = true
 			c.pressClear(true)
+			if sc.zone != "" && sc.row == nil && abs(dx) > abs(dy) { // a sideways swipe: no scrolling
+				sc.swiping, sc.vert = true, false
+				return
+			}
 			if c.edgeStart(dx, dy) { // in from the left edge: going back
 				c.edgeMove(p.X, p.Y)
 				return
@@ -223,6 +235,9 @@ func (c *console) pageTouch(p TouchPoint) {
 				sc.x0 += scrollSlop * sign(dx)
 			}
 			dx, dy = p.X-sc.x0, p.Y-sc.y0
+		}
+		if sc.swiping {
+			return
 		}
 		if c.gpuScrolls() { // the GPU follows the finger, every frame
 			switch {
@@ -264,6 +279,20 @@ func (c *console) pageTouch(p TouchPoint) {
 			return
 		}
 		moved := sc.moved
+		if sc.swiping { // across a zone: the next (or the last) week, day, month
+			sc.drag, sc.swiping = false, false
+			if sc.gpuOn {
+				c.gpuSettle()
+			}
+			if dx := p.X - sc.x0; abs(dx) >= 60 {
+				dir := 1
+				if dx > 0 {
+					dir = -1
+				}
+				c.pageSwipe(sc.zone, dir)
+			}
+			return
+		}
 		if c.edge.on {
 			sc.drag = false
 			c.edgeUp(p.X)
@@ -408,6 +437,19 @@ func (c *console) pageLongPress(x, y int) bool {
 	case c.mode == modeBooksHome && !c.homeEdit && id != "" && c.pageY(y) > tabsH+40:
 		// Home's widgets: rearrange them.
 		c.homeEdit = true
+		vibrate(20)
+		c.showPage()
+		return true
+	case c.mode == modeSoma && strings.HasPrefix(id, "wk:"):
+		name, arg, _ := strings.Cut(strings.TrimPrefix(id, "wk:"), ":")
+		f := wkLongPress[name]
+		if f == nil {
+			return false
+		}
+		if c.somaUI.typing {
+			c.somaDone()
+		}
+		f(c, arg)
 		vibrate(20)
 		c.showPage()
 		return true

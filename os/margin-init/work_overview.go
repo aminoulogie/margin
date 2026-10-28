@@ -100,7 +100,7 @@ func (k *wk) overview() int {
 		}
 	}
 	todayH := wkSum(wkHours(entries, today, today.AddDate(0, 0, 1), now))
-	k.arc(280, 501, 80, 18, todayH.Hours()/dayT, wkLime, rgb(0x2a2d24))
+	k.arc(280, 501, 80, 18, todayH.Hours()/dayT, wkLime, blend(wkCard, wkLime, 0.14))
 	k.textC(wkFont("bold", 34), 280, 507, wkFG, hoursLabel(todayH)+"h")
 	k.textC(wkFont("medium", 16), 280, 532, wkMuted, fmt.Sprintf("of %gh today", dayT))
 	k.text(wkFont("semi", 19), 398, 444, wkMuted, strings.ToUpper("Today · "+now.Format("Monday")))
@@ -438,7 +438,7 @@ func wkAttention(projects []wkProject, todos []somaTodo, now time.Time) []wkAttn
 		case ok && d < 0:
 			out = append(out, wkAttn{"alarm-clock", title, fmt.Sprintf("%s · %d days late", who, -d), "Overdue", wkRed, p.ID, d})
 		case p.stale(now):
-			out = append(out, wkAttn{"history", title, who + " · nothing ticked for 2 weeks", "Stale", wkAmber, p.ID, 50})
+			out = append(out, wkAttn{"history", title, who + " · nothing moved for 10 days", "Stale", wkAmber, p.ID, 50})
 		case ok && d <= 3:
 			due, _ := time.Parse("2006-01-02", p.Due)
 			out = append(out, wkAttn{"flag", title, who, "Due " + due.Format("Mon"), wkAmber, p.ID, d})

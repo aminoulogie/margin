@@ -25,7 +25,14 @@ type wkProject struct {
 	Rate                                                 float64
 	Created, Touched                                     time.Time
 	Steps                                                []wkStep
-	order                                                int // its place in Soma's list, for its colour and the charts' order
+	Log                                                  []wkNote // the project's running notes
+	order                                                int      // its place in Soma's list, for its colour and the charts' order
+}
+
+// wkNote is a note in a project's log (ProjectNote): typed in, or filed by the work log.
+type wkNote struct {
+	ID, Text, Source string
+	At               time.Time
 }
 
 func (p wkProject) done() int {
@@ -58,13 +65,13 @@ func (p wkProject) daysLeft(now time.Time) (int, bool) {
 	return int(d.Sub(t).Hours() / 24), true
 }
 
-// stale: active and nothing ticked for two weeks (projects.ts isStale).
+// stale: active and nothing moved for ten days (projects.ts isStale, STALE_DAYS).
 func (p wkProject) stale(now time.Time) bool {
 	last := p.Touched
 	if last.IsZero() {
 		last = p.Created
 	}
-	return p.Status == "active" && !last.IsZero() && now.Sub(last) > 14*24*time.Hour
+	return p.Status == "active" && !last.IsZero() && now.Sub(last) > 10*24*time.Hour
 }
 
 func msTime(v any) time.Time {
@@ -105,6 +112,13 @@ func wkProjects() []wkProject {
 			}
 			p.Steps = append(p.Steps, st)
 		}
+		log, _ := o["log"].([]any)
+		for _, n := range log {
+			if no, ok := n.(obj); ok && strings.TrimSpace(str(no["text"])) != "" {
+				p.Log = append(p.Log, wkNote{ID: str(no["id"]), Text: str(no["text"]), Source: str(no["source"]), At: msTime(no["at"])})
+			}
+		}
+		sort.SliceStable(p.Log, func(i, j int) bool { return p.Log[i].At.After(p.Log[j].At) })
 		out = append(out, p)
 	}
 	for i := range out {
