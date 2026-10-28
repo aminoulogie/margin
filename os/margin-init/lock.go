@@ -25,6 +25,10 @@ import (
 
 // drawLock paints the lock screen under the status bar. Caller holds drawMu.
 func (c *console) drawLock() {
+	if c.pinMode != "" {
+		return // the keypad is up over the lock screen (c.locked stays true): the clock tick and
+		// cover loads used to paint the lock screen over it, hiding the digits and the blur
+	}
 	c.endGPUScroll()
 	covers.mu.Lock()
 	covers.loaded = func(url string) {
