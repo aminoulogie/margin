@@ -717,3 +717,26 @@ func TestSomaMoney(t *testing.T) {
 		t.Fatal("not deleted on the third tap")
 	}
 }
+
+// A long day isn't cut off: the page grows to hold every habit and to-do.
+func TestSomaLongPagesGrow(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	at := time.Now().UnixMilli()
+	for i := 0; i < 40; i++ {
+		relay.pcPut(t, k, fmt.Sprintf("todos#x%d", i), obj{"id": fmt.Sprintf("x%d", i), "text": fmt.Sprintf("Task %d", i), "done": false, "date": somaToday(), "scope": "day"}, at)
+	}
+	soma.sync()
+	drawMu.Lock()
+	defer drawMu.Unlock()
+	c.setMode(modeSoma)
+	p := c.somaPage()
+	last := 0
+	for _, b := range p.buttons {
+		if b.id == "so:type:week" { // the last list's add row, under all forty
+			last = b.r.Max.Y
+		}
+	}
+	if last == 0 || last > p.img.Rect.Dy() {
+		t.Fatalf("the add row at %d is past the page's %d", last, p.img.Rect.Dy())
+	}
+}

@@ -346,7 +346,7 @@ func (c *console) drawAlarm() {
 			}
 		}
 		card := image.Rect(80, y, w-80, min(h-200, y+190+n*56))
-		ui.RoundRect(img, card, 40, blend(sky, rgb(0x000000), 0.35))
+		glass(img, card, 40, rgb(0x000000), 0.28)
 		ty := card.Min.Y + 80
 		apText(img, f.title, card.Min.X+50, ty, white, "Today")
 		ty += 70

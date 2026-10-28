@@ -107,7 +107,7 @@ func (c *console) settingsPage() *page {
 	dc := image.Rect(24, 240, sw-24, 360)
 	ui.RoundRect(img, dc, 24, apCard)
 	ui.Circle(img, dc.Min.X+60, (dc.Min.Y+dc.Max.Y)/2, 40, rgb(0x8e8e93))
-	apTextCenter(img, f.headline, dc.Min.X+60, (dc.Min.Y+dc.Max.Y)/2, rgb(0xffffff), "C")
+	apTextCenter(img, f.headline, dc.Min.X+60, (dc.Min.Y+dc.Max.Y)/2, rgb(0xffffff), "M")
 	apText(img, f.headline, dc.Min.X+120, dc.Min.Y+54, apLabel, "Margin")
 	apText(img, f.caption, dc.Min.X+120, dc.Min.Y+92, apSecondary, "Condor TRA-901G")
 	y := 400

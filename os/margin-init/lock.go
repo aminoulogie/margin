@@ -71,9 +71,7 @@ func (c *console) drawLock() {
 	apTextCenter(img, textFace("inter-semibold", fonts.InterSemiBold, true, 190), w/2, 270, white, now.Format("15:04"))
 
 	// Widgets, as on iOS: today's habits from Soma, and the book.
-	glass := func(r image.Rectangle) {
-		ui.RoundRect(img, r, 36, blend(blend(top, rgb(0x000000), min(1, float64(r.Min.Y)/float64(h)*1.4)), white, 0.14))
-	}
+	glassCard := func(r image.Rectangle) { glass(img, r, 36, white, 0.16) }
 	wy := 430
 	if soma.linked() {
 		habits := somaHabits()
@@ -84,7 +82,7 @@ func (c *console) drawLock() {
 			}
 		}
 		r := image.Rect(w/2-470, wy, w/2-15, wy+190)
-		glass(r)
+		glassCard(r)
 		frac := 0.0
 		if len(habits) > 0 {
 			frac = float64(done) / float64(len(habits))
@@ -101,7 +99,7 @@ func (c *console) drawLock() {
 		if !soma.linked() {
 			r = image.Rect(w/2-230, wy, w/2+230, wy+190)
 		}
-		glass(r)
+		glassCard(r)
 		cr := image.Rect(r.Min.X+24, r.Min.Y+20, r.Min.X+24+100, r.Min.Y+170)
 		c.drawCover(img, cr, it)
 		tx := cr.Max.X + 24

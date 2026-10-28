@@ -378,3 +378,33 @@ func (c *console) booksTap(id string) bool {
 	}
 	return true
 }
+
+// glass frosts a rounded rectangle of what's already drawn: the pixels behind show through,
+// lifted toward tint by a (0 to 1), as iOS's widgets and sheets do.
+func glass(img *image.RGBA, r image.Rectangle, rad int, tint color.RGBA, a float64) {
+	r = r.Intersect(img.Rect)
+	k := int(a * 256)
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			// Outside the rounded corners: leave it.
+			dx := max(r.Min.X+rad-x, x-(r.Max.X-1-rad), 0)
+			dy := max(r.Min.Y+rad-y, y-(r.Max.Y-1-rad), 0)
+			if dx*dx+dy*dy > rad*rad {
+				continue
+			}
+			o := img.PixOffset(x, y)
+			p := img.Pix[o : o+3 : o+3]
+			p[0] = byte((int(p[0])*(256-k) + int(tint.R)*k) >> 8)
+			p[1] = byte((int(p[1])*(256-k) + int(tint.G)*k) >> 8)
+			p[2] = byte((int(p[2])*(256-k) + int(tint.B)*k) >> 8)
+		}
+	}
+}
+
+// Layout tokens: the page's side margin, and the corner radii of cards and rows, so screens
+// line up with each other.
+const (
+	pageGutter = 48
+	radiusCard = 22
+	radiusPill = 42
+)

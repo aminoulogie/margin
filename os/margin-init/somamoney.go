@@ -224,7 +224,7 @@ func money(v float64) string {
 func (c *console) somaMoney(p *page, y int) int {
 	f := apple()
 	img := p.img
-	w, mx := c.s.W, 48
+	w, mx := c.s.W, pageGutter
 	su := &c.somaUI
 	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
 	month := time.Now().In(displayZone).Format("2006-01")
@@ -239,7 +239,7 @@ func (c *console) somaMoney(p *page, y int) int {
 		col   uint32
 	}{{"Income", m.Income, 0x30d158}, {"Spent", m.Spend, 0xff453a}, {"Saved", m.Saved, 0x0a84ff}, {"Net", m.Income - m.Spend - m.Saved, 0xffffff}} {
 		r := image.Rect(mx+i*(cw+16), y, mx+i*(cw+16)+cw, y+130)
-		ui.RoundRect(img, r, 22, apCard)
+		ui.RoundRect(img, r, radiusCard, apCard)
 		apText(img, f.caption, r.Min.X+24, r.Min.Y+44, apSecondary, k.label)
 		apText(img, f.headline, r.Min.X+24, r.Min.Y+96, rgb(k.col), clip(f.headline, money(k.v), cw-40))
 	}
