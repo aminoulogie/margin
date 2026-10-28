@@ -40,7 +40,7 @@ func TestPasscode(t *testing.T) {
 		for _, k := range c.pinKeys() {
 			if k.key == key {
 				x, y := (k.r.Min.X+k.r.Max.X)/2, (k.r.Min.Y+k.r.Max.Y)/2+c.barH
-				c.pinTouch(TouchPoint{Up: true, X: x, Y: y})
+				c.pinTouch(TouchPoint{Down: true, X: x, Y: y})
 				return
 			}
 		}

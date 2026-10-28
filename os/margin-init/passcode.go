@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"image"
-	"time"
+	"image/draw"
 
 	"margin-init/fonts"
 	"margin-init/ui"
@@ -67,8 +67,13 @@ func (c *console) pinKeys() []struct {
 	return out
 }
 
-// drawPin paints the keypad under the status bar. Caller holds drawMu.
-func (c *console) drawPin() {
+// pinBase is the keypad without what changes as digits are typed (the dots, Delete/Cancel),
+// drawn once per title and message: a digit then repaints two small strips, not the screen.
+func (c *console) pinBase() *image.RGBA {
+	key := c.pinTitle() + "|" + c.pinMsg
+	if c.pinBG != nil && c.pinBGKey == key {
+		return c.pinBG
+	}
 	f := apple()
 	w, h := c.s.W, c.s.H-c.barH
 	img := canvas(w, h)
@@ -77,39 +82,78 @@ func (c *console) drawPin() {
 	}
 	white := rgb(0xffffff)
 	apTextCenter(img, f.title, w/2, 330, white, c.pinTitle())
-	for i := 0; i < pinLen; i++ {
-		cx := w/2 - (pinLen-1)*40 + i*80
-		ui.Circle(img, cx, 450, 18, white)
-		if i >= len(c.pinEntry) {
-			ui.Circle(img, cx, 450, 15, blend(rgb(0x1c2a44), rgb(0x000000), 0.3))
-		}
-	}
 	if c.pinMsg != "" {
 		apTextCenter(img, f.callout, w/2, 560, rgb(0xff453a), c.pinMsg)
 	}
 	digits := textFace("inter-semibold", fonts.InterSemiBold, true, 84)
 	for _, k := range c.pinKeys() {
+		if k.key == "" || k.key == "del" {
+			continue
+		}
 		cx, cy := (k.r.Min.X+k.r.Max.X)/2, (k.r.Min.Y+k.r.Max.Y)/2
-		switch k.key {
-		case "":
-		case "del":
-			label := "Delete"
-			if c.pinEntry == "" {
-				label = "Cancel"
-			}
-			apTextCenter(img, f.headline, cx, cy, white, label)
-		default:
-			ui.Circle(img, cx, cy, k.r.Dx()/2, rgb(0x3a3a3c))
-			apTextCenter(img, digits, cx, cy, white, k.key)
+		ui.Circle(img, cx, cy, k.r.Dx()/2, rgb(0x3a3a3c))
+		apTextCenter(img, digits, cx, cy, white, k.key)
+	}
+	c.pinBG, c.pinBGKey = img, key
+	return img
+}
+
+// pinDotsRect and pinDelRect are the strips a typed digit changes.
+func (c *console) pinDotsRect() image.Rectangle {
+	return image.Rect(c.s.W/2-200, 420, c.s.W/2+200, 480)
+}
+
+func (c *console) pinDelRect() image.Rectangle {
+	for _, k := range c.pinKeys() {
+		if k.key == "del" {
+			return k.r
 		}
 	}
-	c.s.blitRGBA(img, 0, c.barH)
+	return image.Rectangle{}
+}
+
+// drawPinStrip paints one strip over the base and puts just that on the screen.
+func (c *console) drawPinStrip(r image.Rectangle, paint func(img *image.RGBA)) {
+	base := c.pinBase()
+	img := image.NewRGBA(r)
+	draw.Draw(img, r, base, r.Min, draw.Src)
+	paint(img)
+	c.s.blitRGBA(img, r.Min.X, c.barH+r.Min.Y)
+}
+
+// drawPinDynamic paints the dots and Delete/Cancel. Caller flushes.
+func (c *console) drawPinDynamic() {
+	white := rgb(0xffffff)
+	c.drawPinStrip(c.pinDotsRect(), func(img *image.RGBA) {
+		for i := 0; i < pinLen; i++ {
+			cx := c.s.W/2 - (pinLen-1)*40 + i*80
+			ui.Circle(img, cx, 450, 18, white)
+			if i >= len(c.pinEntry) {
+				ui.Circle(img, cx, 450, 15, blend(rgb(0x1c2a44), rgb(0x000000), 0.3))
+			}
+		}
+	})
+	dr := c.pinDelRect()
+	c.drawPinStrip(dr, func(img *image.RGBA) {
+		label := "Delete"
+		if c.pinEntry == "" {
+			label = "Cancel"
+		}
+		apTextCenter(img, apple().headline, (dr.Min.X+dr.Max.X)/2, (dr.Min.Y+dr.Max.Y)/2, white, label)
+	})
+}
+
+// drawPin paints the whole keypad under the status bar. Caller holds drawMu.
+func (c *console) drawPin() {
+	c.s.blitRGBA(c.pinBase(), 0, c.barH)
+	c.drawPinDynamic()
 	c.s.Flush()
 }
 
-// pinTouch takes a tap on the keypad. Caller holds drawMu.
+// pinTouch takes a key the moment a finger lands on it (not when it lifts: typing a code is
+// quick). Caller holds drawMu.
 func (c *console) pinTouch(p TouchPoint) {
-	if !p.Up {
+	if !p.Down {
 		return
 	}
 	y := p.Y - c.barH
@@ -124,14 +168,14 @@ func (c *console) pinTouch(p TouchPoint) {
 				return
 			}
 			c.pinEntry = c.pinEntry[:len(c.pinEntry)-1]
-			c.drawPin()
+			c.drawPinDynamic()
+			c.s.Flush()
 			return
 		}
 		c.pinEntry += k.key
-		c.pinMsg = ""
-		c.drawPin()
+		c.drawPinDynamic()
+		c.s.Flush()
 		if len(c.pinEntry) == pinLen {
-			time.Sleep(120 * time.Millisecond) // the fourth dot shows before it's checked
 			c.pinDone()
 		}
 		return

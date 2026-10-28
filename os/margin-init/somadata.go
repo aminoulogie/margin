@@ -1013,3 +1013,30 @@ func somaLogWorkout(text string) bool {
 		"totalSets": 0, "axialVol": 0, "exercises": []any{}, "muscles": obj{}})
 	return true
 }
+
+// somaMoveTodoTomorrow moves one to-do to tomorrow (and its time slot with it).
+func somaMoveTodoTomorrow(id string) {
+	o := somaObj("todos#" + id)
+	if o == nil {
+		return
+	}
+	d, _ := time.Parse("2006-01-02", somaToday())
+	tomorrow := d.AddDate(0, 0, 1).Format("2006-01-02")
+	o["date"], o["scope"], o["done"] = tomorrow, "day", false
+	if s, ok := o["slot"].(obj); ok {
+		s["date"] = tomorrow
+	}
+	somaPut("todos#"+id, o)
+}
+
+// somaDeleteTodo removes a to-do (removed on the PC and phone too).
+func somaDeleteTodo(id string) {
+	soma.put("todos#"+id, "")
+	var order []string
+	for _, t := range somaList("todos") {
+		if str(t["id"]) != id {
+			order = append(order, str(t["id"]))
+		}
+	}
+	somaPut("todos@order", order)
+}

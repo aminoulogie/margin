@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -451,6 +452,10 @@ func TestSomaOnHome(t *testing.T) {
 	defer drawMu.Unlock()
 	c.setMode(modeBooksHome)
 	shot(t, c, "home-soma")
+	c.locked = true
+	c.redrawAll()
+	shot(t, c, "lock-soma")
+	c.locked = false
 	c.somaTap("so:todo:t1")
 	if td := somaTodos(); len(td) == 0 || !td[0].Done {
 		t.Fatal("ticking a to-do on Home didn't tick it")
@@ -739,4 +744,57 @@ func TestSomaLongPagesGrow(t *testing.T) {
 	if last == 0 || last > p.img.Rect.Dy() {
 		t.Fatalf("the add row at %d is past the page's %d", last, p.img.Rect.Dy())
 	}
+}
+
+// Long press: holding a Home widget rearranges them; holding a to-do in Soma offers its actions.
+func TestLongPress(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	soma.sync()
+	drawMu.Lock()
+	c.setMode(modeBooksHome)
+	var ringsAt image.Rectangle
+	for _, b := range c.page.buttons {
+		if b.id == "tab:soma" && b.r.Min.Y > tabsH {
+			ringsAt = b.r
+		}
+	}
+	drawMu.Unlock()
+	if ringsAt.Empty() {
+		t.Fatal("no rings card on Home")
+	}
+	x, y := ringsAt.Min.X+50, ringsAt.Min.Y+50+c.barH-c.scrollY()
+	drawMu.Lock()
+	c.pageTouch(TouchPoint{Down: true, X: x, Y: y})
+	drawMu.Unlock()
+	time.Sleep(longPressAfter + 200*time.Millisecond)
+	drawMu.Lock()
+	c.pageTouch(TouchPoint{Up: true, X: x, Y: y})
+	if !c.homeEdit {
+		drawMu.Unlock()
+		t.Fatal("holding the rings didn't start editing Home")
+	}
+	shot(t, c, "home-edit")
+	c.homeEditTap("home:down:rings")
+	c.homeEditTap("home:hide:picks")
+	c.homeEditTap("home:editdone")
+	if o := c.homeOrder(); o[0] != "todos" || o[1] != "rings" || !c.cfg.HomeHidden["picks"] || c.homeEdit {
+		drawMu.Unlock()
+		t.Fatalf("order %v hidden %v", o, c.cfg.HomeHidden)
+	}
+	c.cfg.HomeOrder, c.cfg.HomeHidden = nil, nil
+
+	c.setMode(modeSoma)
+	c.pageLongPress(0, 0) // nothing there: nothing happens
+	c.somaTodoMenu("t1")
+	shot(t, c, "soma-todo-menu")
+	c.somaTap("so:tdmenu:delete:t1")
+	drawMu.Unlock()
+	soma.sync()
+	for _, td := range somaTodos() {
+		if td.ID == "t1" {
+			t.Fatal("t1 wasn't deleted")
+		}
+	}
+	_ = relay
+	_ = k
 }

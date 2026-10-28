@@ -111,6 +111,9 @@ func (c *console) booksHomePage() *page {
 	if soma.linked() {
 		h += somaHomeHeight()
 	}
+	if c.homeEdit {
+		h += 4 * 116
+	}
 	img := canvas(c.s.W, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -119,55 +122,41 @@ func (c *console) booksHomePage() *page {
 	apText(img, f.serifLarge, mx, 228, apLabel, "Home")
 	y := 228
 
-	// Today, from Soma: rings, habits, to-dos.
-	if soma.linked() {
-		y = c.somaHomeToday(p, y)
+	// The widgets at the top, in the order chosen (hold one to rearrange, as on iOS).
+	if c.homeEdit {
+		r := image.Rect(c.s.W-mx-170, 150, c.s.W-mx, 226)
+		ui.RoundRect(img, r, 40, apBlue)
+		apTextCenter(img, f.headline, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, rgb(0xffffff), "Done")
+		p.buttons = append(p.buttons, button{"home:editdone", r})
 	}
-
-	// Continue.
-	if len(now) > 0 {
-		apText(img, f.serifTitle, mx, y+90, apLabel, "Continue")
-		y += 120
-		cw := (c.s.W - 2*mx - 2*24) / 3
-		for k, i := range now[:min(3, len(now))] {
-			b := c.shelf[i]
-			r := image.Rect(mx+k*(cw+24), y, mx+k*(cw+24)+cw, y+140)
-			tint := rgb(0x6e6e73)
-			if cv := covers.get(b.cover, 72, 108); cv != nil {
-				tint = coverTint(cv, b.cover)
-			}
-			ui.RoundRect(img, r, 22, tint)
-			cr := image.Rect(r.Min.X+16, r.Min.Y+16, r.Min.X+16+72, r.Min.Y+16+108)
-			c.drawCover(img, cr, item(b))
-			tx, tw := cr.Max.X+18, r.Max.X-cr.Max.X-70
-			ty := r.Min.Y + 40
-			lines := layoutWords(f.captionBold, strings.Fields(b.title), 0, tw, false)
-			for li, l := range lines {
-				if li == 2 {
-					break
-				}
-				drawWords(img, f.captionBold, l, tx, ty, rgb(0xffffff))
-				ty += 30
-			}
-			apText(img, f.caption, tx, ty, blend(rgb(0xffffff), tint, 0.15), clip(f.caption, b.author, tw))
-			apText(img, f.caption, tx, ty+30, blend(rgb(0xffffff), tint, 0.25), fmt.Sprintf("Book · %d%%", c.lib.Progress[b.path].Pct))
-			iconDots(img, r.Max.X-40, (r.Min.Y+r.Max.Y)/2, rgb(0xffffff))
-			p.buttons = append(p.buttons, button{fmt.Sprintf("book%d", i), r})
+	widgets := c.homeOrder()
+	for i, name := range widgets {
+		hidden := c.cfg.HomeHidden[name]
+		if hidden && !c.homeEdit {
+			continue
 		}
-		y += 140
+		if c.homeEdit {
+			y = c.homeEditBar(p, y+20, name, i, len(widgets), hidden)
+		}
+		y0 := y
+		switch name {
+		case "rings":
+			if soma.linked() {
+				y = c.somaHomeRings(p, y)
+			}
+		case "todos":
+			if soma.linked() {
+				y = c.somaHomeTodos(p, y)
+			}
+		case "continue":
+			y = c.homeContinue(p, y, now)
+		case "picks":
+			y = c.homePicks(p, y)
+		}
+		if hidden { // shown faded while editing
+			glass(img, image.Rect(0, y0, c.s.W, y), 0, apBG, 0.7)
+		}
 	}
-
-	// Top Picks.
-	apText(img, f.serifTitle, mx, y+92, apLabel, "Top Picks")
-	y += 120
-	pw := (c.s.W - 2*mx - 2*24) / 3
-	ph := 400
-	for k, tp := range topPicks {
-		r := image.Rect(mx+k*(pw+24), y, mx+k*(pw+24)+pw, y+ph)
-		c.drawTopPick(img, r, tp)
-		p.buttons = append(p.buttons, button{fmt.Sprintf("home:pick:%d", k), r})
-	}
-	y += ph + 40
 
 	// Want to Read: the whole library, on the grouped band, sideways.
 	band := image.Rect(0, y, c.s.W, y+homeRowH+40)
@@ -225,6 +214,15 @@ func (c *console) booksHomePage() *page {
 		}
 		c.rowOrStatus(p, fmt.Sprintf("home:sh:%d", si), y+150, items, loading, "Couldn't load these. Is Wi-Fi on?")
 		y += homeRowH
+	}
+	if c.homeEdit { // while rearranging, only the edit controls answer
+		var keep []button
+		for _, b := range p.buttons {
+			if strings.HasPrefix(b.id, "home:") {
+				keep = append(keep, b)
+			}
+		}
+		p.buttons = keep
 	}
 	return p
 }
@@ -639,5 +637,154 @@ func (c *console) homeTap(id string) bool {
 	default:
 		return false
 	}
+	return true
+}
+
+// homeContinue is Home's Continue row: the books being read.
+func (c *console) homeContinue(p *page, y int, now []int) int {
+	f := apple()
+	img := p.img
+	mx := pageGutter
+	item := func(b shelfBook) *storeItem {
+		return &storeItem{key: b.path, title: b.title, author: b.author, cover: b.cover}
+	}
+	if len(now) > 0 {
+		apText(img, f.serifTitle, mx, y+90, apLabel, "Continue")
+		y += 120
+		cw := (c.s.W - 2*mx - 2*24) / 3
+		for k, i := range now[:min(3, len(now))] {
+			b := c.shelf[i]
+			r := image.Rect(mx+k*(cw+24), y, mx+k*(cw+24)+cw, y+140)
+			tint := rgb(0x6e6e73)
+			if cv := covers.get(b.cover, 72, 108); cv != nil {
+				tint = coverTint(cv, b.cover)
+			}
+			ui.RoundRect(img, r, 22, tint)
+			cr := image.Rect(r.Min.X+16, r.Min.Y+16, r.Min.X+16+72, r.Min.Y+16+108)
+			c.drawCover(img, cr, item(b))
+			tx, tw := cr.Max.X+18, r.Max.X-cr.Max.X-70
+			ty := r.Min.Y + 40
+			lines := layoutWords(f.captionBold, strings.Fields(b.title), 0, tw, false)
+			for li, l := range lines {
+				if li == 2 {
+					break
+				}
+				drawWords(img, f.captionBold, l, tx, ty, rgb(0xffffff))
+				ty += 30
+			}
+			apText(img, f.caption, tx, ty, blend(rgb(0xffffff), tint, 0.15), clip(f.caption, b.author, tw))
+			apText(img, f.caption, tx, ty+30, blend(rgb(0xffffff), tint, 0.25), fmt.Sprintf("Book · %d%%", c.lib.Progress[b.path].Pct))
+			iconDots(img, r.Max.X-40, (r.Min.Y+r.Max.Y)/2, rgb(0xffffff))
+			p.buttons = append(p.buttons, button{fmt.Sprintf("book%d", i), r})
+		}
+		y += 140
+	}
+
+	return y
+}
+
+// homePicks is Home's Top Picks.
+func (c *console) homePicks(p *page, y int) int {
+	f := apple()
+	img := p.img
+	mx := pageGutter
+	apText(img, f.serifTitle, mx, y+92, apLabel, "Top Picks")
+	y += 120
+	pw := (c.s.W - 2*mx - 2*24) / 3
+	ph := 400
+	for k, tp := range topPicks {
+		r := image.Rect(mx+k*(pw+24), y, mx+k*(pw+24)+pw, y+ph)
+		c.drawTopPick(img, r, tp)
+		p.buttons = append(p.buttons, button{fmt.Sprintf("home:pick:%d", k), r})
+	}
+	y += ph + 40
+
+	return y
+}
+
+// --- rearranging Home's widgets ------------------------------------------------------------
+
+var homeWidgets = []string{"rings", "todos", "continue", "picks"}
+
+var homeWidgetNames = map[string]string{"rings": "Rings", "todos": "To-dos", "continue": "Continue Reading", "picks": "Top Picks"}
+
+// homeOrder is the widgets in the chosen order, any new ones last.
+func (c *console) homeOrder() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range append(append([]string{}, c.cfg.HomeOrder...), homeWidgets...) {
+		if homeWidgetNames[n] != "" && !seen[n] {
+			out = append(out, n)
+			seen[n] = true
+		}
+	}
+	return out
+}
+
+// homeEditBar is a widget's bar while editing: its name, up, down, and hide/show.
+func (c *console) homeEditBar(p *page, y int, name string, i, n int, hidden bool) int {
+	f := apple()
+	img := p.img
+	mx := pageGutter
+	r := image.Rect(mx, y, c.s.W-mx, y+76)
+	ui.RoundRect(img, r, 38, apCard2)
+	apText(img, f.headline, r.Min.X+30, r.Min.Y+50, apLabel, homeWidgetNames[name])
+	bx := r.Max.X - 20
+	for _, b := range []struct {
+		id, label string
+		on        bool
+	}{{"home:hide:" + name, map[bool]string{true: "Show", false: "Hide"}[hidden], true}, {"home:down:" + name, "↓", i < n-1}, {"home:up:" + name, "↑", i > 0}} {
+		bw := ui.TextWidth(f.headline, b.label) + 50
+		br := image.Rect(bx-bw, r.Min.Y+8, bx, r.Max.Y-8)
+		bx -= bw + 12
+		if !b.on {
+			continue
+		}
+		ui.RoundRect(img, br, 30, apCard)
+		apTextCenter(img, f.headline, (br.Min.X+br.Max.X)/2, (br.Min.Y+br.Max.Y)/2, apBlue, b.label)
+		p.buttons = append(p.buttons, button{b.id, br})
+	}
+	return y + 96
+}
+
+// homeEditTap moves, hides or shows a widget, or ends editing. Caller holds drawMu.
+func (c *console) homeEditTap(id string) bool {
+	if !strings.HasPrefix(id, "home:up:") && !strings.HasPrefix(id, "home:down:") && !strings.HasPrefix(id, "home:hide:") && id != "home:editdone" {
+		return false
+	}
+	order := c.homeOrder()
+	switch {
+	case id == "home:editdone":
+		c.homeEdit = false
+	case strings.HasPrefix(id, "home:hide:"):
+		n := strings.TrimPrefix(id, "home:hide:")
+		if c.cfg.HomeHidden == nil {
+			c.cfg.HomeHidden = map[string]bool{}
+		}
+		if c.cfg.HomeHidden[n] {
+			delete(c.cfg.HomeHidden, n)
+		} else {
+			c.cfg.HomeHidden[n] = true
+		}
+	default:
+		up := strings.HasPrefix(id, "home:up:")
+		n := strings.TrimPrefix(strings.TrimPrefix(id, "home:up:"), "home:down:")
+		for i, o := range order {
+			if o != n {
+				continue
+			}
+			j := i + 1
+			if up {
+				j = i - 1
+			}
+			if j >= 0 && j < len(order) {
+				order[i], order[j] = order[j], order[i]
+			}
+			break
+		}
+		c.cfg.HomeOrder = order
+	}
+	c.cfg.save()
+	c.showPage()
 	return true
 }

@@ -54,6 +54,8 @@ type console struct {
 	pinEntry         string                   // the digits typed so far
 	pinFirst         string                   // a new passcode, the first time
 	pinMsg           string                   // "Wrong passcode"
+	pinBG            *image.RGBA              // the keypad, drawn once (passcode.go)
+	pinBGKey         string
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
 	alarmDay         string                   // the day it was last dismissed
@@ -61,6 +63,8 @@ type console struct {
 	weather          weatherNow               // Algiers, for the morning
 	somaReadSecs     float64                  // reading time not yet added to Soma (reader.go)
 	fieldBack        int                      // the cursor in the field being typed in, from its end (lineedit.go)
+	ringsDay         string                   // the day the rings card shows ("" for today)
+	homeEdit         bool                     // Home's widgets are being rearranged (a long press)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)

@@ -59,7 +59,10 @@ func (c *console) drawLock() {
 		if wp := covers.get(wallURL(c.cfg.Wallpaper, w, c.s.H), w, h); wp != nil {
 			draw.Draw(img, img.Rect, wp, wp.Rect.Min, draw.Src)
 			for i := 0; i < len(img.Pix); i += 4 {
-				img.Pix[i], img.Pix[i+1], img.Pix[i+2] = img.Pix[i]*3/4, img.Pix[i+1]*3/4, img.Pix[i+2]*3/4
+				// In int: a byte times 3 overflows and turned the photo's colours to noise.
+				img.Pix[i] = byte(int(img.Pix[i]) * 3 / 4)
+				img.Pix[i+1] = byte(int(img.Pix[i+1]) * 3 / 4)
+				img.Pix[i+2] = byte(int(img.Pix[i+2]) * 3 / 4)
 			}
 			top, photo = coverTint(wp, c.cfg.Wallpaper), true
 		}
@@ -73,25 +76,19 @@ func (c *console) drawLock() {
 	// Widgets, as on iOS: today's habits from Soma, and the book.
 	glassCard := func(r image.Rectangle) { glass(img, r, 36, white, 0.16) }
 	wy := 430
-	if soma.linked() {
-		habits := somaHabits()
-		done := 0
-		for _, hb := range habits {
-			if hb.done(somaToday()) {
-				done++
-			}
-		}
+	if soma.linked() { // Soma's rings, as its Today glance: the rings and the four numbers
 		r := image.Rect(w/2-470, wy, w/2-15, wy+190)
-		glassCard(r)
-		frac := 0.0
-		if len(habits) > 0 {
-			frac = float64(done) / float64(len(habits))
+		if it == nil {
+			r = image.Rect(w/2-230, wy, w/2+230, wy+190)
 		}
-		ring(img, r.Min.X+105, r.Min.Y+95, 62, 18, frac, rgb(0x2c3a2f), rgb(0x30d158))
-		apText(img, f.title, r.Min.X+200, r.Min.Y+88, white, fmt.Sprintf("%d / %d", done, len(habits)))
-		apText(img, f.callout, r.Min.X+200, r.Min.Y+136, blend(white, top, 0.3), "habits today")
-		if m := somaReading(somaToday()); m > 0 {
-			apText(img, f.caption, r.Min.X+200, r.Min.Y+172, blend(white, top, 0.4), fmt.Sprintf("%d min read", m))
+		glassCard(r)
+		ringSet(img, r.Min.X+20, r.Min.Y+20, 150, somaRingSpecs(somaToday()), false, true)
+		sx, sy := r.Min.X+190, r.Min.Y+44
+		for _, rg := range somaRingsFor(somaToday()) {
+			v := fmt.Sprintf("%.0f", rg.Value)
+			apText(img, f.captionBold, sx, sy, rgb(rg.From), v)
+			apText(img, f.caption, sx+ui.TextWidth(f.captionBold, v), sy, blend(white, top, 0.4), fmt.Sprintf("/%.0f %s", rg.Goal, rg.Unit))
+			sy += 40
 		}
 	}
 	if it != nil {

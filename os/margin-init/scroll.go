@@ -2,6 +2,7 @@ package main
 
 import (
 	"image"
+	"strings"
 	"time"
 
 	"margin-init/ui"
@@ -48,6 +49,8 @@ type scrollState struct {
 	stripOn   bool   // the overlay shows it (it's being slid)
 	stripFail string // row@pageGen the GPU couldn't take
 	fling     int    // bumped to stop a fling
+	longGen   int    // bumped by each touch: a long press fires only for its own
+	longFired bool   // the finger was held: its lift isn't a tap
 	samples   []scrollSample
 }
 
@@ -141,6 +144,17 @@ func (c *console) pageTouch(p TouchPoint) {
 		}
 		sc.fling++ // a finger on a flinging page catches it (the overlay stays until it lifts)
 		sc.drag, sc.moved, sc.row, sc.samples = true, false, nil, nil
+		// Held still for a moment: a long press (as on iOS).
+		sc.longGen++
+		sc.longFired = false
+		gen, lx, ly := sc.longGen, p.X, p.Y
+		time.AfterFunc(longPressAfter, func() {
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if sc.longGen == gen && sc.drag && !sc.moved && c.screenOn {
+				sc.longFired = c.pageLongPress(lx, ly)
+			}
+		})
 		sc.x0, sc.y0, sc.from = p.X, p.Y, c.scrollY()
 		py := c.pageY(p.Y)
 		for i := range c.page.rows {
@@ -186,6 +200,14 @@ func (c *console) pageTouch(p TouchPoint) {
 		c.scrollTo(dx, dy)
 	case p.Up:
 		if !sc.drag {
+			return
+		}
+		sc.longGen++
+		if sc.longFired { // held: the long press did its thing, the lift isn't a tap
+			sc.longFired, sc.drag = false, false
+			if sc.gpuOn {
+				c.gpuSettle()
+			}
 			return
 		}
 		moved := sc.moved
@@ -283,4 +305,28 @@ func (c *console) pageJump(dx, dy int) {
 	r.paint(c.page.img)
 	c.blitPage()
 	c.s.Flush()
+}
+
+const longPressAfter = 550 * time.Millisecond
+
+// pageLongPress handles a finger held still on a page. True if it did something. Caller
+// holds drawMu.
+func (c *console) pageLongPress(x, y int) bool {
+	if c.page == nil {
+		return false
+	}
+	id := c.page.hit(x, c.pageY(y))
+	switch {
+	case c.mode == modeBooksHome && !c.homeEdit && id != "" && c.pageY(y) > tabsH+40:
+		// Home's widgets: rearrange them.
+		c.homeEdit = true
+		vibrate(20)
+		c.showPage()
+		return true
+	case c.mode == modeSoma && strings.HasPrefix(id, "so:todo:"):
+		c.somaTodoMenu(strings.TrimPrefix(id, "so:todo:"))
+		vibrate(20)
+		return true
+	}
+	return false
 }

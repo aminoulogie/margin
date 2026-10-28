@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"margin-init/fonts"
 	"margin-init/ui"
 	"math"
 	"sort"
@@ -109,9 +110,9 @@ func gradientRing(img *image.RGBA, cx, cy, rad, width int, frac float64, from, t
 	}
 }
 
-// somaHomeToday is the top of Home, from Soma: the day's four rings, the habits, and today's
-// to-dos to tick. Returns the y under it.
-func (c *console) somaHomeToday(p *page, y int) int {
+// somaHomeRings is Today on Home, from Soma: the sleep button and the rings card. Returns
+// the y under it.
+func (c *console) somaHomeRings(p *page, y int) int {
 	f := apple()
 	img := p.img
 	w, mx := c.s.W, pageGutter
@@ -120,48 +121,16 @@ func (c *console) somaHomeToday(p *page, y int) int {
 	c.sleepPill(p, y+45)
 	y += 120
 
-	// The rings card.
-	card := image.Rect(mx, y, w-mx, y+380)
-	ui.RoundRect(img, card, 28, apCard)
-	rings := somaRingsFor(date)
-	cx, cy := card.Min.X+190, card.Min.Y+190
-	for i, r := range rings {
-		frac := 0.0
-		if r.Goal > 0 {
-			frac = r.Value / r.Goal
-		}
-		gradientRing(img, cx, cy, 150-i*40, 34, frac, r.From, r.To)
-	}
-	ly := card.Min.Y + 78
-	for _, r := range rings {
-		apText(img, f.caption, card.Min.X+420, ly, rgb(r.To), strings.ToUpper(r.Label))
-		apText(img, f.headline, card.Min.X+420, ly+38, apLabel, fmt.Sprintf("%.0f / %.0f %s", r.Value, r.Goal, r.Unit))
-		ly += 76
-	}
-	p.buttons = append(p.buttons, button{"tab:soma", card})
-	y += 400
+	// Soma's rings card, as the iPhone draws it (ActivityRings.tsx). No habit rings.
+	return c.somaRingsCard(p, image.Rect(mx, y, w-mx, y), date) + 24
+}
 
-	// The habits, a small ring each: tap to tick.
-	habits := somaHabits()
-	for i := 0; i < len(habits); i += 5 {
-		row := image.Rect(mx, y, w-mx, y+100)
-		ui.RoundRect(img, row, 24, apCard)
-		for k, hb := range habits[i:min(i+5, len(habits))] {
-			x := row.Min.X + 50 + k*row.Dx()/5
-			cy := (row.Min.Y + row.Max.Y) / 2
-			col := somaColour(hb.Color, apBlue)
-			frac := 0.0
-			if hb.done(date) {
-				frac = 1
-			}
-			ring(img, x, cy, 22, 10, frac, blend(col, rgb(0x000000), 0.7), col)
-			apText(img, f.caption, x+38, cy+10, apLabel, clip(f.caption, hb.Name, row.Dx()/5-100))
-			p.buttons = append(p.buttons, button{"so:habit:" + hb.ID, image.Rect(x-36, row.Min.Y, x+row.Dx()/5-50, row.Max.Y)})
-		}
-		y += 116
-	}
-	y += 4
-
+// somaHomeTodos is today's to-dos on Home, to tick.
+func (c *console) somaHomeTodos(p *page, y int) int {
+	f := apple()
+	img := p.img
+	mx := pageGutter
+	date := somaToday()
 	// Today's to-dos.
 	var items []somaTodo
 	for _, t := range somaTodos() {
@@ -189,7 +158,7 @@ func somaHomeHeight() int {
 			n++
 		}
 	}
-	return 120 + 400 + (len(somaHabits())+4)/5*116 + max(min(n, 5)*104, 60) + 30
+	return 120 + ringsCardH + 24 + max(min(n, 5)*104, 60) + 30
 }
 
 // sleepPill is "Going to sleep" (or "I'm up" while asleep), at the right of a title.
@@ -293,4 +262,90 @@ func (c *console) somaHabitRows(p *page, habits []somaHabit, date string, y int)
 		}
 	}
 	return y
+}
+
+// ringsCardH is the rings card's height (somaRingsCard).
+const ringsCardH = 32 + 40 + 8 + 72 + 24 + 32 + 16 + 352 + 32
+
+// somaRingsCard is Soma's ActivityRings card at full width, at twice its CSS pixels (the
+// tablet's density): the week across the top, a small set of rings a day, then the day's
+// four rings with each number against its goal and a bar under it. Tapping a day shows
+// that day's; tapping the rings opens the Soma tab. Returns the y under it.
+func (c *console) somaRingsCard(p *page, at image.Rectangle, today string) int {
+	img := p.img
+	const k = 2 // CSS pixels to the tablet's
+	card := image.Rect(at.Min.X, at.Min.Y, at.Max.X, at.Min.Y+ringsCardH)
+	glass(img, card, 16*k, rgb(0x1c1c1e), 0.92) // .glass-card, rounded-2xl
+	date := c.ringsDay
+	if date == "" {
+		date = today
+	}
+	pad := 16 * k
+	in := image.Rect(card.Min.X+pad, card.Min.Y+pad, card.Max.X-pad, card.Max.Y-pad)
+	faint := rgb(0x8d8d93)
+
+	// The week: Monday to Sunday of the day shown.
+	mon, _ := time.Parse("2006-01-02", mondayOf(date))
+	colW := in.Dx() / 7
+	small := textFace("inter-bold", fonts.InterBold, true, 0.58*16*k)
+	for i := 0; i < 7; i++ {
+		d := mon.AddDate(0, 0, i).Format("2006-01-02")
+		cx := in.Min.X + i*colW + colW/2
+		ly := in.Min.Y + 20
+		fg := faint
+		switch {
+		case d == date:
+			ui.Circle(img, cx, ly, 20, rgb(0xff2d7a))
+			fg = rgb(0xffffff)
+		case d == today:
+			fg = apLabel
+		}
+		apTextCenter(img, small, cx, ly, fg, mon.AddDate(0, 0, i).Format("Mon")[:1])
+		ringSet(img, cx-36, ly+28, 72, somaRingSpecs(d), d != today, false)
+		if d > today { // the future, faded
+			glass(img, image.Rect(cx-38, ly+26, cx+38, ly+102), 0, rgb(0x1c1c1e), 0.65)
+		}
+		p.buttons = append(p.buttons, button{"so:ringsday:" + d, image.Rect(cx-colW/2, in.Min.Y, cx+colW/2, ly+104)})
+	}
+	y := in.Min.Y + 40 + 8 + 72 + 24
+
+	// "Today ›", or the day shown.
+	title := "Today"
+	if date != today {
+		t, _ := time.Parse("2006-01-02", date)
+		title = t.Format("Monday 2 Jan")
+	}
+	head := textFace("inter-bold", fonts.InterBold, true, 16*k)
+	apText(img, head, in.Min.X, y+26, apLabel, title)
+	iconChevronRight(img, in.Min.X+ui.TextWidth(head, title)+14, y+16, faint)
+	y += 32 + 16
+
+	// The rings, and the numbers beside them.
+	ringSet(img, in.Min.X, y, 352, somaRingSpecs(date), false, true)
+	label := textFace("inter-bold", fonts.InterBold, true, 0.62*16*k)
+	value := textFace("inter-bold", fonts.InterBold, true, 1.05*16*k)
+	of := textFace("inter-bold", fonts.InterBold, true, 0.75*16*k)
+	unit := textFace("inter-bold", fonts.InterBold, true, 0.55*16*k)
+	colX := in.Min.X + 352 + 16*k
+	sw := min(in.Max.X-colX, 184*k)
+	sx := colX + (in.Max.X-colX-sw)/2 // centred in the room beside the rings
+	sy := y + 12
+	for _, r := range somaRingsFor(date) {
+		col := rgb(r.From)
+		apText(img, label, sx, sy+20, faint, strings.ToUpper(r.Label))
+		v := fmt.Sprintf("%.0f", r.Value)
+		apText(img, value, sx, sy+58, col, v)
+		x2 := sx + ui.TextWidth(value, v)
+		g := fmt.Sprintf("/%.0f", r.Goal)
+		apText(img, of, x2, sy+58, faint, g)
+		apText(img, unit, x2+ui.TextWidth(of, g)+4, sy+58, col, strings.ToUpper(r.Unit))
+		bar := image.Rect(sx, sy+68, sx+sw, sy+76)
+		ui.RoundRect(img, bar, 4, blend(apBG, col, 0.2))
+		if r.Goal > 0 && r.Value > 0 {
+			ui.RoundRect(img, image.Rect(bar.Min.X, bar.Min.Y, bar.Min.X+max(8, int(float64(sw)*min(r.Value/r.Goal, 1))), bar.Max.Y), 4, col)
+		}
+		sy += 92
+	}
+	p.buttons = append(p.buttons, button{"tab:soma", image.Rect(card.Min.X, in.Min.Y+40+8+72+24-10, card.Max.X, card.Max.Y)})
+	return card.Max.Y
 }

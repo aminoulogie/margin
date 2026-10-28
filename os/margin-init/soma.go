@@ -32,6 +32,7 @@ type somaUI struct {
 	delShift string    // a shift being deleted (asked twice)
 	delStep  int
 	need     map[string]int // the height each view last needed
+	todoMenu string         // the to-do held for its actions
 	typing   bool
 	field    string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
 	editing  string
@@ -77,7 +78,7 @@ func (c *console) somaPage() *page {
 
 	// A first guess at the page's height; a page that turns out taller is drawn again at the
 	// height it needed (remembered, so it's drawn once from then on).
-	h := map[string]int{"today": 3200, "calendar": 6500, "goals": 6000, "notes": 8000, "money": 6000, "reports": 3400}[su.view]
+	h := map[string]int{"today": 2600, "calendar": 4200, "goals": 2400, "notes": 2400, "money": 2800, "reports": 3400}[su.view]
 	if su.need == nil {
 		su.need = map[string]int{}
 	}
@@ -234,6 +235,20 @@ func (c *console) somaTodoRows(p *page, items []somaTodo, y int) int {
 			apTextCenter(img, f.caption, (pr.Min.X+pr.Max.X)/2, cy, blend(apSecondary, apCard, 0.3), "!")
 		}
 		p.buttons = append(p.buttons, button{"so:todo:" + t.ID, image.Rect(r.Min.X, r.Min.Y, pr.Min.X, r.Max.Y)}, button{"so:prio:" + t.ID, pr})
+		if c.somaUI.todoMenu == t.ID { // held: its actions over the row
+			ui.RoundRect(img, r, radiusCard, apCard2)
+			acts := []struct{ id, label string }{{"tomorrow", "Tomorrow"}, {"priority", "Priority"}, {"delete", "Delete"}, {"close", "Cancel"}}
+			aw := r.Dx() / len(acts)
+			for i, a := range acts {
+				ar := image.Rect(r.Min.X+i*aw, r.Min.Y, r.Min.X+(i+1)*aw, r.Max.Y)
+				col := apBlue
+				if a.id == "delete" {
+					col = apRed
+				}
+				apTextCenter(img, f.headline, (ar.Min.X+ar.Max.X)/2, (ar.Min.Y+ar.Max.Y)/2, col, a.label)
+				p.buttons = append(p.buttons, button{"so:tdmenu:" + a.id + ":" + t.ID, ar})
+			}
+		}
 		y += 104
 	}
 	return y
@@ -327,6 +342,23 @@ func (c *console) somaTap(id string) bool {
 		m, _ := strconv.Atoi(strings.TrimPrefix(id, "so:moveto:"))
 		somaMoveTodo(su.moving, su.sel, m)
 		su.moving = ""
+	case strings.HasPrefix(id, "so:ringsday:"):
+		c.ringsDay = strings.TrimPrefix(id, "so:ringsday:")
+		if c.ringsDay == somaToday() {
+			c.ringsDay = ""
+		}
+	case strings.HasPrefix(id, "so:tdmenu:"): // so:tdmenu:<action>:<id>
+		act, tid, _ := strings.Cut(strings.TrimPrefix(id, "so:tdmenu:"), ":")
+		switch act {
+		case "tomorrow":
+			somaMoveTodoTomorrow(tid)
+		case "priority":
+			somaTodoPriority(tid)
+		case "delete":
+			somaDeleteTodo(tid)
+			c.toastMsg("To-do deleted")
+		}
+		su.todoMenu = ""
 	case strings.HasPrefix(id, "so:water:"):
 		ml, _ := strconv.Atoi(strings.TrimPrefix(id, "so:water:"))
 		somaAddWater(float64(ml))
@@ -471,4 +503,10 @@ func drawQR(img *image.RGBA, text string, r image.Rectangle) {
 			}
 		}
 	}
+}
+
+// somaTodoMenu shows a held to-do's actions (tomorrow, priority, delete). Caller holds drawMu.
+func (c *console) somaTodoMenu(id string) {
+	c.somaUI.todoMenu = id
+	c.showPage()
 }

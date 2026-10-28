@@ -197,6 +197,9 @@ type savedSettings struct {
 	// Wind-down: warm and dim from WindMin (minutes after midnight) until 5 am.
 	WindOn  bool `json:"wind_down_on,omitempty"`
 	WindMin int  `json:"wind_down_minutes"`
+	// Home's widgets: their order, and the hidden ones (bookshome.go).
+	HomeOrder  []string        `json:"home_order,omitempty"`
+	HomeHidden map[string]bool `json:"home_hidden,omitempty"`
 	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
 	SmoothScroll bool `json:"smooth_scroll"`
 }
