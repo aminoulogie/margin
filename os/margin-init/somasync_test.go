@@ -675,3 +675,45 @@ func TestSomaLogging(t *testing.T) {
 		t.Fatalf("the PC sees the workout as %v", h)
 	}
 }
+
+// Money: the month by category, clients owed with standby at half, and a shift deleted only
+// on the third tap.
+func TestSomaMoney(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	now := time.Now().In(displayZone)
+	month := now.Format("2006-01")
+	at := time.Now().UnixMilli()
+	relay.pcPut(t, k, "ledger#l1", obj{"id": "l1", "date": month + "-01", "kind": "income", "amount": 200000, "category": "Clients"}, at)
+	relay.pcPut(t, k, "ledger#l2", obj{"id": "l2", "date": month + "-02", "kind": "spend", "amount": 60000, "category": "Rent"}, at)
+	relay.pcPut(t, k, "ledger#l3", obj{"id": "l3", "date": month + "-02", "kind": "spend", "amount": 100, "category": "Restaurants", "currency": "EUR"}, at)
+	relay.pcPut(t, k, "settings.moneyRates", obj{"EUR": 250}, at)
+	relay.pcPut(t, k, "settings.clientRates", obj{"Acme": 2000}, at)
+	day := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, displayZone)
+	ms := func(h float64) float64 { return float64(day.Add(time.Duration(h * float64(time.Hour))).UnixMilli()) }
+	relay.pcPut(t, k, "shifts#s1", obj{"id": "s1", "client": "Acme", "start": ms(9), "end": ms(12), "breaks": []any{}, "activities": []any{}}, at)
+	relay.pcPut(t, k, "shifts#s2", obj{"id": "s2", "client": "Acme", "start": ms(14), "end": ms(18), "breaks": []any{}, "activities": []any{}}, at)
+	soma.sync()
+
+	m := somaMoneyMonth(month)
+	if m.Income != 200000 || m.Spend != 85000 || m.ByCategory["Restaurants"] != 25000 {
+		t.Fatalf("month %+v", m)
+	}
+	cm := somaClientsMonth(month)["Acme"]
+	if cm == nil || cm.Worked != 7*time.Hour || cm.Standby != 2*time.Hour || cm.owed() != 16000 {
+		t.Fatalf("Acme %+v", cm)
+	}
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:view:money")
+	shot(t, c, "soma-money")
+	c.somaTap("so:delshift:s1")
+	c.somaTap("so:delshift:s1")
+	if len(somaShifts()) != 2 {
+		t.Fatal("deleted before the third tap")
+	}
+	c.somaTap("so:delshift:s1")
+	drawMu.Unlock()
+	if len(somaShifts()) != 1 {
+		t.Fatal("not deleted on the third tap")
+	}
+}

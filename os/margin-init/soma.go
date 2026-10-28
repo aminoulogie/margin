@@ -30,6 +30,9 @@ type somaUI struct {
 	calWeek  bool      // the calendar shows a week, not the month
 	moving   string    // a timed to-do being moved: the next time tapped is its new time
 	repRange string    // the reports' range: "week", "month", "year"
+	plan     int       // the spending plan shown in Money
+	delShift string    // a shift being deleted (asked twice)
+	delStep  int
 	typing   bool
 	field    string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
 	editing  string
@@ -73,7 +76,7 @@ func (c *console) somaPage() *page {
 	}
 	soma.mu.Unlock()
 
-	h := map[string]int{"today": 3200, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3400}[su.view]
+	h := map[string]int{"today": 3200, "calendar": 6500, "goals": 6000, "notes": 8000, "money": 6000, "reports": 3400}[su.view]
 	img := canvas(w, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -142,7 +145,7 @@ func (c *console) somaPage() *page {
 	// The three parts, as a segmented control.
 	seg := image.Rect(mx, 310, w-mx, 386)
 	ui.RoundRect(img, seg, 20, apCard2)
-	views := []struct{ id, label string }{{"today", "Today"}, {"calendar", "Calendar"}, {"goals", "Goals"}, {"notes", "Notes"}, {"reports", "Reports"}}
+	views := []struct{ id, label string }{{"today", "Today"}, {"calendar", "Calendar"}, {"goals", "Goals"}, {"notes", "Notes"}, {"money", "Money"}, {"reports", "Reports"}}
 	for i, v := range views {
 		r := image.Rect(seg.Min.X+i*seg.Dx()/len(views), seg.Min.Y, seg.Min.X+(i+1)*seg.Dx()/len(views), seg.Max.Y)
 		if su.view == v.id {
@@ -164,6 +167,8 @@ func (c *console) somaPage() *page {
 		y = c.somaGoals(p, y)
 	case "notes":
 		y = c.somaNotesView(p, y)
+	case "money":
+		y = c.somaMoney(p, y)
 	default:
 		y = c.somaToday(p, y)
 	}
@@ -864,6 +869,10 @@ func (c *console) somaTap(id string) bool {
 	case strings.HasPrefix(id, "so:step:"): // so:step:<project>:<step>
 		pj, st, _ := strings.Cut(strings.TrimPrefix(id, "so:step:"), ":")
 		somaStepTap(pj, st)
+	case id == "so:plan":
+		su.plan++
+	case strings.HasPrefix(id, "so:delshift:"):
+		c.somaDelShiftTap(strings.TrimPrefix(id, "so:delshift:"))
 	case strings.HasPrefix(id, "so:rep:"):
 		su.repRange = strings.TrimPrefix(id, "so:rep:")
 	case id == "so:cal:week", id == "so:cal:month":
