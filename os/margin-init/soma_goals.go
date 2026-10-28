@@ -36,7 +36,7 @@ func (c *console) somaGoals(p *page, y int) int {
 		}
 		for _, g := range goals {
 			r := image.Rect(mx, y, w-mx, y+104)
-			ui.RoundRect(img, r, radiusCard, apCard)
+			smCard(img, r, smSurface)
 			col := somaColour(g.Color, apBlue)
 			cx, cy := r.Min.X+56, (r.Min.Y+r.Max.Y)/2
 			ui.Circle(img, cx, cy, 26, col)
@@ -89,7 +89,7 @@ func (c *console) somaGoals(p *page, y int) int {
 	for _, pj := range projects {
 		col := somaColour(pj.Color, apBlue)
 		head := image.Rect(mx, y, w-mx, y+130)
-		ui.RoundRect(img, head, 22, apCard)
+		smCard(img, head, smSurface)
 		apText(img, f.headline, head.Min.X+34, head.Min.Y+56, apLabel, clip(f.headline, pj.Name, head.Dx()-400))
 		var sub []string
 		if pj.Client != "" {
@@ -124,7 +124,7 @@ func (c *console) somaGoals(p *page, y int) int {
 		y += 140
 		for _, st := range pj.Steps {
 			r := image.Rect(mx+40, y, w-mx, y+84)
-			ui.RoundRect(img, r, 20, apCard)
+			smCard(img, r, smSurface)
 			cx, cy := r.Min.X+44, (r.Min.Y+r.Max.Y)/2
 			ui.Circle(img, cx, cy, 20, col)
 			if st.Done {

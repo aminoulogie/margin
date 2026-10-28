@@ -99,7 +99,7 @@ func (c *console) somaNotesView(p *page, y int) int {
 	}
 	for _, n := range notes {
 		r := image.Rect(mx, y, w-mx, y+120)
-		ui.RoundRect(img, r, radiusCard, apCard)
+		smCard(img, r, smSurface)
 		apText(img, f.headline, r.Min.X+34, r.Min.Y+52, apLabel, clip(f.headline, n.title(), r.Dx()-300))
 		when := time.UnixMilli(n.Mtime).In(displayZone)
 		stamp := when.Format("2 Jan")

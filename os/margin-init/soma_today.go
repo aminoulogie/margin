@@ -203,7 +203,7 @@ func (c *console) somaHabitRows(p *page, habits []somaHabit, date string, y int)
 			}
 			first = false
 			r := image.Rect(mx, y, w-mx, y+112)
-			ui.RoundRect(img, r, radiusCard, apCard)
+			smCard(img, r, smSurface)
 			col := somaColour(h.Color, apBlue)
 			cx, cy := r.Min.X+56, (r.Min.Y+r.Max.Y)/2
 			ui.Circle(img, cx, cy, 26, col)

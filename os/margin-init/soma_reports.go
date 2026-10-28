@@ -92,7 +92,7 @@ func (c *console) somaReports(p *page, y int) int {
 	chart := func(title, note string, vals []float64, goal float64, col color.RGBA) {
 		y = somaSection(img, mx, y, title, note)
 		r := image.Rect(mx, y, w-mx, y+300)
-		ui.RoundRect(img, r, radiusCard, apCard)
+		smCard(img, r, smSurface)
 		top := goal
 		for _, v := range vals {
 			top = max(top, v)

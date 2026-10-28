@@ -239,7 +239,7 @@ func (c *console) somaMoney(p *page, y int) int {
 		col   uint32
 	}{{"Income", m.Income, 0x30d158}, {"Spent", m.Spend, 0xff453a}, {"Saved", m.Saved, 0x0a84ff}, {"Net", m.Income - m.Spend - m.Saved, 0xffffff}} {
 		r := image.Rect(mx+i*(cw+16), y, mx+i*(cw+16)+cw, y+130)
-		ui.RoundRect(img, r, radiusCard, apCard)
+		smCard(img, r, smSurface)
 		apText(img, f.caption, r.Min.X+24, r.Min.Y+44, apSecondary, k.label)
 		apText(img, f.headline, r.Min.X+24, r.Min.Y+96, rgb(k.col), clip(f.headline, money(k.v), cw-40))
 	}
@@ -263,7 +263,7 @@ func (c *console) somaMoney(p *page, y int) int {
 	}
 	for _, ct := range cats {
 		r := image.Rect(mx, y, w-mx, y+100)
-		ui.RoundRect(img, r, 20, apCard)
+		smCard(img, r, smSurface)
 		pct := 0.0
 		if m.Spend > 0 {
 			pct = ct.spent / m.Spend * 100
@@ -309,7 +309,7 @@ func (c *console) somaMoney(p *page, y int) int {
 		}
 	}
 	pr := image.Rect(mx, y, w-mx, y+40+rows*80)
-	ui.RoundRect(img, pr, 22, apCard)
+	smCard(img, pr, smSurface)
 	ry := pr.Min.Y + 60
 	for _, sh := range []string{"needs", "wants", "save", "give"} {
 		target := t.Shares[sh]
@@ -354,7 +354,7 @@ func (c *console) somaMoney(p *page, y int) int {
 	for _, n := range names {
 		cm := clients[n]
 		r := image.Rect(mx, y, w-mx, y+110)
-		ui.RoundRect(img, r, 20, apCard)
+		smCard(img, r, smSurface)
 		apText(img, f.headline, r.Min.X+30, r.Min.Y+46, apLabel, n)
 		rate := "no rate set"
 		if cm.Rate > 0 {
@@ -380,7 +380,7 @@ func (c *console) somaMoney(p *page, y int) int {
 			break
 		}
 		r := image.Rect(mx, y, w-mx, y+90)
-		ui.RoundRect(img, r, 18, apCard)
+		smCard(img, r, smSurface)
 		end := "running"
 		if !s.End.IsZero() {
 			end = s.End.In(displayZone).Format("15:04")

@@ -63,6 +63,14 @@ func (c *console) somaPage() *page {
 	if su.view == "" {
 		su.view = "home"
 	}
+	// Soma's own colours while its pages draw (styles.css): the page, cards, text, accent.
+	if apDark {
+		saved := [...]color.RGBA{apBG, apCard, apCard2, apLabel, apSecondary, apBlue, apSeparator}
+		apBG, apCard, apCard2, apLabel, apSecondary, apBlue, apSeparator = smBG, smSurface, smSurf3, smFG, smMuted, smPink, rgb(0x2a2f3d)
+		defer func() {
+			apBG, apCard, apCard2, apLabel, apSecondary, apBlue, apSeparator = saved[0], saved[1], saved[2], saved[3], saved[4], saved[5], saved[6]
+		}()
+	}
 	soma.load()
 	soma.mu.Lock()
 	soma.changed = func() {
@@ -101,7 +109,7 @@ func (c *console) somaPage() *page {
 	}
 	field := func(id, label, value string, y int) {
 		r := image.Rect(mx, y, w-mx, y+96)
-		ui.RoundRect(img, r, radiusCard, apCard)
+		smCard(img, r, smSurface)
 		on := su.typing && su.field == id
 		text, col := value, apLabel
 		if text == "" && !on {
@@ -210,7 +218,7 @@ func (c *console) somaTodoRows(p *page, items []somaTodo, y int) int {
 	w, mx := c.s.W, pageGutter
 	for _, t := range items {
 		r := image.Rect(mx, y, w-mx, y+92)
-		ui.RoundRect(img, r, radiusCard, apCard)
+		smCard(img, r, smSurface)
 		cx, cy := r.Min.X+50, (r.Min.Y+r.Max.Y)/2
 		ui.Circle(img, cx, cy, 22, apBlue)
 		if t.Done {
