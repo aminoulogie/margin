@@ -99,7 +99,7 @@ func TestWorkPages(t *testing.T) {
 	defer drawMu.Unlock()
 	c.setMode(modeSoma)
 	c.somaUI.view = "work"
-	for _, pg := range []string{"overview", "projects", "project", "time", "planner", "reports", "money", "worklog", "findings", "health", "training", "nutrition", "mind", "stats"} {
+	for _, pg := range []string{"overview", "projects", "project", "time", "planner", "reports", "money", "worklog", "findings", "health", "training", "nutrition", "mind", "stats", "settings"} {
 		c.somaUI.work, c.somaUI.workProj = pg, "p1"
 		c.showPage()
 		shot(t, c, "work-"+pg)

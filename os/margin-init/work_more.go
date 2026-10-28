@@ -896,3 +896,154 @@ func (k *wk) stats() int {
 	}
 	return hc.Max.Y
 }
+
+// --- settings -------------------------------------------------------------------------------------
+
+// wkSettingRows are the settings the tablet can change, as Soma keeps them.
+var wkSettingRows = []struct{ group, key, label, hint string }{
+	{"You", "name", "Your name", "what Soma greets you with"},
+	{"You", "currency", "Currency", "GBP, EUR, USD or DZD"},
+	{"Work", "workDayHours", "Hours a day", "the day's target"},
+	{"Work", "workWeekHours", "Hours a week", "the week's target"},
+	{"Body", "customGoals.cals", "Calories", "kcal a day"},
+	{"Body", "customGoals.protein", "Protein", "grams a day"},
+	{"Body", "customGoals.water", "Water", "ml a day"},
+	{"Mind", "readingGoalMin", "Reading", "minutes a day"},
+}
+
+func settingValue(key string) string {
+	if k, sub, ok := strings.Cut(key, "."); ok {
+		o, _ := jsonValue(soma.get("settings." + k)).(map[string]any)
+		if v, ok := o[sub]; ok {
+			return fmt.Sprint(v)
+		}
+		return ""
+	}
+	v := jsonValue(soma.get("settings." + key))
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
+}
+
+// wkSetSetting keeps a typed setting: numbers as numbers, in Soma's own shape.
+func wkSetSetting(key, text string) {
+	text = strings.TrimSpace(text)
+	var v any = text
+	var f float64
+	if _, err := fmt.Sscan(text, &f); err == nil && key != "name" && key != "currency" {
+		v = f
+	}
+	if c, ok := strings.CutPrefix(key, "rate:"); ok {
+		rates, _ := jsonValue(soma.get("settings.clientRates")).(map[string]any)
+		if rates == nil {
+			rates = map[string]any{}
+		}
+		rates[c] = f
+		somaPut("settings.clientRates", rates)
+		return
+	}
+	if k, sub, ok := strings.Cut(key, "."); ok {
+		o, _ := jsonValue(soma.get("settings." + k)).(map[string]any)
+		if o == nil {
+			o = map[string]any{}
+		}
+		o[sub] = v
+		somaPut("settings."+k, o)
+		return
+	}
+	if key == "currency" {
+		v = strings.ToUpper(text)
+	}
+	somaPut("settings."+key, v)
+}
+
+func (k *wk) settingsPage() int {
+	k.header([]string{"Soma", "Settings"}, "Settings", "Soma on this tablet: you, your targets, your clients, sync", color.RGBA{})
+	su := &k.c.somaUI
+	y := 236
+	// The groups as cards, a row per setting; a tap types a new value.
+	groups := []string{"You", "Work", "Body", "Mind"}
+	for _, g := range groups {
+		var items []int
+		for i, r := range wkSettingRows {
+			if r.group == g {
+				items = append(items, i)
+			}
+		}
+		k.text(wkFont("semi", 18), wkX0+8, y+20, wkFaint, strings.ToUpper(g))
+		y += 36
+		c := image.Rect(wkX0, y, wkX1, y+8+80*len(items))
+		k.card(c)
+		ry := y + 4
+		for j, i := range items {
+			r := wkSettingRows[i]
+			if j > 0 {
+				ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
+			}
+			k.text(wkFont("semi", 21), 188, ry+36, wkFG, r.label)
+			k.text(wkFont("regular", 17), 188, ry+62, wkFaint, r.hint)
+			v := settingValue(r.key)
+			if su.typing && su.field == "set:"+r.key {
+				v = withCursor(su.editing, k.c.fieldBack)
+			}
+			if v == "" {
+				v = "Not set"
+			}
+			k.textR(wkFont("medium", 21), 1100, ry+48, wkText2, v)
+			k.icon("chevron-right", 1124, ry+40, 20, wkFaint)
+			k.btn("so:type:set:"+r.key, k.R(wkX0, ry, wkX1, ry+80))
+			ry += 80
+		}
+		y = c.Max.Y + 24
+	}
+	// Each client's rate.
+	rates, _ := jsonValue(soma.get("settings.clientRates")).(map[string]any)
+	seen := map[string]bool{}
+	var clients []string
+	for c := range rates {
+		clients, seen[c] = append(clients, c), true
+	}
+	for _, p := range wkProjects() {
+		if p.Client != "" && !seen[p.Client] {
+			clients, seen[p.Client] = append(clients, p.Client), true
+		}
+	}
+	sort.Strings(clients)
+	k.text(wkFont("semi", 18), wkX0+8, y+20, wkFaint, "CLIENT RATES")
+	y += 36
+	cc := image.Rect(wkX0, y, wkX1, y+8+80*max(len(clients), 1))
+	k.card(cc)
+	ry := y + 4
+	for j, cl := range clients {
+		if j > 0 {
+			ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
+		}
+		k.text(wkFont("semi", 21), 188, ry+48, wkFG, clip(wkFont("semi", 21), cl, 600))
+		v := "Not set"
+		if r := num(rates[cl]); r > 0 {
+			v = wkMoney(r) + " an hour"
+		}
+		if su.typing && su.field == "set:rate:"+cl {
+			v = withCursor(su.editing, k.c.fieldBack)
+		}
+		k.textR(wkFont("medium", 21), 1100, ry+48, wkText2, v)
+		k.icon("chevron-right", 1124, ry+40, 20, wkFaint)
+		k.btn("so:type:set:rate:"+cl, k.R(wkX0, ry, wkX1, ry+80))
+		ry += 80
+	}
+	if len(clients) == 0 {
+		k.text(wkFont("regular", 20), 188, ry+48, wkMuted, "Clients come from projects and shifts.")
+	}
+	y = cc.Max.Y + 24
+	// Sync.
+	k.text(wkFont("semi", 18), wkX0+8, y+20, wkFaint, "SYNC")
+	y += 36
+	sc := image.Rect(wkX0, y, wkX1, y+168)
+	k.card(sc)
+	k.text(wkFont("semi", 21), 188, y+50, wkFG, "Soma relay")
+	k.text(wkFont("regular", 18), 188, y+80, wkFaint, clip(wkFont("regular", 18), soma.status(), 600))
+	k.boxBtn("so:sync", 900, y+24, 1136, y+84, "repeat", "Sync now", wkLime, wkInk)
+	k.text(wkFont("regular", 17), 188, y+140, wkFaint, "Linked with your recovery code; it never leaves the tablet.")
+	return sc.Max.Y
+}
