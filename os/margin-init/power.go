@@ -75,7 +75,7 @@ func (c *console) setScreen(on bool) {
 	c.lastInput = time.Now()
 	c.locked, c.pinMode = c.needLock(), "" // wake on the lock screen: the book's cover, the time
 	c.redrawAll()
-	setBacklight(c.cfg.Brightness)
+	setBacklight(c.brightNow())
 	log.Printf("screen on")
 }
 
@@ -91,8 +91,9 @@ func (c *console) keysLoop(device string) {
 // idleLoop turns the screen off after the configured minutes without a touch or key.
 // It doesn't return.
 func (c *console) idleLoop() {
-	for range time.Tick(5 * time.Second) {
+	for now := range time.Tick(5 * time.Second) {
 		drawMu.Lock()
+		c.sleepTick(now)
 		if c.screenOn && c.cfg.ScreenOff > 0 && time.Since(c.lastInput) > time.Duration(c.cfg.ScreenOff)*time.Minute {
 			log.Printf("idle %d min: screen off", c.cfg.ScreenOff)
 			c.setScreen(false)

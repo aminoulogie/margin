@@ -100,6 +100,8 @@ type Screen struct {
 	red, green, blue bitfield
 	dirtyLo, dirtyHi int  // native rows changed since the last Flush; lo > hi means none
 	hold             bool // drawing the next frame of a transition: Flush waits
+	warm             bool // wind-down: less blue, a little less green (sleep.go)
+	warmBuf          []byte
 }
 
 func newScreen(dev io.WriterAt, fbW, fbH, stride, bpp int, red, green, blue bitfield, rot Rotation) *Screen {
@@ -143,7 +145,22 @@ func (s *Screen) Flush() error {
 	if s.dev == nil {
 		return nil
 	}
-	_, err := s.dev.WriteAt(s.buf[lo*s.stride:(hi+1)*s.stride], int64(lo*s.stride))
+	rows := s.buf[lo*s.stride : (hi+1)*s.stride]
+	if s.warm && s.bpp == 32 && s.blue.offset%8 == 0 && s.green.offset%8 == 0 {
+		// Written warm, the back buffer left as drawn: a copy with blue and green turned down.
+		if cap(s.warmBuf) < len(rows) {
+			s.warmBuf = make([]byte, len(s.buf))
+		}
+		out := s.warmBuf[:len(rows)]
+		copy(out, rows)
+		bi, gi := int(s.blue.offset/8), int(s.green.offset/8)
+		for i := 0; i+3 < len(out); i += 4 {
+			out[i+bi] = byte(int(out[i+bi]) * 55 / 100)
+			out[i+gi] = byte(int(out[i+gi]) * 85 / 100)
+		}
+		rows = out
+	}
+	_, err := s.dev.WriteAt(rows, int64(lo*s.stride))
 	return err
 }
 

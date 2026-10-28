@@ -26,6 +26,7 @@ var settingsPanes = []settingsPane{
 	{"battery", "Battery", rgb(0x34c759)},
 	{"display", "Display & Brightness", rgb(0x0a84ff)},
 	{"wallpaper", "Wallpaper", rgb(0x5e5ce6)},
+	{"sleep", "Sleep & Alarm", rgb(0xff9f0a)},
 	{"general", "General", rgb(0x8e8e93)},
 	{"power", "Restart & Shut Down", rgb(0xff3b30)},
 }
@@ -47,6 +48,9 @@ func paneGlyph(img *image.RGBA, id string, cx, cy int) {
 		ui.Fill(img, image.Rect(cx+13, cy-3, cx+16, cy+3), white)
 	case "display":
 		ui.DrawText(img, apple().captionBold, cx-15, cy+9, white, "AA")
+	case "sleep":
+		ui.Circle(img, cx, cy, 14, white)
+		ui.Circle(img, cx+7, cy-6, 12, rgb(0xff9f0a))
 	case "wallpaper":
 		ui.Circle(img, cx-6, cy-4, 8, white)
 		ui.Circle(img, cx+7, cy+5, 10, white)
@@ -214,6 +218,40 @@ func (c *console) settingsPage() *page {
 		}
 		y += 280
 		footer("The battery is the original one from 2014. Charge it with the 5 V 2 A adapter for the best results.")
+	case "sleep":
+		timeRow := func(r image.Rectangle, label, minus, plus string, mins int, on bool) {
+			apText(img, f.body, r.Min.X+30, r.Min.Y+56, apLabel, label)
+			col := apSecondary
+			if on {
+				col = apLabel
+			}
+			apTextCenter(img, f.title, (r.Min.X+r.Max.X)/2+60, (r.Min.Y+r.Max.Y)/2, col, hhmm(mins))
+			for i, id := range []string{minus, plus} {
+				b := image.Rect(r.Max.X-200+i*100, r.Min.Y+12, r.Max.X-120+i*100, r.Max.Y-12)
+				ui.RoundRect(img, b, 30, apCard2)
+				apTextCenter(img, f.title, (b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2, apBlue, []string{"−", "+"}[i])
+				p.buttons = append(p.buttons, button{id, b})
+			}
+		}
+		header("Alarm")
+		rows := groupRows(img, x, y, pw, 3, rh)
+		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Alarm")
+		iosSwitch(img, rows[0].Max.X-24, (rows[0].Min.Y+rows[0].Max.Y)/2, c.cfg.AlarmOn, apDark)
+		p.buttons = append(p.buttons, button{"alarm", rows[0]})
+		timeRow(rows[1], "Time", "alarm-", "alarm+", c.cfg.AlarmMin, c.cfg.AlarmOn)
+		apText(img, f.body, rows[2].Min.X+30, rows[2].Min.Y+56, apLabel, "Sunrise Before It")
+		iosSwitch(img, rows[2].Max.X-24, (rows[2].Min.Y+rows[2].Max.Y)/2, !c.cfg.NoSunrise, apDark)
+		p.buttons = append(p.buttons, button{"sunrise", rows[2]})
+		y += 3*rh + 20
+		footer("The screen brightens over 15 minutes before the alarm, then it rings. Tap I'm up: the night is logged in Soma, and the morning shows the weather and your day.")
+		header("Wind Down")
+		rows = groupRows(img, x, y, pw, 2, rh)
+		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Wind Down")
+		iosSwitch(img, rows[0].Max.X-24, (rows[0].Min.Y+rows[0].Max.Y)/2, c.cfg.WindOn, apDark)
+		p.buttons = append(p.buttons, button{"wind", rows[0]})
+		timeRow(rows[1], "From", "wind-", "wind+", c.cfg.WindMin, c.cfg.WindOn)
+		y += 2*rh + 20
+		footer("From this time until 5 am the screen is warm and dim, and Soma opens on today's list for the evening review.")
 	case "wallpaper":
 		header("Lock Screen")
 		y = c.wallpaperPane(p, x, y, pw)

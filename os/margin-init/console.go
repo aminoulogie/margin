@@ -55,6 +55,10 @@ type console struct {
 	pinFirst         string                   // a new passcode, the first time
 	pinMsg           string                   // "Wrong passcode"
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
+	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
+	alarmDay         string                   // the day it was last dismissed
+	winding          bool                     // wind-down: warm and dim
+	weather          weatherNow               // Algiers, for the morning
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
@@ -199,6 +203,10 @@ func (c *console) touchLoop() {
 				return // only the power button wakes the screen
 			}
 			for _, p := range pts {
+				if c.alarm != "" {
+					c.alarmTouch(p)
+					continue
+				}
 				if c.pinMode != "" {
 					c.pinTouch(p)
 					continue

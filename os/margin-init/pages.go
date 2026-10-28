@@ -190,6 +190,13 @@ type savedSettings struct {
 	TextSize float64 `json:"text_size,omitempty"`
 	// Wallpaper: the lock screen's photo (wallpaper.go); "" for the book's cover.
 	Wallpaper string `json:"wallpaper,omitempty"`
+	// The alarm (sleep.go): on, its time in minutes after midnight, no sunrise before it.
+	AlarmOn   bool `json:"alarm_on,omitempty"`
+	AlarmMin  int  `json:"alarm_minutes"`
+	NoSunrise bool `json:"no_sunrise,omitempty"`
+	// Wind-down: warm and dim from WindMin (minutes after midnight) until 5 am.
+	WindOn  bool `json:"wind_down_on,omitempty"`
+	WindMin int  `json:"wind_down_minutes"`
 	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
 	SmoothScroll bool `json:"smooth_scroll"`
 }
@@ -197,7 +204,7 @@ type savedSettings struct {
 const settingsPath = marginHome + "/settings.json"
 
 func loadSettings() savedSettings {
-	s := savedSettings{Brightness: 80, ScreenOff: 5}
+	s := savedSettings{Brightness: 80, ScreenOff: 5, AlarmMin: 7 * 60, WindMin: 22*60 + 30}
 	if b, err := os.ReadFile(settingsPath); err == nil {
 		json.Unmarshal(b, &s)
 	}

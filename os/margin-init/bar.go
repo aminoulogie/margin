@@ -108,6 +108,10 @@ func (c *console) redrawAll() {
 	clear(c.s.buf)
 	c.s.markRows(0, c.s.fbH-1)
 	c.drawBar()
+	if c.alarm != "" {
+		c.drawAlarm()
+		return
+	}
 	if c.pinMode != "" {
 		c.drawPin()
 		return

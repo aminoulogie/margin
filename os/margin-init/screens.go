@@ -156,6 +156,26 @@ func (c *console) pageTap(x, y int) {
 		c.cfg.save()
 		c.redrawAll()
 		return
+	case "alarm":
+		c.cfg.AlarmOn = !c.cfg.AlarmOn
+		c.cfg.save()
+	case "sunrise":
+		c.cfg.NoSunrise = !c.cfg.NoSunrise
+		c.cfg.save()
+	case "wind":
+		c.cfg.WindOn = !c.cfg.WindOn
+		c.cfg.save()
+	case "alarm-", "alarm+", "wind-", "wind+":
+		m := &c.cfg.AlarmMin
+		if strings.HasPrefix(id, "wind") {
+			m = &c.cfg.WindMin
+		}
+		d := 15
+		if strings.HasSuffix(id, "-") {
+			d = -15
+		}
+		*m = ((*m+d)%(24*60) + 24*60) % (24 * 60)
+		c.cfg.save()
 	case "text-", "text+":
 		sizes := []float64{0.9, 1, 1.1, 1.15}
 		i := 1

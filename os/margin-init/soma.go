@@ -195,6 +195,7 @@ func (c *console) somaToday(p *page, y int) int {
 			done++
 		}
 	}
+	c.sleepPill(p, y+45)
 	y = somaSection(img, mx, y, "Habits", fmt.Sprintf("%d of %d today", done, len(habits)))
 	if len(habits) == 0 {
 		apText(img, f.callout, mx, y+30, apSecondary, "No habits yet: add them in Soma.")
@@ -707,6 +708,16 @@ func (c *console) somaTap(id string) bool {
 		g, d, _ := strings.Cut(strings.TrimPrefix(id, "so:goal:"), ":")
 		delta, _ := strconv.ParseFloat(d, 64)
 		somaGoalTap(g, delta)
+	case id == "so:sleep":
+		somaGoToSleep()
+		go soma.sync()
+		c.setScreen(false)
+		return true
+	case id == "so:wake":
+		if msg := somaWakeUp(); msg != "" {
+			c.toastMsg(msg)
+		}
+		go soma.sync()
 	case strings.HasPrefix(id, "so:note:"):
 		su.note = strings.TrimPrefix(id, "so:note:")
 		c.setScroll(modeSoma, 0)
@@ -1131,6 +1142,7 @@ func (c *console) somaHomeToday(p *page, y int) int {
 	w, mx := c.s.W, 48
 	date := somaToday()
 	apText(img, f.serifTitle, mx, y+90, apLabel, "Today")
+	c.sleepPill(p, y+45)
 	y += 120
 
 	// The rings card.
@@ -1202,4 +1214,18 @@ func somaHomeHeight() int {
 		}
 	}
 	return 120 + 400 + (len(somaHabits())+4)/5*116 + max(min(n, 5)*104, 60) + 30
+}
+
+// sleepPill is "Going to sleep" (or "I'm up" while asleep), at the right of a title.
+func (c *console) sleepPill(p *page, cy int) {
+	f := apple()
+	label, id := "Going to sleep", "so:sleep"
+	if somaAsleepSince() != 0 {
+		label, id = "I'm up", "so:wake"
+	}
+	w := ui.TextWidth(f.headline, label) + 70
+	r := image.Rect(c.s.W-48-w, cy-38, c.s.W-48, cy+38)
+	ui.RoundRect(p.img, r, 38, rgb(0x2c2c54))
+	apTextCenter(p.img, f.headline, (r.Min.X+r.Max.X)/2, cy, rgb(0xbf9fff), label)
+	p.buttons = append(p.buttons, button{id, r})
 }

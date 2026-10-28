@@ -456,3 +456,74 @@ func TestSomaOnHome(t *testing.T) {
 		t.Fatal("ticking a to-do on Home didn't tick it")
 	}
 }
+
+// Going to sleep starts the night in Soma; the alarm's sunrise, ring and "I'm up" log it, and
+// the morning shows the weather and the day. Wind-down turns the screen warm.
+func TestSleepAndAlarm(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	soma.sync()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"current":{"temperature_2m":17.4,"weather_code":1},"daily":{"temperature_2m_max":[22.1],"temperature_2m_min":[12]}}`)
+	}))
+	defer srv.Close()
+	oldURL, oldClient := weatherURL, webClient
+	weatherURL, webClient = srv.URL, func() *http.Client { return srv.Client() }
+	t.Cleanup(func() { weatherURL, webClient = oldURL, oldClient; c.s.warm = false })
+
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:sleep")
+	if c.screenOn || somaAsleepSince() == 0 {
+		t.Fatal("going to sleep should start the night and turn the screen off")
+	}
+	// Asleep since eight hours ago; the alarm is in ten minutes: the sunrise.
+	soma.put("settings.sleepStart", fmt.Sprint(time.Now().Add(-8*time.Hour).UnixMilli()))
+	now := time.Now().In(displayZone)
+	c.cfg.AlarmOn, c.cfg.AlarmMin = true, now.Hour()*60+now.Minute()+10
+	if c.cfg.AlarmMin >= 24*60 {
+		drawMu.Unlock()
+		t.Skip("too close to midnight")
+	}
+	c.sleepTick(now)
+	if c.alarm != "sunrise" || !c.screenOn {
+		t.Fatalf("alarm %q, screen %v", c.alarm, c.screenOn)
+	}
+	shot(t, c, "alarm-sunrise")
+	c.sleepTick(now.Add(10 * time.Minute))
+	if c.alarm != "ringing" {
+		t.Fatalf("alarm %q at its time", c.alarm)
+	}
+	c.alarmTouch(TouchPoint{Up: true})
+	if c.alarm != "morning" || somaAsleepSince() != 0 {
+		t.Fatalf("after I'm up: %q, asleep %v", c.alarm, somaAsleepSince())
+	}
+	drawMu.Unlock()
+	waitFor(t, "the weather", func() bool { return c.weather.Temp == 17.4 })
+	drawMu.Lock()
+	c.drawAlarm()
+	shot(t, c, "alarm-morning")
+	c.alarmTouch(TouchPoint{Up: true})
+	if c.alarm != "" {
+		t.Fatal("a second tap should leave the morning screen")
+	}
+	c.sleepTick(now.Add(11 * time.Minute)) // dismissed today: no second ring
+	if c.alarm != "" {
+		t.Fatal("the alarm rang twice")
+	}
+	c.cfg.WindOn, c.cfg.WindMin = true, 0
+	c.sleepTick(now)
+	if !c.winding || !c.s.warm || c.mode != modeSoma {
+		t.Fatal("wind-down should warm the screen and open Soma")
+	}
+	drawMu.Unlock()
+	soma.sync()
+
+	day, _ := relay.pcGet(t, k, "nutrition/"+somaToday())
+	sl, _ := day["sleep"].(obj)
+	if sl == nil || sl["hours"].(float64) < 7.9 || sl["hours"].(float64) > 8.1 || day["items"] == nil {
+		t.Fatalf("the PC sees the night as %v", day)
+	}
+	if soma.get("settings.sleepStart") != "" {
+		t.Fatal("sleepStart still set")
+	}
+}
