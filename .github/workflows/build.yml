@@ -1,0 +1,25 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/margin-init/**"
+      - ".github/workflows/build.yml"
+
+jobs:
+  margin-init:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: os/margin-init
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/margin-init/go.mod
+      - name: build (linux/386, the tablet)
+        run: GOOS=linux GOARCH=386 CGO_ENABLED=0 go build -o /tmp/margin-init.new .
+      - name: vet (linux/386)
+        run: GOOS=linux GOARCH=386 CGO_ENABLED=0 go vet ./...
+        continue-on-error: true
