@@ -1040,3 +1040,29 @@ func somaDeleteTodo(id string) {
 	}
 	somaPut("todos@order", order)
 }
+
+// somaAddCreatine logs grams of creatine today (addCreatine).
+func somaAddCreatine(g float64) {
+	date := somaToday()
+	day := somaDay(date)
+	day["creatine"] = num(day["creatine"]) + g
+	somaPut("nutrition/"+date, day)
+}
+
+// somaLogSleepHours logs last night as typed (logSleep): "7.5". Returns what to say.
+func somaLogSleepHours(text string) string {
+	h, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(text, ",", ".")), 64)
+	if err != nil || h <= 0 || h > 16 {
+		return ""
+	}
+	date := somaToday()
+	day := somaDay(date)
+	sl, _ := day["sleep"].(obj)
+	if sl == nil {
+		sl = obj{}
+	}
+	sl["hours"] = h
+	day["sleep"] = sl
+	somaPut("nutrition/"+date, day)
+	return fmt.Sprintf("Slept %.1f h: logged", h)
+}

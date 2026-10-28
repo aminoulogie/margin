@@ -42,6 +42,7 @@ type page struct {
 	img     *image.RGBA
 	buttons []button
 	header  int                 // rows at the top that stay put when the page scrolls (the tab bar)
+	footer  int                 // rows at the page's end shown fixed at the screen's bottom (a dock)
 	rows    []hrow              // rows that scroll sideways (scroll.go)
 	rowBtns map[string][]button // their buttons, replaced when a row moves
 }

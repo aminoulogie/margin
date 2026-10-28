@@ -101,6 +101,9 @@ func (c *console) viewH() int { return c.s.H - c.barH }
 // pageY turns a screen y into page coordinates (the fixed header doesn't scroll).
 func (c *console) pageY(y int) int {
 	py := y - c.barH
+	if c.page != nil && c.page.footer > 0 && py >= c.viewH()-c.page.footer && c.page.img.Rect.Dy() > c.viewH() {
+		return c.page.img.Rect.Dy() - (c.viewH() - py) // the fixed footer: the page's last rows
+	}
 	if c.page != nil && py >= c.page.header {
 		py += c.scrollY()
 	}
@@ -117,8 +120,11 @@ func (c *console) blitPage() {
 	}
 	sy := min(max(c.scrollY(), 0), img.Rect.Dy()-vh)
 	c.sc.y[c.mode] = sy
-	hh := c.page.header
-	c.s.blitRGBA(img.SubImage(image.Rect(0, sy+hh, img.Rect.Dx(), sy+vh)).(*image.RGBA), 0, c.barH+hh)
+	hh, fh := c.page.header, c.page.footer
+	c.s.blitRGBA(img.SubImage(image.Rect(0, sy+hh, img.Rect.Dx(), sy+vh-fh)).(*image.RGBA), 0, c.barH+hh)
+	if fh > 0 {
+		c.s.blitRGBA(img.SubImage(image.Rect(0, img.Rect.Dy()-fh, img.Rect.Dx(), img.Rect.Dy())).(*image.RGBA), 0, c.barH+vh-fh)
+	}
 	if hh > 0 {
 		c.s.blitRGBA(img.SubImage(image.Rect(0, 0, img.Rect.Dx(), hh)).(*image.RGBA), 0, c.barH)
 	}

@@ -275,7 +275,7 @@ func (c *console) somaRingsCard(p *page, at image.Rectangle, today string) int {
 	img := p.img
 	const k = 2 // CSS pixels to the tablet's
 	card := image.Rect(at.Min.X, at.Min.Y, at.Max.X, at.Min.Y+ringsCardH)
-	glass(img, card, 16*k, rgb(0x1c1c1e), 0.92) // .glass-card, rounded-2xl
+	smCard(img, card, smSurface) // .glass-card, rounded-2xl
 	date := c.ringsDay
 	if date == "" {
 		date = today
@@ -302,9 +302,6 @@ func (c *console) somaRingsCard(p *page, at image.Rectangle, today string) int {
 		}
 		apTextCenter(img, small, cx, ly, fg, mon.AddDate(0, 0, i).Format("Mon")[:1])
 		ringSet(img, cx-36, ly+28, 72, somaRingSpecs(d), d != today, false)
-		if d > today { // the future, faded
-			glass(img, image.Rect(cx-38, ly+26, cx+38, ly+102), 0, rgb(0x1c1c1e), 0.65)
-		}
 		p.buttons = append(p.buttons, button{"so:ringsday:" + d, image.Rect(cx-colW/2, in.Min.Y, cx+colW/2, ly+104)})
 	}
 	y := in.Min.Y + 40 + 8 + 72 + 24

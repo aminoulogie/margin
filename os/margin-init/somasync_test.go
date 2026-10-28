@@ -456,6 +456,14 @@ func TestSomaOnHome(t *testing.T) {
 	c.redrawAll()
 	shot(t, c, "lock-soma")
 	c.locked = false
+	c.setMode(modeSoma)
+	c.somaUI.view = "home"
+	c.showPage()
+	shot(t, c, "soma-home")
+	c.setScroll(modeSoma, 1800)
+	c.showPage()
+	shot(t, c, "soma-home-2")
+	c.setScroll(modeSoma, 0)
 	c.somaTap("so:todo:t1")
 	if td := somaTodos(); len(td) == 0 || !td[0].Done {
 		t.Fatal("ticking a to-do on Home didn't tick it")
@@ -734,6 +742,7 @@ func TestSomaLongPagesGrow(t *testing.T) {
 	drawMu.Lock()
 	defer drawMu.Unlock()
 	c.setMode(modeSoma)
+	c.somaUI.view = "today"
 	p := c.somaPage()
 	last := 0
 	for _, b := range p.buttons {

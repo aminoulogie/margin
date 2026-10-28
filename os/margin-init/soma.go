@@ -21,24 +21,26 @@ import (
 // the rest is shown.
 
 type somaUI struct {
-	view     string    // "today", "calendar", "goals", "notes", "reports"
-	note     string    // the note open in "notes" ("" for the list)
-	month    time.Time // the calendar's month
-	sel      string    // the calendar's day
-	calWeek  bool      // the calendar shows a week, not the month
-	moving   string    // a timed to-do being moved: the next time tapped is its new time
-	repRange string    // the reports' range: "week", "month", "year"
-	plan     int       // the spending plan shown in Money
-	delShift string    // a shift being deleted (asked twice)
-	delStep  int
-	need     map[string]int // the height each view last needed
-	todoMenu string         // the to-do held for its actions
-	typing   bool
-	field    string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
-	editing  string
-	url      string // the sync address, typed before the code
-	msg      string // the last thing that went wrong
-	slotY    int    // page y under the to-do being typed on the timeline
+	view       string    // "today", "calendar", "goals", "notes", "reports"
+	note       string    // the note open in "notes" ("" for the list)
+	month      time.Time // the calendar's month
+	sel        string    // the calendar's day
+	calWeek    bool      // the calendar shows a week, not the month
+	moving     string    // a timed to-do being moved: the next time tapped is its new time
+	repRange   string    // the reports' range: "week", "month", "year"
+	plan       int       // the spending plan shown in Money
+	delShift   string    // a shift being deleted (asked twice)
+	delStep    int
+	need       map[string]int // the height each view last needed
+	todoMenu   string         // the to-do held for its actions
+	todoWeek   bool           // Home's To do shows this week, not today
+	sleepDraft string         // hours typed in Log the gap, not logged yet
+	typing     bool
+	field      string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
+	editing    string
+	url        string // the sync address, typed before the code
+	msg        string // the last thing that went wrong
+	slotY      int    // page y under the to-do being typed on the timeline
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -59,7 +61,7 @@ func (c *console) somaPage() *page {
 	tw := w - 2*mx
 	su := &c.somaUI
 	if su.view == "" {
-		su.view = "today"
+		su.view = "home"
 	}
 	soma.load()
 	soma.mu.Lock()
@@ -78,7 +80,7 @@ func (c *console) somaPage() *page {
 
 	// A first guess at the page's height; a page that turns out taller is drawn again at the
 	// height it needed (remembered, so it's drawn once from then on).
-	h := map[string]int{"today": 2600, "calendar": 4200, "goals": 2400, "notes": 2400, "money": 2800, "reports": 3400}[su.view]
+	h := map[string]int{"home": 4200, "today": 2600, "calendar": 4200, "goals": 2400, "notes": 2400, "money": 2800, "reports": 3400}[su.view]
 	if su.need == nil {
 		su.need = map[string]int{}
 	}
@@ -112,8 +114,8 @@ func (c *console) somaPage() *page {
 		btn("so:type:"+id, r)
 	}
 
-	apText(img, f.serifLarge, mx, 228, apLabel, "Soma")
 	if !soma.linked() {
+		apText(img, f.serifLarge, mx, 228, apLabel, "Soma")
 		y := 300
 		how := "Link the tablet to your Soma: in Soma on the phone or the PC, open Settings > Sync, and type its server address and recovery code here. The tablet then keeps your habits, to-dos, plans and reports in step with them."
 		if a := sendAddress(); a != "" {
@@ -145,25 +147,24 @@ func (c *console) somaPage() *page {
 		return p
 	}
 
-	apText(img, f.caption, mx, 280, apSecondary, time.Now().In(displayZone).Format("Monday 2 January")+"  ·  "+soma.status())
-	apText(img, f.body, w-mx-150, 280, apBlue, "Sync now")
-	btn("so:sync", image.Rect(w-mx-180, 230, w, 310))
-	// The three parts, as a segmented control.
-	seg := image.Rect(mx, 310, w-mx, 386)
-	ui.RoundRect(img, seg, 20, apCard2)
-	views := []struct{ id, label string }{{"today", "Today"}, {"calendar", "Calendar"}, {"goals", "Goals"}, {"notes", "Notes"}, {"money", "Money"}, {"reports", "Reports"}}
-	for i, v := range views {
-		r := image.Rect(seg.Min.X+i*seg.Dx()/len(views), seg.Min.Y, seg.Min.X+(i+1)*seg.Dx()/len(views), seg.Max.Y)
-		if su.view == v.id {
-			ui.RoundRect(img, r.Inset(6), 16, apCard)
+	y := 300
+	if su.view == "home" {
+		y = c.somaHome(p, tabsH)
+	} else {
+		// The part's own title, as Soma's pages have; the dock below moves between them.
+		ui.Fill(img, image.Rect(0, tabsH, w, 300), smBG)
+		ui.Fill(img, img.Rect.Intersect(image.Rect(0, 300, w, img.Rect.Dy())), smBG)
+		titles := map[string]string{"today": "Fuel", "calendar": "Calendar", "goals": "Projects", "notes": "Mind", "money": "Money", "reports": "Train"}
+		ui.Fill(img, image.Rect(0, tabsH, w, 300), smBG)
+		apText(img, smFont("bold", 30), mx, 240, smFG, titles[su.view])
+		apText(img, f.caption, mx, 290, smFaint, time.Now().In(displayZone).Format("Monday 2 January")+"  ·  "+soma.status())
+		apText(img, f.body, w-mx-150, 240, apBlue, "Sync now")
+		btn("so:sync", image.Rect(w-mx-180, 190, w, 270))
+		if su.msg != "" {
+			apText(img, f.caption, mx, 340, apRed, clip(f.caption, su.msg, tw))
 		}
-		apTextCenter(img, f.headline, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, v.label)
-		btn("so:view:"+v.id, r)
+		y = 360
 	}
-	if su.msg != "" {
-		apText(img, f.caption, mx, 430, apRed, clip(f.caption, su.msg, tw))
-	}
-	y := 460
 	switch su.view {
 	case "calendar":
 		y = c.somaCalendar(p, y)
@@ -175,17 +176,20 @@ func (c *console) somaPage() *page {
 		y = c.somaNotesView(p, y)
 	case "money":
 		y = c.somaMoney(p, y)
+	case "home":
 	default:
 		y = c.somaToday(p, y)
 	}
-	if y+200 > img.Rect.Dy() && su.need[su.view] < y+200 {
-		su.need[su.view] = y + 600 // room to grow a little before the next redraw
+	end := y + 40 + smDockH // the dock, fixed at the bottom, takes the page's last rows
+	if end > img.Rect.Dy() && su.need[su.view] < end {
+		su.need[su.view] = end + 400 // room to grow a little before the next redraw
 		return c.somaPage()
 	}
-	if y+200 < img.Rect.Dy() && img.Rect.Dy() > c.viewH() {
+	if end < img.Rect.Dy() && img.Rect.Dy() > c.viewH() {
 		// Shorter than drawn: crop the page so it doesn't scroll into nothing.
-		p.img = img.SubImage(image.Rect(0, 0, w, max(y+200, c.viewH()))).(*image.RGBA)
+		p.img = img.SubImage(image.Rect(0, 0, w, max(end, c.viewH()))).(*image.RGBA)
 	}
+	c.smDock(p)
 	return p
 }
 
@@ -359,6 +363,21 @@ func (c *console) somaTap(id string) bool {
 			c.toastMsg("To-do deleted")
 		}
 		su.todoMenu = ""
+	case id == "so:todoscope:day", id == "so:todoscope:week":
+		su.todoWeek = id == "so:todoscope:week"
+	case id == "so:creatine":
+		somaAddCreatine(5)
+		c.toastMsg("+5 g creatine")
+	case id == "so:logsleep":
+		text := su.sleepDraft
+		if su.typing && su.field == "sleep" {
+			text = su.editing
+			su.typing, c.skb.visible = false, false
+		}
+		if msg := somaLogSleepHours(text); msg != "" {
+			c.toastMsg(msg)
+		}
+		su.sleepDraft = ""
 	case strings.HasPrefix(id, "so:water:"):
 		ml, _ := strconv.Atoi(strings.TrimPrefix(id, "so:water:"))
 		somaAddWater(float64(ml))
@@ -432,6 +451,10 @@ func (c *console) somaDone() {
 	su.typing, su.editing = false, ""
 	c.skb.visible = false
 	switch su.field {
+	case "sleep":
+		if msg := somaLogSleepHours(text); msg != "" {
+			c.toastMsg(msg)
+		}
 	case "food":
 		if text != "" && !somaAddFood(text) {
 			su.msg = "Type the food, then its calories (and protein): Wrap 450 35"

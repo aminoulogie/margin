@@ -119,8 +119,11 @@ func (c *console) colourQuad(r frect, cr, cg, cb uint8) quad {
 // scrollQuads is the overlay for the page scrolled to sy: what blitPage would draw under the
 // fixed header, plus the scroll bar while it moves.
 func (c *console) scrollQuads(sy int, bar bool) []quad {
-	img, vh, hh, w := c.page.img, c.viewH(), c.page.header, c.s.W
-	q := []quad{pageQuad(frect{0, c.barH + hh, w, c.barH + vh}, sy+hh)}
+	img, vh, hh, w, fh := c.page.img, c.viewH(), c.page.header, c.s.W, c.page.footer
+	q := []quad{pageQuad(frect{0, c.barH + hh, w, c.barH + vh - fh}, sy+hh)}
+	if fh > 0 { // the fixed footer, from the page's last rows
+		q = append(q, pageQuad(frect{0, c.barH + vh - fh, w, c.barH + vh}, img.Rect.Dy()-fh))
+	}
 	if bar && img.Rect.Dy() > vh {
 		track := vh - hh - 40
 		thumb := max(track*vh/img.Rect.Dy(), 60)
@@ -208,7 +211,7 @@ func (c *console) ensureStrip(r *hrow) bool {
 // gpuScrollTo shows the page at y, under the finger or flinging. Caller holds drawMu.
 func (c *console) gpuScrollTo(y int) bool {
 	y = min(max(y, 0), max(c.page.img.Rect.Dy()-c.viewH(), 0))
-	if !c.ensureRows(c.visible(y)) {
+	if !c.ensureRows(c.visible(y)) || !c.ensureFooter() {
 		return false
 	}
 	c.sc.y[c.mode] = y
@@ -221,7 +224,7 @@ func (c *console) gpuScrollTo(y int) bool {
 // the row can't go there whole, repainted on the processor (a few times a second). Caller
 // holds drawMu.
 func (c *console) gpuRowTo(r *hrow, off int) bool {
-	if !c.ensureRows(c.visible(c.scrollY())) {
+	if !c.ensureRows(c.visible(c.scrollY())) || !c.ensureFooter() {
 		return false
 	}
 	if c.ensureStrip(r) {
@@ -373,4 +376,13 @@ func (c *console) prefetchPage() {
 		y0, y1 := c.visible(c.scrollY())
 		c.ensureRows(y0, y1+pageSlice/2)
 	})
+}
+
+// ensureFooter puts the page's fixed footer rows on the GPU too. Caller holds drawMu.
+func (c *console) ensureFooter() bool {
+	if c.page.footer == 0 {
+		return true
+	}
+	dy := c.page.img.Rect.Dy()
+	return c.ensureRows(dy-c.page.footer, dy)
 }
