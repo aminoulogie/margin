@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"image"
 	"io"
@@ -102,6 +103,11 @@ type Screen struct {
 	hold             bool // drawing the next frame of a transition: Flush waits
 	warm             bool // wind-down: less blue, a little less green (sleep.go)
 	warmBuf          []byte
+	// What the device was last sent, to send only the rows that really changed: turned a
+	// quarter, one changed logical row (a line of text) dirties every native row.
+	shadow     []byte
+	shadowDev  io.WriterAt
+	shadowWarm bool
 }
 
 func newScreen(dev io.WriterAt, fbW, fbH, stride, bpp int, red, green, blue bitfield, rot Rotation) *Screen {
@@ -144,6 +150,28 @@ func (s *Screen) Flush() error {
 	s.dirtyLo, s.dirtyHi = s.fbH, -1
 	if s.dev == nil {
 		return nil
+	}
+	if s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm {
+		s.shadow = append(s.shadow[:0], s.buf...) // first, or a new device: send it all
+		s.shadowDev, s.shadowWarm = s.dev, s.warm
+	} else {
+		row := func(y int) bool { // changed since sent
+			a, b := y*s.stride, (y+1)*s.stride
+			return !bytes.Equal(s.buf[a:b], s.shadow[a:b])
+		}
+		l, h := lo, hi
+		for l <= h && !row(l) {
+			l++
+		}
+		for h >= l && !row(h) {
+			h--
+		}
+		if l > h { // nothing new: one row still goes, so the GPU shows the screen (after an overlay)
+			l = max(min(lo, s.fbH-1), 0)
+			h = l
+		}
+		lo, hi = l, h
+		copy(s.shadow[lo*s.stride:(hi+1)*s.stride], s.buf[lo*s.stride:(hi+1)*s.stride])
 	}
 	rows := s.buf[lo*s.stride : (hi+1)*s.stride]
 	if s.warm && s.bpp == 32 && s.blue.offset%8 == 0 && s.green.offset%8 == 0 {

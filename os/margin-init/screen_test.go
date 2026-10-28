@@ -35,9 +35,15 @@ func TestRot90MatchesPanel(t *testing.T) {
 }
 
 // fakeFB records WriteAt calls like the framebuffer device would receive them.
-type fakeFB struct{ mem []byte }
+type fakeFB struct {
+	mem    []byte
+	writes []int // bytes per write
+}
 
-func (f *fakeFB) WriteAt(p []byte, off int64) (int, error) { return copy(f.mem[off:], p), nil }
+func (f *fakeFB) WriteAt(p []byte, off int64) (int, error) {
+	f.writes = append(f.writes, len(p))
+	return copy(f.mem[off:], p), nil
+}
 
 func xrgb() (bitfield, bitfield, bitfield) {
 	return bitfield{16, 8, 0}, bitfield{8, 8, 0}, bitfield{0, 8, 0}
@@ -84,5 +90,22 @@ func TestScreenClear(t *testing.T) {
 		if v != 0 {
 			t.Fatalf("byte %d is %#x after Clear", i, v)
 		}
+	}
+}
+
+// Turned a quarter, a line of text marks every native row; only the rows that changed go out.
+func TestFlushSendsOnlyChangedRows(t *testing.T) {
+	dev := &fakeFB{mem: make([]byte, fbW*4*fbH)}
+	r, g, b := xrgb()
+	s := newScreen(dev, fbW, fbH, fbW*4, 32, r, g, b, Rot90)
+	s.markRows(0, fbH-1)
+	s.Flush()
+	before := len(dev.writes)
+	s.markRows(0, fbH-1)   // a whole logical row redrawn...
+	s.Set(5, 3, 255, 0, 0) // ...with one pixel new
+	s.Flush()
+	w := dev.writes[before:]
+	if len(w) != 1 || w[0] != fbW*4 {
+		t.Fatalf("writes %+v, want one native row", w)
 	}
 }
