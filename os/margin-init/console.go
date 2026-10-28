@@ -125,6 +125,7 @@ func newConsole(s *Screen) (*console, error) {
 	c.barH = c.ch + 8
 	c.screenOn, c.mode, c.cfg, c.lastInput = true, modeBooksHome, loadSettings(), time.Now()
 	c.locked = c.cfg.PinHash != "" // a restart asks for the passcode too
+	setTextScale(c.cfg.TextSize)
 	if c.pf, err = loadPageFonts(); err != nil {
 		return nil, err
 	}

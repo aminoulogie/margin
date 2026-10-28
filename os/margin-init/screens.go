@@ -156,6 +156,24 @@ func (c *console) pageTap(x, y int) {
 		c.cfg.save()
 		c.redrawAll()
 		return
+	case "text-", "text+":
+		sizes := []float64{0.9, 1, 1.1, 1.15}
+		i := 1
+		for k, s := range sizes {
+			if s == textScale {
+				i = k
+			}
+		}
+		if id == "text+" {
+			i = min(i+1, len(sizes)-1)
+		} else {
+			i = max(i-1, 0)
+		}
+		setTextScale(sizes[i])
+		c.cfg.TextSize = sizes[i]
+		c.cfg.save()
+		c.redrawAll()
+		return
 	case "bright-", "bright+":
 		step := 10
 		if id == "bright-" {

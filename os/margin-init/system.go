@@ -75,6 +75,9 @@ func groupRows(img *image.RGBA, x, y, w, n, rh int) []image.Rectangle {
 func (c *console) settingsPage() *page {
 	f := apple()
 	w, h := c.s.W, c.s.H-c.barH
+	if c.setPane == "display" {
+		h = max(h, 2300) // taller than the screen: it scrolls
+	}
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, apGrouped)
 	p := &page{img: img}
@@ -240,6 +243,25 @@ func (c *console) settingsPage() *page {
 			button{"bright+", image.Rect(r.Min.X+r.Dx()/2, r.Min.Y, r.Max.X, r.Max.Y)})
 		y += 140
 		footer(fmt.Sprintf("%d%%. The volume buttons change it too, outside a book.", c.cfg.Brightness))
+		header("Text Size")
+		rows = groupRows(img, x, y, pw, 1, 120)
+		r = rows[0]
+		ty = (r.Min.Y + r.Max.Y) / 2
+		apTextCenter(img, f.caption, r.Min.X+56, ty, apSecondary, "A")
+		apTextCenter(img, f.title, r.Max.X-56, ty, apSecondary, "A")
+		sizes := []float64{0.9, 1, 1.1, 1.15}
+		for i, s := range sizes {
+			dx := r.Min.X + 160 + i*(r.Dx()-320)/(len(sizes)-1)
+			col := apCard2
+			if s == textScale {
+				col = apBlue
+			}
+			ui.Circle(img, dx, ty, 16, col)
+		}
+		p.buttons = append(p.buttons, button{"text-", image.Rect(r.Min.X, r.Min.Y, r.Min.X+r.Dx()/2, r.Max.Y)},
+			button{"text+", image.Rect(r.Min.X+r.Dx()/2, r.Min.Y, r.Max.X, r.Max.Y)})
+		y += 140
+		footer(fmt.Sprintf("%.0f%%. Books have their own size, in a book's Aa menu.", textScale*100))
 		header("Auto-Lock")
 		opts := []struct {
 			id, name string

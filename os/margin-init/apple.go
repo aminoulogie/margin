@@ -85,12 +85,25 @@ type appleFonts struct {
 
 var apFonts *appleFonts
 
+// textScale is Settings > Display > Text Size, 0.9 to 1.15 (layouts are drawn for 1).
+var textScale = 1.0
+
+func setTextScale(s float64) {
+	if s < 0.85 || s > 1.2 {
+		s = 1
+	}
+	if s != textScale {
+		textScale, apFonts = s, nil
+	}
+}
+
 func apple() *appleFonts {
 	if apFonts == nil {
-		reg := func(s float64) font.Face { return textFace("inter", fonts.InterRegular, false, s) }
-		semi := func(s float64) font.Face { return textFace("inter-semibold", fonts.InterSemiBold, true, s) }
-		bold := func(s float64) font.Face { return textFace("inter-bold", fonts.InterBold, true, s) }
-		serif := func(s float64) font.Face { return textFace("libserif-bold", liberationserifbold.TTF, true, s) }
+		k := textScale
+		reg := func(s float64) font.Face { return textFace("inter", fonts.InterRegular, false, s*k) }
+		semi := func(s float64) font.Face { return textFace("inter-semibold", fonts.InterSemiBold, true, s*k) }
+		bold := func(s float64) font.Face { return textFace("inter-bold", fonts.InterBold, true, s*k) }
+		serif := func(s float64) font.Face { return textFace("libserif-bold", liberationserifbold.TTF, true, s*k) }
 		apFonts = &appleFonts{largeTitle: bold(68), title: bold(44), headline: semi(33), body: reg(33),
 			callout: reg(30), caption: reg(25), captionBold: semi(25), serifLarge: serif(80), serifTitle: serif(48)}
 	}

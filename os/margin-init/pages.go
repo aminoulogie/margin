@@ -186,6 +186,8 @@ type savedSettings struct {
 	NoLock bool `json:"no_lock_screen"`
 	// PinHash: the passcode's hash (passcode.go); "" for none.
 	PinHash string `json:"passcode,omitempty"`
+	// TextSize: the interface's text, 0.9 to 1.15 (0 = 1).
+	TextSize float64 `json:"text_size,omitempty"`
 	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
 	SmoothScroll bool `json:"smooth_scroll"`
 }
