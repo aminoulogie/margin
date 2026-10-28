@@ -906,3 +906,20 @@ func somaMoveToTomorrow() int {
 	}
 	return n
 }
+
+// somaMoveTodo puts a to-do at a new time on date (setTodoSlot), keeping its length.
+func somaMoveTodo(id, date string, start int) {
+	o := somaObj("todos#" + id)
+	if o == nil {
+		return
+	}
+	mins := 30
+	if s, ok := o["slot"].(obj); ok && num(s["mins"]) > 0 {
+		mins = int(num(s["mins"]))
+	}
+	start = min(max(start, 0), 24*60-15)
+	mins = min(mins, 24*60-start)
+	o["slot"] = obj{"date": date, "start": start, "mins": mins}
+	o["scope"], o["date"], o["cleared"] = "day", date, false
+	somaPut("todos#"+id, o)
+}

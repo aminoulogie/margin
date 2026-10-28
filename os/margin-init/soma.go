@@ -27,6 +27,8 @@ type somaUI struct {
 	note    string    // the note open in "notes" ("" for the list)
 	month   time.Time // the calendar's month
 	sel     string    // the calendar's day
+	calWeek bool      // the calendar shows a week, not the month
+	moving  string    // a timed to-do being moved: the next time tapped is its new time
 	typing  bool
 	field   string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
 	editing string
@@ -70,7 +72,7 @@ func (c *console) somaPage() *page {
 	}
 	soma.mu.Unlock()
 
-	h := map[string]int{"today": 2400, "calendar": 4800, "goals": 6000, "notes": 8000, "reports": 3000}[su.view]
+	h := map[string]int{"today": 2400, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3000}[su.view]
 	img := canvas(w, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -318,6 +320,21 @@ func (c *console) somaCalendar(p *page, y int) int {
 	}
 	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
 
+	// Week or Month.
+	seg := image.Rect(w/2-160, y+10, w/2+160, y+76)
+	ui.RoundRect(img, seg, 18, apCard2)
+	for i, m := range []string{"Week", "Month"} {
+		r := image.Rect(seg.Min.X+i*160, seg.Min.Y, seg.Min.X+(i+1)*160, seg.Max.Y)
+		if (i == 0) == su.calWeek {
+			ui.RoundRect(img, r.Inset(5), 14, apCard)
+		}
+		apTextCenter(img, f.headline, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, m)
+		btn("so:cal:"+strings.ToLower(m), r)
+	}
+	if su.calWeek {
+		return c.somaWeek(p, y+100)
+	}
+	y += 100
 	apText(img, f.title, mx, y+50, apLabel, su.month.Format("January 2006"))
 	apText(img, f.title, w-mx-140, y+50, apBlue, "‹")
 	apText(img, f.title, w-mx-40, y+50, apBlue, "›")
@@ -395,7 +412,16 @@ func (c *console) somaCalendar(p *page, y int) int {
 	apText(img, f.caption, lx, y+10, apSecondary, "n✓ habits done")
 	y += 50
 
-	// The chosen day.
+	return c.somaDayDetail(p, y)
+}
+
+// somaDayDetail is the chosen day under the calendar: training, food, the timeline, to-dos.
+func (c *console) somaDayDetail(p *page, y int) int {
+	f := apple()
+	img := p.img
+	mx := 48
+	su := &c.somaUI
+	todos := somaTodos()
 	sel, _ := time.ParseInLocation("2006-01-02", su.sel, displayZone)
 	y = somaSection(img, mx, y, sel.Format("Monday 2 January"), "")
 	if s := somaTraining(su.sel); s != nil {
@@ -553,11 +579,31 @@ func (c *console) somaTimeline(p *page, y int, todos []somaTodo) int {
 			su.slotY = r.Max.Y
 		}
 		if e.id != "" {
-			p.buttons = append(p.buttons, button{"so:todo:" + e.id, r})
+			// The handle on the right moves it: then tap the new time.
+			hr := image.Rect(r.Max.X-70, r.Min.Y, r.Max.X, r.Max.Y)
+			for k := -1; k <= 1; k++ {
+				ui.Fill(img, image.Rect(hr.Min.X+20, r.Min.Y+20+k*8, hr.Max.X-20, r.Min.Y+23+k*8), fg)
+			}
+			if su.moving == e.id {
+				ui.RoundRect(img, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+4), 2, apBlue)
+			}
+			p.buttons = append(p.buttons, button{"so:todo:" + e.id, image.Rect(r.Min.X, r.Min.Y, hr.Min.X, r.Max.Y)}, button{"so:move:" + e.id, hr})
+		}
+	}
+	if su.moving != "" {
+		for _, t := range todos {
+			if t.ID == su.moving {
+				ui.RoundRect(img, image.Rect(x0, top-70, x1, top-10), 16, apBlue)
+				apText(img, f.callout, x0+24, top-28, rgb(0xffffff), clip(f.callout, "Tap the new time for "+t.Text+" (or its handle to cancel)", x1-x0-48))
+			}
 		}
 	}
 	for m := first * 60; m < 1440; m += 30 { // the empty half hours (after the events: they win)
-		p.buttons = append(p.buttons, button{fmt.Sprintf("so:at:%d", m), image.Rect(x0, yOf(m), x1, yOf(m+30))})
+		id := fmt.Sprintf("so:at:%d", m)
+		if su.moving != "" {
+			id = fmt.Sprintf("so:moveto:%d", m)
+		}
+		p.buttons = append(p.buttons, button{id, image.Rect(x0, yOf(m), x1, yOf(m+30))})
 	}
 	return yOf(1440) + 40
 }
@@ -731,6 +777,22 @@ func (c *console) somaTap(id string) bool {
 	case strings.HasPrefix(id, "so:step:"): // so:step:<project>:<step>
 		pj, st, _ := strings.Cut(strings.TrimPrefix(id, "so:step:"), ":")
 		somaStepTap(pj, st)
+	case id == "so:cal:week", id == "so:cal:month":
+		su.calWeek = id == "so:cal:week"
+	case strings.HasPrefix(id, "so:wk:"):
+		d, _ := strconv.Atoi(strings.TrimPrefix(id, "so:wk:"))
+		t, _ := time.ParseInLocation("2006-01-02", su.sel, displayZone)
+		su.sel = t.AddDate(0, 0, 7*d).Format("2006-01-02")
+	case strings.HasPrefix(id, "so:move:"):
+		if m := strings.TrimPrefix(id, "so:move:"); su.moving == m {
+			su.moving = ""
+		} else {
+			su.moving = m
+		}
+	case strings.HasPrefix(id, "so:moveto:"):
+		m, _ := strconv.Atoi(strings.TrimPrefix(id, "so:moveto:"))
+		somaMoveTodo(su.moving, su.sel, m)
+		su.moving = ""
 	case strings.HasPrefix(id, "so:amt:"): // so:amt:<habit>:<delta>
 		h, d, _ := strings.Cut(strings.TrimPrefix(id, "so:amt:"), ":")
 		delta, _ := strconv.ParseFloat(d, 64)
@@ -1326,4 +1388,78 @@ func (c *console) somaHabitRows(p *page, habits []somaHabit, date string, y int)
 		}
 	}
 	return y
+}
+
+// somaWeek is the calendar's week: a card a day with its plan, training and to-dos; tapping a
+// day opens it below.
+func (c *console) somaWeek(p *page, y int) int {
+	f := apple()
+	img := p.img
+	w, mx := c.s.W, 48
+	su := &c.somaUI
+	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
+	mon, _ := time.ParseInLocation("2006-01-02", mondayOf(su.sel), displayZone)
+	_, wk := mon.ISOWeek()
+	apText(img, f.title, mx, y+50, apLabel, fmt.Sprintf("Week %d · %s", wk, mon.Format("2 Jan")))
+	apText(img, f.title, w-mx-140, y+50, apBlue, "‹")
+	apText(img, f.title, w-mx-40, y+50, apBlue, "›")
+	btn("so:wk:-1", image.Rect(w-mx-200, y, w-mx-90, y+80))
+	btn("so:wk:1", image.Rect(w-mx-90, y, w, y+80))
+	y += 100
+	todos := somaTodos()
+	for i := 0; i < 7; i++ {
+		d := mon.AddDate(0, 0, i)
+		date := d.Format("2006-01-02")
+		var lines []string
+		for _, b := range somaPlan(date) {
+			lines = append(lines, clockOf(b.Start)+" "+b.Label)
+		}
+		if s := somaTraining(date); s != nil {
+			lines = append(lines, "Training · "+s.Split)
+		}
+		var items []somaTodo
+		for _, t := range todos {
+			if t.on(date) && !t.Cleared {
+				items = append(items, t)
+			}
+		}
+		sort.SliceStable(items, func(a, b int) bool { return items[a].SlotStart < items[b].SlotStart })
+		h := 90 + 44*len(lines) + 70*len(items)
+		r := image.Rect(mx, y, w-mx, y+h)
+		bg := apCard
+		if date == su.sel {
+			bg = blend(apBlue, apBG, 0.75)
+		}
+		ui.RoundRect(img, r, 22, bg)
+		fg := apLabel
+		if date == somaToday() {
+			fg = apBlue
+		}
+		apText(img, f.headline, r.Min.X+30, r.Min.Y+56, fg, d.Format("Monday 2"))
+		btn("so:day:"+date, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+80))
+		ty := r.Min.Y + 110
+		for _, l := range lines {
+			apText(img, f.caption, r.Min.X+30, ty, apSecondary, clip(f.caption, l, r.Dx()-60))
+			ty += 44
+		}
+		for _, t := range items {
+			cy := ty - 10
+			ui.Circle(img, r.Min.X+46, cy, 16, apBlue)
+			if t.Done {
+				iconCheck(img, r.Min.X+36, cy, rgb(0xffffff))
+			} else {
+				ui.Circle(img, r.Min.X+46, cy, 13, bg)
+			}
+			text := t.Text
+			if t.SlotDate == date {
+				text = clockOf(float64(t.SlotStart)/60) + "  " + text
+			}
+			apText(img, f.body, r.Min.X+80, ty, apLabel, clip(f.body, text, r.Dx()-110))
+			btn("so:todo:"+t.ID, image.Rect(r.Min.X, ty-50, r.Max.X, ty+20))
+			ty += 70
+		}
+		y += h + 16
+	}
+	y += 20
+	return c.somaDayDetail(p, y)
 }

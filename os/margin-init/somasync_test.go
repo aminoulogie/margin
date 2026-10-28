@@ -538,7 +538,7 @@ func TestSomaHabitsAndReview(t *testing.T) {
 	at := time.Now().UnixMilli()
 	// A ramp from 10 pages, +5 a day it's met, started two days ago: met both days, so today's is 20.
 	relay.pcPut(t, k, "habits#r1", obj{"id": "r1", "name": "Read pages", "color": "#30d158", "history": obj{},
-		"ramp": obj{"start": 10, "target": 50, "step": 5, "from": day(-2), "unit": "page", "advance": "earned"},
+		"ramp":      obj{"start": 10, "target": 50, "step": 5, "from": day(-2), "unit": "page", "advance": "earned"},
 		"amountLog": obj{day(-2): 10, day(-1): 15}}, at)
 	// Done every day for two weeks but one: a 13-day run (the miss is forgiven).
 	hist := obj{}
@@ -597,5 +597,31 @@ func TestSomaHabitsAndReview(t *testing.T) {
 		if td.Text == "Later" && td.Date != day(1) {
 			t.Fatalf("Later is on %s", td.Date)
 		}
+	}
+}
+
+// The calendar's week, and moving a timed to-do: its handle, then the new time.
+func TestSomaWeekAndMove(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	today := somaToday()
+	relay.pcPut(t, k, "todos#t2", obj{"id": "t2", "text": "Call", "done": false, "date": today, "scope": "day",
+		"slot": obj{"date": today, "start": 600, "mins": 45}}, time.Now().UnixMilli())
+	soma.sync()
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:view:calendar")
+	c.somaTap("so:cal:week")
+	shot(t, c, "soma-week")
+	c.somaTap("so:day:" + today)
+	c.somaTap("so:move:t2")
+	if c.somaUI.moving != "t2" {
+		t.Fatal("the handle didn't pick it up")
+	}
+	c.somaTap("so:moveto:900")
+	drawMu.Unlock()
+	soma.sync()
+	t2, _ := relay.pcGet(t, k, "todos#t2")
+	if s := t2["slot"].(obj); s["start"] != float64(900) || s["mins"] != float64(45) || s["date"] != today {
+		t.Fatalf("the PC sees the slot as %v", s)
 	}
 }
