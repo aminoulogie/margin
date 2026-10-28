@@ -824,6 +824,16 @@ func (c *console) readerTap(id string) bool {
 		c.rd.chrome = !c.rd.chrome
 	case id == "r:bar":
 		return true // the controls' bars, between their buttons
+	case strings.HasPrefix(id, "r:page:"): // a page in the strip
+		var k int
+		fmt.Sscanf(id, "r:page:%d", &k)
+		if ob := c.book; ob != nil && k >= 0 && k < len(ob.pages) {
+			ob.page, ob.line = k, 0
+			c.invalidatePage()
+			c.saveProgress()
+		}
+		c.showPage()
+		return true
 	case strings.HasPrefix(id, "r:seek:"):
 		var at int
 		fmt.Sscanf(id, "r:seek:%d", &at)

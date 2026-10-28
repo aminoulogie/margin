@@ -874,82 +874,118 @@ func (th readerTheme) accent() color.RGBA {
 	return apBlue
 }
 
-// drawChrome is Apple Books' controls: a bar on top (Library; contents and highlights in a
-// group on the left; the title; line by line, Aa and the bookmark in a group on the right)
-// and a slider through the book at the bottom.
+// drawChrome is Soma's reader controls (BookChrome.tsx), floating over the page as glass:
+// top left, back and the contents; top right, Aa, line by line and the bookmark; at the
+// bottom, "Page N of M", a thin line through the book, and a strip of the chapter's pages
+// between ‹ and ›.
 func (c *console) drawChrome(p *page, th readerTheme) {
-	f := apple()
 	ob := c.book
 	img := p.img
 	h := img.Rect.Dy()
-	sep := blend(th.bg, th.fg, 0.12)
-	group := blend(th.bg, th.fg, 0.07)
-	ink := blend(th.bg, th.fg, 0.85)
-	acc := th.accent()
+	w := c.s.W
+	ink := rgb(0xf5f7fa)
+	pillBG := rgb(0x1e2028)
+	pill := func(r image.Rectangle) {
+		ui.RoundRect(img, r, r.Dy()/2, blend(th.bg, rgb(0xffffff), 0.18)) // the rim
+		ui.RoundRect(img, r.Inset(2), r.Dy()/2-2, pillBG)
+	}
+	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
 
-	top := image.Rect(0, 0, c.s.W, 130)
-	ui.Fill(img, top, th.bg)
-	ui.Fill(img, image.Rect(0, top.Max.Y-2, c.s.W, top.Max.Y), sep)
-	back := "Library"
-	if c.fromStore {
-		back = "Store"
-	}
-	iconBack(img, 34, 65, acc)
-	apText(img, f.body, 62, 77, acc, back)
-	p.buttons = append(p.buttons, button{"shelf", image.Rect(0, 0, 200, top.Max.Y)})
-	// Left group: contents, highlights.
-	lg := image.Rect(210, 28, 210+190, 102)
-	ui.RoundRect(img, lg, 37, group)
-	iconList(img, lg.Min.X+48, 65, ink)
-	iconPen(img, lg.Min.X+142, 65, ink)
-	p.buttons = append(p.buttons, button{"contents", image.Rect(lg.Min.X, 0, lg.Min.X+95, top.Max.Y)},
-		button{"marks", image.Rect(lg.Min.X+95, 0, lg.Max.X, top.Max.Y)})
-	// Right group: line by line, Aa, bookmark.
-	rg := image.Rect(c.s.W-24-290, 28, c.s.W-24, 102)
-	ui.RoundRect(img, rg, 37, group)
-	lit := blend(group, ink, 0.4)
+	// Top left: back, contents.
+	lp := image.Rect(24, 18, 24+200, 18+100)
+	pill(lp)
+	iconBack(img, lp.Min.X+44, (lp.Min.Y+lp.Max.Y)/2, ink)
+	iconList(img, lp.Min.X+140, (lp.Min.Y+lp.Max.Y)/2, ink)
+	btn("shelf", image.Rect(0, 0, lp.Min.X+100, lp.Max.Y+10))
+	btn("contents", image.Rect(lp.Min.X+100, 0, lp.Max.X, lp.Max.Y+10))
+	// Top right: Aa, line by line, the bookmark.
+	rp := image.Rect(w-24-300, 18, w-24, 118)
+	pill(rp)
+	cy := (rp.Min.Y + rp.Max.Y) / 2
+	iconAa(img, rp.Min.X+56, cy, ink)
+	lit := blend(pillBG, ink, 0.45)
 	if c.lib.Prefs.LineFocus {
-		ui.RoundRect(img, image.Rect(rg.Min.X+6, rg.Min.Y+6, rg.Min.X+96, rg.Max.Y-6), 31, blend(group, acc, 0.25))
-		lit = acc
+		lit = th.accent()
 	}
-	iconLines(img, rg.Min.X+50, 65, ink, lit)
-	iconAa(img, rg.Min.X+148, 65, ink)
+	iconLines(img, rp.Min.X+150, cy, ink, lit)
 	bm := c.bookmarked()
 	bmCol := ink
 	if bm != nil {
 		bmCol = apRed
 	}
-	iconBookmark(img, rg.Min.X+242, 65, bmCol, bm != nil)
-	p.buttons = append(p.buttons, button{"linemode", image.Rect(rg.Min.X, 0, rg.Min.X+98, top.Max.Y)},
-		button{"settings", image.Rect(rg.Min.X+98, 0, rg.Min.X+196, top.Max.Y)},
-		button{"r:bookmark", image.Rect(rg.Min.X+196, 0, rg.Max.X+24, top.Max.Y)})
-	// The title between them.
-	apTextCenter(img, f.headline, (lg.Max.X+rg.Min.X)/2, 65, th.fg, clip(f.headline, ob.b.Title, rg.Min.X-lg.Max.X-40))
+	iconBookmark(img, rp.Min.X+244, cy, bmCol, bm != nil)
+	btn("settings", image.Rect(rp.Min.X, 0, rp.Min.X+100, rp.Max.Y+10))
+	btn("linemode", image.Rect(rp.Min.X+100, 0, rp.Min.X+200, rp.Max.Y+10))
+	btn("r:bookmark", image.Rect(rp.Min.X+200, 0, w, rp.Max.Y+10))
 
-	// Bottom: where you are in the book; tap the slider to jump.
-	bot := image.Rect(0, h-170, c.s.W, h)
-	ui.Fill(img, bot, th.bg)
-	ui.Fill(img, image.Rect(0, bot.Min.Y, c.s.W, bot.Min.Y+2), sep)
-	tx0, tx1, ty := 70, c.s.W-70, bot.Min.Y+56
-	ui.RoundRect(img, image.Rect(tx0, ty-3, tx1, ty+3), 3, sep)
-	pct := c.progressPct()
-	kx := tx0 + (tx1-tx0)*pct/100
-	ui.RoundRect(img, image.Rect(tx0, ty-3, kx, ty+3), 3, th.faint)
-	ui.Circle(img, kx, ty+2, 17, blend(th.bg, rgb(0x000000), 0.15))
-	ui.Circle(img, kx, ty, 16, rgb(0xffffff))
-	for i := 0; i < 100; i++ {
-		x0, x1 := tx0+(tx1-tx0)*i/100, tx0+(tx1-tx0)*(i+1)/100
-		if i == 0 {
-			x0 = 0
-		}
-		if i == 99 {
-			x1 = c.s.W
-		}
-		p.buttons = append(p.buttons, button{fmt.Sprintf("r:seek:%d", i), image.Rect(x0, ty-40, x1, ty+40)})
+	// Bottom: a fade to the page's colour, "Page N of M", the line, the strip.
+	bot := h - 380
+	for y := bot; y < h; y++ {
+		a := min(1, float64(y-bot)/110)
+		glass(img, image.Rect(0, y, w, y+1), 0, th.bg, a)
 	}
-	apTextCenter(img, f.caption, c.s.W/2, ty+58, th.fg, clip(f.caption, ob.chTitle, c.s.W-240))
-	apTextCenter(img, f.caption, c.s.W/2, ty+94, th.faint, fmt.Sprintf("%d of %d  ·  %d%%", ob.page+1, len(ob.pages), pct))
-	p.buttons = append(p.buttons, button{"r:bar", top}, button{"r:bar", bot})
+	pct := c.progressPct()
+	n := max(len(ob.b.Chapters), 1)
+	total := max(len(ob.pages)*n, 1)
+	at := min(max(total*pct/100, 1), total)
+	f := apple()
+	apTextCenter(img, f.captionBold, w/2, h-232, blend(th.bg, ink, 0.55), fmt.Sprintf("Page %d of %d", at, total))
+	ln := image.Rect(32, h-196, w-32, h-190)
+	ui.RoundRect(img, ln, 3, blend(th.bg, ink, 0.18))
+	ui.RoundRect(img, image.Rect(ln.Min.X, ln.Min.Y, ln.Min.X+max(6, ln.Dx()*pct/100), ln.Max.Y), 3, blend(th.bg, ink, 0.7))
+	for i := 0; i < 100; i++ { // tap the line to jump
+		x0, x1 := ln.Min.X+ln.Dx()*i/100, ln.Min.X+ln.Dx()*(i+1)/100
+		btn(fmt.Sprintf("r:seek:%d", i), image.Rect(x0, ln.Min.Y-30, x1, ln.Max.Y+30))
+	}
+	// ‹ the strip ›.
+	sy0, sy1 := h-150, h-40
+	prev := image.Rect(24, sy0+5, 124, sy1-5)
+	next := image.Rect(w-124, sy0+5, w-24, sy1-5)
+	for _, r := range []image.Rectangle{prev, next} {
+		ui.Circle(img, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, r.Dx()/2, blend(th.bg, rgb(0xffffff), 0.12))
+		ui.Circle(img, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, r.Dx()/2-2, pillBG)
+	}
+	iconBack(img, prev.Min.X+42, (prev.Min.Y+prev.Max.Y)/2, ink)
+	iconChevronRight(img, next.Min.X+46, (next.Min.Y+next.Max.Y)/2, ink)
+	btn("prev", prev)
+	btn("next", next)
+	strip := image.Rect(prev.Max.X+20, sy0, next.Min.X-20, sy1)
+	pill(strip)
+	// The chapter's pages around this one, as little pages; this one is the page itself, small.
+	tw, thh := 46, 76
+	slots := (strip.Dx() - 60) / (tw + 10)
+	first := max(0, min(ob.page-slots/2, len(ob.pages)-slots))
+	x := strip.Min.X + (strip.Dx()-min(slots, len(ob.pages))*(tw+10)+10)/2
+	ty := (strip.Min.Y+strip.Max.Y)/2 - thh/2
+	for k := first; k < min(first+slots, len(ob.pages)); k++ {
+		r := image.Rect(x, ty, x+tw, ty+thh)
+		if k == ob.page {
+			// The page on screen, shrunk.
+			src := c.pcache.normal
+			if src != nil {
+				for yy := 0; yy < thh; yy++ {
+					sy := yy * src.Rect.Dy() / thh
+					for xx := 0; xx < tw; xx++ {
+						sx := xx * src.Rect.Dx() / tw
+						o := src.PixOffset(sx, sy)
+						img.SetRGBA(r.Min.X+xx, r.Min.Y+yy, color.RGBA{src.Pix[o], src.Pix[o+1], src.Pix[o+2], 255})
+					}
+				}
+			}
+			ui.RoundRect(img, image.Rect(r.Min.X-4, r.Min.Y-4, r.Max.X+4, r.Min.Y-1), 2, ink)
+			ui.RoundRect(img, image.Rect(r.Min.X-4, r.Max.Y+1, r.Max.X+4, r.Max.Y+4), 2, ink)
+			ui.Fill(img, image.Rect(r.Min.X-4, r.Min.Y-4, r.Min.X-1, r.Max.Y+4), ink)
+			ui.Fill(img, image.Rect(r.Max.X+1, r.Min.Y-4, r.Max.X+4, r.Max.Y+4), ink)
+		} else {
+			ui.Fill(img, r, blend(th.bg, ink, 0.08))
+			for l := 0; l < 7; l++ { // its lines of text, suggested
+				ui.Fill(img, image.Rect(r.Min.X+6, r.Min.Y+10+l*9, r.Max.X-6-(l%3)*5, r.Min.Y+12+l*9), blend(th.bg, ink, 0.22))
+			}
+		}
+		btn(fmt.Sprintf("r:page:%d", k), r.Inset(-5))
+		x += tw + 10
+	}
+	btn("r:bar", image.Rect(0, bot+110, w, h))
 }
 
 // seek jumps to a point through the book (0..99, in hundredths). Caller holds drawMu.
