@@ -1753,6 +1753,33 @@ func blendPart(s *Screen, p *ovPart, flip bool) {
 
 var soundOnce sync.Once
 
+// soundCardNo is the number of the tablet's own audio chip in ALSA ("cloverview_audio"):
+// card 0 here is the Loopback card, which ALSA's default device points at.
+func soundCardNo() string {
+	if b, err := os.ReadFile("/proc/asound/cards"); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(l); len(f) > 1 && strings.Contains(l, "cloverview") {
+				if _, err := strconv.Atoi(f[0]); err == nil {
+					return f[0]
+				}
+			}
+		}
+	}
+	return "0"
+}
+
+// soundDev is the ALSA device films play through: the chip's first playback device (on this
+// tablet "Headset", which the speaker is routed from), with ALSA converting formats.
+// /data/condor/sounddev ("4,1": card,device) overrides it.
+func soundDev() string {
+	if b, err := os.ReadFile(marginHome + "/sounddev"); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return "plughw:" + s
+		}
+	}
+	return "plughw:" + soundCardNo() + ",0"
+}
+
 // setupSound turns the speaker and headphone outputs on and up (ALSA's mixer), once: without
 // Android's audio service nothing has. Best effort.
 func setupSound() {
@@ -1760,11 +1787,13 @@ func setupSound() {
 		if _, err := os.Stat(alpineRoot + "/usr/bin/amixer"); err != nil {
 			return
 		}
-		out, err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-c", "0", "scontrols").Output()
+		card := soundCardNo()
+		out, err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-c", card, "scontrols").Output()
 		if err != nil {
 			log.Printf("playbox: amixer: %v", err)
 			return
 		}
+		log.Printf("playbox: sound card %s controls: %s", card, strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", " | "))
 		re := regexp.MustCompile(`Simple mixer control '([^']+)',(\d+)`)
 		want := regexp.MustCompile(`(?i)speaker|headphone|master|pcm|dac|line ?out|playback|spk|hp|media`)
 		skip := regexp.MustCompile(`(?i)capture|mic|boost|adc|record|input`)
