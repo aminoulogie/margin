@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"strings"
@@ -31,9 +32,9 @@ const (
 	repeatEvery = 45 * time.Millisecond  // then this often, speeding up to repeatFast
 	repeatFast  = 15 * time.Millisecond
 
-	// Holding ⌫ in the terminal deletes characters, then (after this many) whole words.
-	wordDeleteAfter = 15
-	wordDeleteEvery = 160 * time.Millisecond
+	// Holding ⌫: after a second, one character every 10 ms, steadily, until the finger lifts.
+	deleteDelay = time.Second
+	deleteEvery = 10 * time.Millisecond
 
 	trackStep = 22 // pixels of finger travel per character, sliding on the space bar
 )
@@ -420,13 +421,17 @@ func (kb *keyboard) startRepeat(slot int, key *kbKey) {
 	stop := make(chan struct{})
 	kb.repeats[slot] = stop
 	kb.repeated[slot] = false
+	if key.out == "\x7f" {
+		go kb.repeatDelete(slot, key, stop)
+		return
+	}
 	go func() {
 		select {
 		case <-stop:
 			return
 		case <-time.After(repeatDelay):
 		}
-		every, n := repeatEvery, 0
+		every := repeatEvery
 		t := time.NewTicker(every)
 		defer t.Stop()
 		for {
@@ -438,28 +443,54 @@ func (kb *keyboard) startRepeat(slot int, key *kbKey) {
 			default:
 			}
 			kb.repeated[slot] = true
-			n++
-			if n > wordDeleteAfter && key.out == "\x7f" && kb.dark { // held on: whole words, as on iOS
-				kb.send([]byte("\x17")) // Ctrl-W: the shell erases the word before the cursor
-				if every != wordDeleteEvery {
-					every = wordDeleteEvery
-					t.Reset(every)
-				}
-			} else {
-				kb.send(kb.output(key))
-			}
+			kb.send(kb.output(key))
 			drawMu.Unlock()
 			select {
 			case <-stop:
 				return
 			case <-t.C:
 			}
-			if every > repeatFast && every != wordDeleteEvery { // the longer it's held, the faster it goes
+			if every > repeatFast { // the longer it's held, the faster it goes
 				every = max(every*9/10, repeatFast)
 				t.Reset(every)
 			}
 		}
 	}()
+}
+
+// repeatDelete deletes at a steady deleteEvery from deleteDelay on. The characters due are
+// counted from the clock, and sent together when a redraw took longer than one step, so
+// the speed stays the same however slow the screen behind is.
+func (kb *keyboard) repeatDelete(slot int, key *kbKey, stop chan struct{}) {
+	select {
+	case <-stop:
+		return
+	case <-time.After(deleteDelay):
+	}
+	start, sent := time.Now(), 0
+	t := time.NewTicker(deleteEvery)
+	defer t.Stop()
+	for {
+		drawMu.Lock()
+		select {
+		case <-stop: // lifted while we waited for the lock
+			drawMu.Unlock()
+			return
+		default:
+		}
+		kb.repeated[slot] = true
+		due := int(time.Since(start)/deleteEvery) + 1
+		if n := min(due-sent, 50); n > 0 {
+			kb.send(bytes.Repeat(kb.output(key), n))
+			sent = due
+		}
+		drawMu.Unlock()
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+	}
 }
 
 func (kb *keyboard) stopRepeat(slot int) {

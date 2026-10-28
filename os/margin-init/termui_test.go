@@ -138,7 +138,7 @@ func TestTerminalCursorTapAndTrackpad(t *testing.T) {
 }
 
 // Holding ⌫: characters first, then whole words (Ctrl-W), as on iOS.
-func TestHeldBackspaceDeletesWords(t *testing.T) {
+func TestHeldBackspaceDeletesSteadily(t *testing.T) {
 	c := testConsole(t)
 	c.mode = modeTerminal
 	r, w, err := os.Pipe()
@@ -166,8 +166,9 @@ func TestHeldBackspaceDeletesWords(t *testing.T) {
 	drawMu.Unlock()
 	w.Close()
 	got, _ := io.ReadAll(r)
+	// Held 2.2 s: nothing for the first second, then one every 10 ms (about 120), no words.
 	dels, words := strings.Count(string(got), "\x7f"), strings.Count(string(got), "\x17")
-	if dels != wordDeleteAfter || words == 0 {
+	if dels < 80 || dels > 135 || words != 0 {
 		t.Fatalf("held ⌫ sent %d deletes and %d word deletes", dels, words)
 	}
 }

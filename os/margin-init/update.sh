@@ -28,10 +28,21 @@ if ! command -v go >/dev/null || ! command -v curl >/dev/null; then
 fi
 
 say "getting the latest code"
-commit=$(curl -fsSL -H "Accept: application/vnd.github.sha" https://api.github.com/repos/$REPO/commits/$BRANCH)
-rm -rf $SRC.new && mkdir -p $SRC.new
-curl -fsSL https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH | tar -xzf - -C $SRC.new ||
-	die "download failed: is Wi-Fi on?"
+# fetch tries a few times, through margin-init's proxy and then straight out: a connection to
+# GitHub can drop for a minute after Wi-Fi joins, or on one route and not the other.
+fetch() {
+	for i in 1 2 3 4 5; do
+		curl -fsSL "$@" && return 0
+		curl -fsSL --noproxy '*' "$@" && return 0
+		echo "    retrying ($i)..." >&2; sleep 3
+	done
+	return 1
+}
+commit=$(fetch -H "Accept: application/vnd.github.sha" https://api.github.com/repos/$REPO/commits/$BRANCH 2>/dev/null)
+rm -rf $SRC.new /tmp/margin-src.tgz && mkdir -p $SRC.new
+fetch -o /tmp/margin-src.tgz https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH &&
+	tar -xzf /tmp/margin-src.tgz -C $SRC.new || die "download failed: is Wi-Fi on?"
+rm -f /tmp/margin-src.tgz
 rm -rf $SRC && mv $SRC.new/* $SRC && rm -rf $SRC.new || die "couldn't unpack the code"
 echo "    $BRANCH at ${commit:-?}"
 
