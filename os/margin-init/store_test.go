@@ -360,7 +360,7 @@ func TestStoreBrowseSearchPreviewDownload(t *testing.T) {
 	c.pageTouch(TouchPoint{Down: true, X: 600, Y: 1700})
 	c.pageTouch(TouchPoint{Moved: true, X: 600, Y: 300})
 	c.pageTouch(TouchPoint{Up: true, X: 600, Y: 300})
-	if want := c.viewH() - tabsH - 160; c.scrollY() != want { // a swipe: one screen down
+	if want := c.viewH() - marginTabsH - 160; c.scrollY() != want { // a swipe: one screen down
 		t.Fatalf("scrolled to %d, want %d", c.scrollY(), want)
 	}
 	shot(t, c, "books-home-scrolled")

@@ -113,6 +113,9 @@ func (c *console) showPage() {
 // setMode switches screens. Caller holds drawMu.
 func (c *console) setMode(m mode) {
 	c.mode, c.confirm = m, ""
+	if m == modeBooksHome || m == modeBooks || m == modeStore || m == modeWords {
+		c.lastMargin = m // the Margin tab goes back to it
+	}
 	c.redrawAll()
 }
 

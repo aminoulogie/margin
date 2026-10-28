@@ -230,11 +230,12 @@ func (c *console) booksHomePage() *page {
 // --- rows of covers --------------------------------------------------------------------------
 
 const (
-	tabsH    = 130 // the tab bar's band at the top of the books pages: it stays put
-	homeRowH = 460 // a row's title and covers
-	rowCW    = 150 // cover size in rows
-	rowCH    = 225
-	rowGap   = 33
+	tabsH       = 130 // the tab bar's band at the top of the books pages: it stays put
+	marginTabsH = 176 // ...with Margin's own row under it (Home, Library, Store, Words)
+	homeRowH    = 460 // a row's title and covers
+	rowCW       = 150 // cover size in rows
+	rowCH       = 225
+	rowGap      = 33
 )
 
 // homeShelves are Home's store rows, Kindle style: Project Gutenberg by topic or language.
