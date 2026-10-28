@@ -453,7 +453,7 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		return
 	}
 	setPipeSize(pw, 16<<10) // a short pipe: what's heard is close to what was written
-	a := alpineCtxCmd(ctx, aplayPath, aplayArgs...)
+	a := alpineCtxCmd(ctx, aplayPath, append([]string{"-D", soundDev()}, aplayArgs...)...)
 	a.Stdin = pr
 	var errs lineRing
 	ep, _ := a.StderrPipe()
