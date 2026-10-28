@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	"log"
 	"os"
 	"path/filepath"
@@ -52,6 +53,16 @@ func (c *console) drawLock() {
 	}
 	for y := 0; y < h; y++ {
 		ui.Fill(img, image.Rect(0, y, w, y+1), blend(top, rgb(0x000000), min(1, float64(y)/float64(h)*1.4)))
+	}
+	photo := false
+	if c.cfg.Wallpaper != "" { // a photo from Settings > Wallpaper, a little darker so the time reads
+		if wp := covers.get(wallURL(c.cfg.Wallpaper, w, c.s.H), w, h); wp != nil {
+			draw.Draw(img, img.Rect, wp, wp.Rect.Min, draw.Src)
+			for i := 0; i < len(img.Pix); i += 4 {
+				img.Pix[i], img.Pix[i+1], img.Pix[i+2] = img.Pix[i]*3/4, img.Pix[i+1]*3/4, img.Pix[i+2]*3/4
+			}
+			top, photo = coverTint(wp, c.cfg.Wallpaper), true
+		}
 	}
 
 	now := time.Now().In(displayZone)
@@ -104,7 +115,7 @@ func (c *console) drawLock() {
 		}
 	}
 
-	if it != nil {
+	if it != nil && !photo {
 		// The cover itself, large, under the widgets: the book's own picture is the wallpaper.
 		cr := image.Rect((w-520)/2, 720, (w+520)/2, 720+780)
 		shadow(img, cr, 12, 0.35)

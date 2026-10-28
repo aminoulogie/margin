@@ -54,6 +54,7 @@ type console struct {
 	pinEntry         string                   // the digits typed so far
 	pinFirst         string                   // a new passcode, the first time
 	pinMsg           string                   // "Wrong passcode"
+	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)

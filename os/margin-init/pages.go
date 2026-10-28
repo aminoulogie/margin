@@ -188,6 +188,8 @@ type savedSettings struct {
 	PinHash string `json:"passcode,omitempty"`
 	// TextSize: the interface's text, 0.9 to 1.15 (0 = 1).
 	TextSize float64 `json:"text_size,omitempty"`
+	// Wallpaper: the lock screen's photo (wallpaper.go); "" for the book's cover.
+	Wallpaper string `json:"wallpaper,omitempty"`
 	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
 	SmoothScroll bool `json:"smooth_scroll"`
 }
