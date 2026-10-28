@@ -96,7 +96,7 @@ type videoPlayer struct {
 	drops     int // frames skipped in the last stretch, to see whether it keeps up
 	shown     int
 	keepSince time.Time // when the current stretch of drops/shown began
- // the timeline's finger: the time it points at (-1: none)
+	scrub     float64 // the timeline's finger: the time it points at (-1: none)
 	touch     videoTouch
 	ticker    bool
 	pauseNext bool // show the next frame, then pause (a seek while paused)
