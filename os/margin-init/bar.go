@@ -46,8 +46,8 @@ func (c *console) barColours() (bg, fg color.RGBA) {
 // drawBar paints the status bar: time and date on the left; Wi-Fi, battery percentage and
 // the battery on the right. Caller holds drawMu.
 func (c *console) drawBar() {
-	if !c.screenOn {
-		return
+	if !c.screenOn || c.mode == modeVideo && c.vid != nil && !c.locked && c.alarm == "" && c.pinMode == "" {
+		return // a film fills the screen
 	}
 	bg, fg := c.barColours()
 	f := apple()

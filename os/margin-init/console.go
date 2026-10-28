@@ -116,6 +116,9 @@ type console struct {
 	gpuStarting      bool
 	gpuFailed        bool
 	wui              wordsUI
+	pb               pbUI         // the Playbox tab (playbox.go)
+	vid              *videoPlayer // the film playing (video.go), nil when none
+	br               browserUI    // the Browser tab (browser.go)
 	clients          map[net.Conn]bool
 }
 
@@ -173,12 +176,17 @@ func newConsole(s *Screen) (*console, error) {
 			c.somaKey(b)
 		} else if c.mode == modeSettings {
 			c.appsKey(b)
+		} else if c.mode == modePlaybox {
+			c.pbKey(b)
+		} else if c.mode == modeBrowser {
+			c.brKey(b)
 		} else {
 			c.storeKey(b)
 		}
 	}, func(visible bool) {
 		if !visible { // its hide key: stop typing
 			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing = false, false, false, false
+			c.pb.typing, c.br.typing = false, false
 			c.showPage()
 		}
 	})
@@ -218,6 +226,10 @@ func (c *console) touchLoop() {
 				return // only the power button wakes the screen
 			}
 			for _, p := range pts {
+				if c.alarm == "" && c.pinMode == "" && !c.locked && c.mode == modeVideo && c.vid != nil {
+					c.videoTouch(p) // a film: the whole screen is the player's
+					continue
+				}
 				if c.alarm != "" {
 					c.alarmTouch(p)
 					continue
@@ -277,6 +289,10 @@ func (c *console) touchLoop() {
 				case c.mode == modeSettings && c.apps.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeSoma && c.somaUI.typing && c.skb.visible && p.Y >= c.skb.y0:
+					c.skb.touch(p)
+				case c.mode == modePlaybox && c.pb.typing && c.skb.visible && p.Y >= c.skb.y0:
+					c.skb.touch(p)
+				case c.mode == modeBrowser && c.br.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeReader && c.book != nil:
 					c.readerTouch(p)

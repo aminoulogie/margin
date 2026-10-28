@@ -67,6 +67,10 @@ func (c *console) showPage() {
 	if !c.screenOn {
 		return
 	}
+	if c.mode == modeVideo {
+		c.videoRedraw() // the player draws itself, in landscape
+		return
+	}
 	c.endGPUScroll()
 	c.pageGen++
 	covers.mu.Lock()
@@ -96,6 +100,10 @@ func (c *console) showPage() {
 		c.page = c.wordsPage()
 	case c.mode == modeSoma:
 		c.page = c.somaPage()
+	case c.mode == modePlaybox:
+		c.page = c.playboxPage()
+	case c.mode == modeBrowser:
+		c.page = c.browserPage()
 	default:
 		c.page = c.booksHomePage()
 	}
@@ -104,7 +112,8 @@ func (c *console) showPage() {
 	if c.mode != modeReader { // the reader draws its own, under its overlays
 		c.drawToast()
 	}
-	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && c.apps.typing) {
+	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && c.apps.typing) ||
+		(c.mode == modePlaybox && c.pb.typing) || (c.mode == modeBrowser && c.br.typing) {
 		c.skb.draw()
 		c.drawTypeBar()
 	}
@@ -113,6 +122,9 @@ func (c *console) showPage() {
 
 // setMode switches screens. Caller holds drawMu.
 func (c *console) setMode(m mode) {
+	if m != modeVideo && c.vid != nil {
+		c.stopVideo() // the film stops when something else takes the screen (the alarm)
+	}
 	c.mode, c.confirm = m, ""
 	if m == modeBooksHome || m == modeBooks || m == modeStore || m == modeWords {
 		c.lastMargin = m // the Margin tab goes back to it
@@ -132,7 +144,8 @@ func (c *console) pageTap(x, y int) {
 	if id != c.confirm {
 		c.confirm = ""
 	}
-	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) || c.appsTap(id) || c.appsSearchTap(id) {
+	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) || c.appsTap(id) || c.appsSearchTap(id) ||
+		c.playboxTap(id) || c.browserTap(id) {
 		return
 	}
 	switch {

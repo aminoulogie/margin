@@ -33,6 +33,10 @@ func (c *console) key(code uint16, value int32) {
 		if !c.screenOn {
 			return
 		}
+		if c.mode == modeVideo && c.vid != nil && !c.locked {
+			c.videoKey(code == keyVolumeUp)
+			return
+		}
 		if c.mode == modeReader && c.book != nil && !c.locked { // (not behind the lock screen) // in a book the volume keys turn pages (or lines)
 			if c.rd.view == "" && !c.overlayOpen() {
 				if code == keyVolumeDown {
@@ -64,6 +68,11 @@ func (c *console) setScreen(on bool) {
 	}
 	c.screenOn = on
 	if !on {
+		if v := c.vid; v != nil && v.run != nil && v.state == "playing" { // the screen off pauses the film
+			v.state = "paused"
+			v.run.setPaused(true)
+			c.videoSavePos()
+		}
 		setBacklight(0)
 		blankScreen(c.s, true)
 		powerSave(true)

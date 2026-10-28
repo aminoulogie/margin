@@ -26,11 +26,14 @@ const (
 	modeBooksHome mode = iota // where Margin starts: the Books app is the whole system
 	modeTerminal
 	modeSettings
-	modeBooks  // the shelf
-	modeReader // a book open
-	modeStore  // free books to download
-	modeWords  // the word book
-	modeSoma   // Soma: habits, to-dos, calendar, reports (soma.go)
+	modeBooks   // the shelf
+	modeReader  // a book open
+	modeStore   // free books to download
+	modeWords   // the word book
+	modeSoma    // Soma: habits, to-dos, calendar, reports (soma.go)
+	modePlaybox // Playbox: films and series from add-ons, torrents (playbox.go)
+	modeVideo   // a film playing, full screen (video.go)
+	modeBrowser // the web browser (browser.go)
 )
 
 type button struct {

@@ -105,9 +105,10 @@ type Screen struct {
 	warmBuf          []byte
 	// What the device was last sent, to send only the rows that really changed: turned a
 	// quarter, one changed logical row (a line of text) dirties every native row.
-	shadow     []byte
-	shadowDev  io.WriterAt
-	shadowWarm bool
+	shadow      []byte
+	shadowDev   io.WriterAt
+	shadowWarm  bool
+	shadowStale bool // rows were sent without it (video frames): compare nothing next time
 }
 
 func newScreen(dev io.WriterAt, fbW, fbH, stride, bpp int, red, green, blue bitfield, rot Rotation) *Screen {
@@ -151,9 +152,9 @@ func (s *Screen) Flush() error {
 	if s.dev == nil {
 		return nil
 	}
-	if s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm {
+	if s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm || s.shadowStale {
 		s.shadow = append(s.shadow[:0], s.buf...) // first, or a new device: send it all
-		s.shadowDev, s.shadowWarm = s.dev, s.warm
+		s.shadowDev, s.shadowWarm, s.shadowStale = s.dev, s.warm, false
 	} else {
 		row := func(y int) bool { // changed since sent
 			a, b := y*s.stride, (y+1)*s.stride
@@ -173,6 +174,27 @@ func (s *Screen) Flush() error {
 		lo, hi = l, h
 		copy(s.shadow[lo*s.stride:(hi+1)*s.stride], s.buf[lo*s.stride:(hi+1)*s.stride])
 	}
+	return s.write(lo, hi)
+}
+
+// FlushFrame writes the changed rows without comparing them with what was sent: a video
+// frame changes nearly all of them, and the comparison and its copy would cost as much
+// again. The next Flush then sends its rows whole.
+func (s *Screen) FlushFrame() error {
+	if s.dirtyLo > s.dirtyHi || s.hold {
+		return nil
+	}
+	lo, hi := s.dirtyLo, s.dirtyHi
+	s.dirtyLo, s.dirtyHi = s.fbH, -1
+	s.shadowStale = true
+	if s.dev == nil {
+		return nil
+	}
+	return s.write(lo, hi)
+}
+
+// write sends rows lo..hi of the back buffer to the device (warmer at night).
+func (s *Screen) write(lo, hi int) error {
 	rows := s.buf[lo*s.stride : (hi+1)*s.stride]
 	if s.warm && s.bpp == 32 && s.blue.offset%8 == 0 && s.green.offset%8 == 0 {
 		// Written warm, the back buffer left as drawn: a copy with blue and green turned down.

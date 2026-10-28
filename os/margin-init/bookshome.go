@@ -391,8 +391,9 @@ func (c *console) coverLoaded(url string) {
 				c.drawLock()
 			}
 		})
-	case c.mode == modeBooksHome:
+	case c.mode == modeBooksHome || c.mode == modePlaybox && c.pb.sel == nil:
 		c.coverArrived(url)
+	case c.mode == modeVideo:
 	case c.mode == modeStore:
 		c.storeRedraw()
 	case c.mode != modeTerminal && c.mode != modeReader:
@@ -451,7 +452,7 @@ func (c *console) coverArrived(url string) {
 func (c *console) paintArrived() {
 	arrived := c.arrived
 	c.arrived = nil
-	if c.mode != modeBooksHome || !c.screenOn || c.locked || c.page == nil || len(arrived) == 0 {
+	if (c.mode != modeBooksHome && c.mode != modePlaybox) || !c.screenOn || c.locked || c.page == nil || len(arrived) == 0 {
 		return // drawn with the covers next time Home is
 	}
 	if c.sc.drag && !c.sc.gpuOn { // the processor is following a finger: after it lifts
@@ -476,7 +477,15 @@ func (c *console) paintArrived() {
 		}
 	}
 	if len(shown) < len(arrived) { // a cover outside the rows (Continue, a card): all of Home
-		c.homeRedrawSoon()
+		if c.mode == modeBooksHome {
+			c.homeRedrawSoon()
+		} else {
+			c.redrawSoon(func() {
+				if c.mode == modePlaybox {
+					c.showPage()
+				}
+			})
+		}
 	}
 	if len(painted) == 0 {
 		return

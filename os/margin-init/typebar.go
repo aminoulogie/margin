@@ -25,6 +25,10 @@ func (c *console) pageTyping() (string, bool) {
 		return c.wui.editText, true
 	case c.mode == modeSettings && c.apps.typing:
 		return c.apps.editing, true
+	case c.mode == modePlaybox && c.pb.typing:
+		return c.pb.editing, true
+	case c.mode == modeBrowser && c.br.typing:
+		return c.br.editing, true
 	}
 	return "", false
 }

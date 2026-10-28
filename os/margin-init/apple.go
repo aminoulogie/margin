@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 
 	"github.com/go-fonts/liberation/liberationserifbold"
 	"golang.org/x/image/font"
@@ -313,14 +314,23 @@ func ring(img *image.RGBA, cx, cy, rad, width int, frac float64, track, c color.
 func (c *console) booksTabs(p *page, on string) {
 	f := apple()
 	img := p.img
-	// The main tabs: Margin (the books: Home, Library, Store, Words), Soma, Settings, Terminal.
+	// The main tabs: Margin (the books: Home, Library, Store, Words), Soma, Playbox (films),
+	// Browser, Settings, Terminal.
 	margin := on == "tab:home" || on == "tab:library" || on == "tab:store" || on == "tab:words"
-	tabs := []struct{ id, label string }{{"tab:margin", "Margin"}, {"tab:soma", "Soma"}, {"tab:settings", "Settings"}, {"tab:terminal", "Terminal"}}
+	playbox := strings.HasPrefix(on, "pbt:")
+	tabs := []struct{ id, label string }{{"tab:margin", "Margin"}, {"tab:soma", "Soma"}, {"tab:playbox", "Playbox"},
+		{"tab:browser", "Browser"}, {"tab:settings", "Settings"}, {"tab:terminal", "Terminal"}}
 	widths := make([]int, len(tabs))
 	total := 0
-	for i, t := range tabs {
-		widths[i] = ui.TextWidth(f.callout, t.label) + 56
-		total += widths[i]
+	for pad := 56; pad >= 24; pad -= 4 { // as roomy as fits beside the reading goal
+		total = 0
+		for i, t := range tabs {
+			widths[i] = ui.TextWidth(f.callout, t.label) + pad
+			total += widths[i]
+		}
+		if total <= c.s.W-2*140 {
+			break
+		}
 	}
 	x := (c.s.W - total) / 2
 	bar := image.Rect(x-10, 26, x+total+10, 106)
@@ -328,7 +338,7 @@ func (c *console) booksTabs(p *page, on string) {
 	ui.RoundRect(img, bar, 40, apTabBG)
 	for i, t := range tabs {
 		r := image.Rect(x, bar.Min.Y+8, x+widths[i], bar.Max.Y-8)
-		if t.id == on || t.id == "tab:margin" && margin {
+		if t.id == on || t.id == "tab:margin" && margin || t.id == "tab:playbox" && playbox {
 			ui.RoundRect(img, r, 32, apTabOn)
 		}
 		apTextCenter(img, f.callout, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
@@ -355,6 +365,27 @@ func (c *console) booksTabs(p *page, on string) {
 		ui.RoundRect(img, sr, 21, apTabBG)
 		iconMagnifier(img, sr.Min.X+32, 135, apLabel)
 		p.buttons = append(p.buttons, button{"tab:search", sr})
+	}
+	// Playbox's own tabs, under it: Discover, Library, Add-ons, Settings, and search.
+	if playbox {
+		p.header = marginTabsH
+		sx := 48
+		for _, t := range []struct{ id, label string }{{"pbt:discover", "Discover"}, {"pbt:library", "Library"}, {"pbt:addons", "Add-ons"}, {"pbt:settings", "Settings"}} {
+			w := ui.TextWidth(f.caption, t.label) + 44
+			r := image.Rect(sx, 114, sx+w, 156)
+			bg := apTabBG
+			if t.id == on {
+				bg = apTabOn
+			}
+			ui.RoundRect(img, r, 21, bg)
+			apTextCenter(img, f.caption, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
+			p.buttons = append(p.buttons, button{t.id, r})
+			sx += w + 12
+		}
+		sr := image.Rect(sx, 114, sx+64, 156)
+		ui.RoundRect(img, sr, 21, apTabBG)
+		iconMagnifier(img, sr.Min.X+32, 135, apLabel)
+		p.buttons = append(p.buttons, button{"pb:search", sr})
 	}
 
 	// The reading goal, top right: minutes today in a ring, the goal under it.
@@ -396,6 +427,14 @@ func (c *console) booksTap(id string) bool {
 	case "tab:soma":
 		c.setMode(modeSoma)
 		go soma.sync()
+	case "tab:playbox":
+		if c.mode == modePlaybox && c.pb.sel != nil { // Playbox again: back to its tab's top
+			c.pb.sel = nil
+			c.setScroll(modePlaybox, 0)
+		}
+		c.setMode(modePlaybox)
+	case "tab:browser":
+		c.setMode(modeBrowser)
 	case "tab:terminal":
 		c.setMode(modeTerminal)
 	case "tab:settings":
