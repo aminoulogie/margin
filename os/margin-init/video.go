@@ -193,7 +193,7 @@ type probeStream struct {
 
 // probeVideo asks ffprobe what the film is: its size, frame rate, length and sound.
 func probeVideo(ctx context.Context, url string) (*videoProbe, error) {
-	cmd := alpineCmd(ctx, "/usr/bin/ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
+	cmd := alpineCtxCmd(ctx, "/usr/bin/ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
 	out, err := cmd.Output()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -400,7 +400,7 @@ func startRun(ctx context.Context, url string, p *videoProbe, base, speed float6
 	run := &videoRun{fw: fw, fh: fh, half: half, rate: p.rateVal, base: base, speed: speed, done: make(chan struct{})}
 	run.cond = sync.NewCond(&run.mu)
 	run.volume.Store(int32(volume))
-	vcmd := alpineCmd(ctx, "/usr/bin/ffmpeg", ffmpegVideoArgs(url, p, base, speed, fw, fh)...)
+	vcmd := alpineCtxCmd(ctx, "/usr/bin/ffmpeg", ffmpegVideoArgs(url, p, base, speed, fw, fh)...)
 	out, err := vcmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -447,7 +447,7 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		return
 	}
 	setPipeSize(pw, 16<<10) // a short pipe: what's heard is close to what was written
-	a := alpineCmd(ctx, aplayPath, aplayArgs...)
+	a := alpineCtxCmd(ctx, aplayPath, aplayArgs...)
 	a.Stdin = pr
 	var errs lineRing
 	ep, _ := a.StderrPipe()
@@ -458,7 +458,7 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		return
 	}
 	pr.Close()
-	acmd := alpineCmd(ctx, "/usr/bin/ffmpeg", ffmpegAudioArgs(url, p, r.base, r.speed)...)
+	acmd := alpineCtxCmd(ctx, "/usr/bin/ffmpeg", ffmpegAudioArgs(url, p, r.base, r.speed)...)
 	aout, err := acmd.StdoutPipe()
 	if err == nil {
 		aerr, _ := acmd.StderrPipe()
@@ -1745,7 +1745,7 @@ func setupSound() {
 		if _, err := os.Stat(alpineRoot + "/usr/bin/amixer"); err != nil {
 			return
 		}
-		out, err := alpineCmd(context.Background(), "/usr/bin/amixer", "-c", "0", "scontrols").Output()
+		out, err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-c", "0", "scontrols").Output()
 		if err != nil {
 			log.Printf("playbox: amixer: %v", err)
 			return
@@ -1758,8 +1758,8 @@ func setupSound() {
 				continue
 			}
 			ctl := m[1] + "," + m[2]
-			if err := alpineCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "85%", "unmute").Run(); err != nil {
-				alpineCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "on").Run()
+			if err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "85%", "unmute").Run(); err != nil {
+				alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", "0", "sset", ctl, "on").Run()
 			}
 		}
 		log.Printf("playbox: mixer set up")
@@ -1781,7 +1781,7 @@ func testSound() string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := alpineCmd(ctx, "/usr/bin/aplay", "-q", "/tmp/playbox-test.wav").CombinedOutput()
+	out, err := alpineCtxCmd(ctx, "/usr/bin/aplay", "-q", "/tmp/playbox-test.wav").CombinedOutput()
 	if err != nil {
 		return "No sound: " + lastLines(string(out), 1)
 	}

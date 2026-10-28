@@ -11,7 +11,7 @@ import (
 
 // alpineCmd is a program run inside Alpine (chroot), without the proxy: the player's
 // programs only read from 127.0.0.1. With no Alpine root (tests), it runs as it is.
-func alpineCmd(ctx context.Context, name string, args ...string) *exec.Cmd {
+func alpineCtxCmd(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = "/"
 	cmd.Env = []string{"HOME=/root", "LANG=C.UTF-8", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}

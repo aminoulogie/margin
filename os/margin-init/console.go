@@ -50,6 +50,7 @@ type console struct {
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
+	xapp             *xapp       // a desktop app open full screen (desktop.go)
 	locked           bool        // the lock screen is up (lock.go)
 	pinMode          string      // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
 	pinEntry         string      // the digits typed so far
@@ -58,6 +59,7 @@ type console struct {
 	pinBG            *image.RGBA // the keypad, drawn once (passcode.go)
 	pinBGKey         string
 	pinBlur          *image.RGBA              // what was on the screen when the keypad opened, blurred and dimmed
+	lockBlur         *image.RGBA              // the lock screen blurred, made once it's up so the keypad opens at once
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
 	alarmDay         string                   // the day it was last dismissed
@@ -72,6 +74,10 @@ type console struct {
 	apps             appsState                // Settings > Linux Apps (apps.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
+	press            pressState               // the button under a finger, shown pressed (press.go)
+	edge             edgeState                // a swipe in from the left edge, going back (edgeback.go)
+	tapFrom          image.Rectangle          // the button being tapped, on the screen (a book opens out of it)
+	wifi             wifiUI                   // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top
 	screenOn         bool
@@ -168,12 +174,16 @@ func newConsole(s *Screen) (*console, error) {
 	if c.kb, err = newKeyboard(s, c.input, c.keyboardShown); err != nil {
 		return nil, err
 	}
-	c.kb.dark = true                             // the terminal's keyboard
-	c.skb, err = newKeyboard(s, func(b []byte) { // typing on a page: the store's search, a word's meaning
-		if c.mode == modeWords {
+	c.kb.dark = true                                 // the terminal's keyboard
+	c.skb, err = newTextKeyboard(s, func(b []byte) { // typing on a page: the store's search, a word's meaning
+		if c.xapp != nil {
+			c.xappKey(b)
+		} else if c.mode == modeWords {
 			c.wordsKey(b)
 		} else if c.mode == modeSoma {
 			c.somaKey(b)
+		} else if c.mode == modeSettings && c.wifi.typing {
+			c.wifiKey(b)
 		} else if c.mode == modeSettings {
 			c.appsKey(b)
 		} else if c.mode == modePlaybox {
@@ -185,7 +195,7 @@ func newConsole(s *Screen) (*console, error) {
 		}
 	}, func(visible bool) {
 		if !visible { // its hide key: stop typing
-			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing = false, false, false, false
+			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing, c.wifi.typing = false, false, false, false, false
 			c.pb.typing, c.br.typing = false, false
 			c.showPage()
 		}
@@ -248,6 +258,10 @@ func (c *console) touchLoop() {
 					}
 					continue
 				}
+				if c.xapp != nil { // a desktop app has the screen
+					c.xappTouch(p)
+					continue
+				}
 				// The left of the status bar ("‹ Books" in Terminal and Settings) goes back to
 				// the Books app from any screen.
 				if p.Up && p.Y < c.barH && p.X < c.s.W/3 {
@@ -286,7 +300,7 @@ func (c *console) touchLoop() {
 					c.skb.touch(p)
 				case c.mode == modeWords && c.wui.edit && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
-				case c.mode == modeSettings && c.apps.typing && c.skb.visible && p.Y >= c.skb.y0:
+				case c.mode == modeSettings && (c.apps.typing || c.wifi.typing) && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeSoma && c.somaUI.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)

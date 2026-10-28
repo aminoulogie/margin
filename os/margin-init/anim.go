@@ -2,6 +2,7 @@ package main
 
 import (
 	"image"
+	"math"
 	"time"
 )
 
@@ -23,6 +24,8 @@ const (
 	durPush  = 330 * time.Millisecond
 	durSheet = 300 * time.Millisecond
 	durGlide = 110 * time.Millisecond
+	durOpen  = 420 * time.Millisecond
+	openDim  = 0.4 // how dark the screen behind a book opening gets
 )
 
 var turnDuration = map[string]time.Duration{"slide": 300 * time.Millisecond, "curl": 380 * time.Millisecond}
@@ -47,7 +50,9 @@ func (c *console) frames(d time.Duration, draw func(t float64)) {
 			return
 		}
 		draw(spring(t)) // marks what it changed
+		c.s.frame = true
 		c.s.Flush()
+		c.s.frame = false
 		animFrames++
 		if !waitVsync(c.s) {
 			time.Sleep(4 * time.Millisecond) // let touches in between frames
@@ -91,6 +96,8 @@ func (c *console) transition(kind string, r image.Rectangle, change func()) {
 			c.gpuFrames(durSheet, func(t float64) []quad { return c.riseQuads(gpuOld, gpuNew, r, t) })
 		case "fall":
 			c.gpuFrames(durSheet*4/5, func(t float64) []quad { return c.riseQuads(gpuNew, gpuOld, r, 1-t) })
+		case "open":
+			c.gpuFrames(durOpen, func(t float64) []quad { return c.openQuads(r, t) })
 		}
 		kind = "" // done: no CPU frames
 	}
@@ -101,6 +108,8 @@ func (c *console) transition(kind string, r image.Rectangle, change func()) {
 		c.frames(durSheet, func(t float64) { c.riseFrame(old, nu, r, t); s.markRows(0, s.fbH-1) })
 	case "fall": // a sheet dropping away: rise played backwards
 		c.frames(durSheet*4/5, func(t float64) { c.riseFrame(nu, old, r, 1-t); s.markRows(0, s.fbH-1) })
+	case "open": // the new screen grows out of r (a book from its cover)
+		c.frames(durOpen, func(t float64) { c.openFrame(old, nu, r, t); s.markRows(0, s.fbH-1) })
 	}
 	copy(s.buf, nu)
 	s.markRows(0, s.fbH-1)
@@ -174,6 +183,74 @@ func (c *console) riseFrame(old, nu []byte, r image.Rectangle, t float64) {
 		shadeRow(dst, r.Min.Y, y0, 0.25*t)
 		copy(dst[4*y0:4*h], src[4*r.Min.Y:4*(h-off)])
 	}
+}
+
+// openRect is where the new screen is at t, growing from r (a cover) to the whole sheet.
+func (c *console) openRect(r image.Rectangle, t float64) frect {
+	lerp := func(a, b int) int { return a + int(float64(b-a)*t+0.5) }
+	return frect{lerp(r.Min.X, 0), lerp(r.Min.Y, c.barH), lerp(r.Max.X, c.s.W), lerp(r.Max.Y, c.s.H)}
+}
+
+// openFrame: the new screen, scaled down to a cover's rect r at first, grows to fill the
+// sheet while the old one darkens behind it, the way an app opens on iOS. Each pixel of
+// the growing screen is picked from the new one (nearest, as the GPU samples), so a frame
+// is a copy and a lookup per pixel, no blending.
+func (c *console) openFrame(old, nu []byte, r image.Rectangle, t float64) {
+	s, bar := c.s, c.barH
+	d := c.openRect(r, t)
+	src := frect{0, bar, s.W, s.H}
+	h := float32(s.fbH)
+	// In native coordinates, as pic() hands the quad to the GPU.
+	qx0, qx1 := float32(d.y0), float32(d.y1)
+	qy0, qy1 := h-float32(d.x0), h-float32(d.x1)
+	u0, u1 := float32(src.y0), float32(src.y1)
+	v0, v1 := h-float32(src.x0), h-float32(src.x1)
+	umap := make([]int, 0, s.fbW)
+	px0 := max(int(math.Ceil(float64(qx0-0.5))), 0)
+	for px := px0; px < s.fbW && float32(px)+0.5 < qx1; px++ {
+		fx := (float32(px) + 0.5 - qx0) / (qx1 - qx0)
+		umap = append(umap, min(max(int(math.Floor(float64(u0+fx*(u1-u0)))), 0), s.fbW-1))
+	}
+	dim := openDim * t
+	eachColumn(s.W, func(x0, x1 int) {
+		for x := x0; x < x1; x++ {
+			py := s.fbH - 1 - x
+			dst := s.buf[py*s.stride : py*s.stride+4*s.fbW]
+			copy(dst[4*bar:], old[py*s.stride+4*bar:py*s.stride+4*s.fbW])
+			shadeRow(dst, bar, s.fbW, dim)
+			copy(dst[:4*bar], nu[py*s.stride:py*s.stride+4*bar])
+			if fpy := float32(py) + 0.5; fpy >= qy1 && fpy < qy0 {
+				fy := (fpy - qy0) / (qy1 - qy0)
+				v := min(max(int(math.Floor(float64(v0+fy*(v1-v0)))), 0), s.fbH-1)
+				srow := words(nu[v*s.stride:])
+				drow := words(dst)
+				for i, u := range umap {
+					drow[px0+i] = srow[u]
+				}
+			}
+		}
+	})
+	// Its edge, so it shows growing over a screen as dark as itself, fading as it fills.
+	for _, e := range c.openEdges(d) {
+		x0, y0, x1, y1 := e.x0, max(e.y0, bar), e.x1, min(e.y1, s.H)
+		a := float32(1 - t)
+		col := apSeparator
+		for x := max(x0, 0); x < min(x1, s.W); x++ {
+			py := s.fbH - 1 - x
+			for y := y0; y < y1; y++ {
+				p := s.buf[py*s.stride+4*y:]
+				for i, v := range []uint8{col.B, col.G, col.R} {
+					p[i] = uint8(float32(p[i])*(1-a) + float32(v)/255*255*a + 0.5)
+				}
+			}
+		}
+	}
+}
+
+// openEdges are the growing screen's four sides, 2 pixels wide.
+func (c *console) openEdges(d frect) []frect {
+	return []frect{{d.x0, d.y0, d.x1, d.y0 + 2}, {d.x0, d.y1 - 2, d.x1, d.y1},
+		{d.x0, d.y0 + 2, d.x0 + 2, d.y1 - 2}, {d.x1 - 2, d.y0 + 2, d.x1, d.y1 - 2}}
 }
 
 // --- page turns ----------------------------------------------------------------------------

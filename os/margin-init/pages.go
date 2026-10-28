@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -179,9 +180,9 @@ func (pn *pen) row(ids, labels []string, selected string, warn bool) {
 type savedSettings struct {
 	Brightness int `json:"brightness"`
 	ScreenOff  int `json:"screen_off_minutes"` // 0 = never
-	// Animations: off by default. Without a GPU (the SGX only works through Android's
-	// drivers) every frame is pushed by the CPU, so instant changes, as on e-readers, feel
-	// fastest. Settings > Display & Brightness turns them on.
+	// Animations: screens slide, sheets rise, pages glide (Settings > Display & Brightness >
+	// Animations). On by default since frames are composed from copies (anim.go,
+	// fastscroll.go) rather than redrawn; off, screens change at once, as on e-readers.
 	Animations bool `json:"animations"`
 	// Light: the light look (Apple Books' white). Dark, like a Kindle's dark mode, is the
 	// default.
@@ -204,16 +205,23 @@ type savedSettings struct {
 	// Home's widgets: their order, and the hidden ones (bookshome.go).
 	HomeOrder  []string        `json:"home_order,omitempty"`
 	HomeHidden map[string]bool `json:"home_hidden,omitempty"`
-	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
+	// SmoothScroll: pages follow the finger and fling (the default). Off: a swipe jumps a
+	// screen, as on a Kindle.
 	SmoothScroll bool `json:"smooth_scroll"`
+	// Motion: the settings have had motion (animations, following the finger) turned on once,
+	// when it became the default; after that the switches are the person's.
+	Motion int `json:"motion,omitempty"`
 }
 
-const settingsPath = marginHome + "/settings.json"
+var settingsPath = marginHome + "/settings.json" // tests use a temp file
 
 func loadSettings() savedSettings {
 	s := savedSettings{Brightness: 80, ScreenOff: 5, AlarmMin: 7 * 60, WindMin: 22*60 + 30}
 	if b, err := os.ReadFile(settingsPath); err == nil {
 		json.Unmarshal(b, &s)
+	}
+	if s.Motion < 1 { // motion became the default: once, for settings saved before
+		s.Animations, s.SmoothScroll, s.Motion = true, true, 1
 	}
 	s.Brightness = min(max(s.Brightness, 10), 100)
 	return s
@@ -221,6 +229,6 @@ func loadSettings() savedSettings {
 
 func (s savedSettings) save() {
 	b, _ := json.MarshalIndent(s, "", "  ")
-	os.MkdirAll(marginHome, 0o755)
+	os.MkdirAll(filepath.Dir(settingsPath), 0o755)
 	os.WriteFile(settingsPath, b, 0o644)
 }

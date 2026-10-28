@@ -44,6 +44,7 @@ type somaUI struct {
 	work       string            // the Work tab's page: "overview", "projects", "project"... (work.go)
 	workProj   string            // the project open there
 	workSel    map[string]string // the tab, chip or segment chosen on each of its pages
+	workGroup  string            // the rail's group: "" (Workspace) or "personal"
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -88,7 +89,7 @@ func (c *console) somaPage() *page {
 		}
 	}
 	soma.mu.Unlock()
-	if su.view == "work" && soma.linked() {
+	if soma.linked() { // Soma is its workstation now
 		return c.workPage()
 	}
 
@@ -480,6 +481,14 @@ func (c *console) somaDone() {
 		if text != "" && !somaLogWorkout(text) {
 			su.msg = "Type the split, then the minutes: Push 60"
 		}
+	case "clockin":
+		wkClockIn(text)
+	case "set:" + strings.TrimPrefix(su.field, "set:"):
+		if text != "" {
+			wkSetSetting(strings.TrimPrefix(su.field, "set:"), text)
+		}
+	case "finding":
+		wkAddFinding(text)
 	case "todo":
 		somaAddTodo(text, "day", somaToday())
 	case "week":

@@ -128,6 +128,35 @@ func kbLayout() [2][][]*kbKey {
 	return [2][][]*kbKey{lettersLayer, symbolsLayer}
 }
 
+// textLayout is the keyboard for fields on pages (a search, a to-do, a Wi-Fi password), as
+// on an iPad: no terminal keys, a row of numbers, and space, comma, full stop and apostrophe
+// at hand. Five rows.
+func textLayout() [2][][]*kbKey {
+	bksp := special("bksp", "\x7f", 2, actType, true)
+	enter := special("enter", "\r", 1, actType, false)
+	shift := special("shift", "", 1, actShift, false)
+	bottom := []*kbKey{
+		special("sym", "", 1.5, actLayer, false),
+		k(",", "!"),
+		special("space", " ", 4, actType, false),
+		k(".", "?"), k("'", "\""),
+		special("hide", "", 1.5, actHide, false),
+	}
+	return [2][][]*kbKey{{
+		pairs("1234567890", "!@#$%^&*()"),
+		letters("qwertyuiop"),
+		append(letters("asdfghjkl"), enter),
+		append(append([]*kbKey{shift}, letters("zxcvbnm")...), bksp),
+		bottom,
+	}, {
+		pairs("1234567890", "!@#$%^&*()"),
+		pairs("-/:;()$&@\"", "[]{}#%^*+="),
+		append(pairs(".,?!'#%+=", "_\\|~<>€£¥"), enter),
+		append(append([]*kbKey{shift}, pairs("_\\|~<>*", "_\\|~<>*")...), bksp),
+		bottom,
+	}}
+}
+
 // keyboard state. Methods that draw expect the caller to hold drawMu.
 type keyboard struct {
 	mu       sync.Mutex
@@ -150,14 +179,31 @@ type keyboard struct {
 	onHide   func(visible bool) // console relayout
 	big      font.Face
 	small    font.Face
-	dark     bool // iPadOS's dark keyboard (the terminal); light elsewhere
+	dark     bool // iPadOS's dark keyboard (the terminal)
+	themed   bool // dark in Dark Mode, light in Light Mode (the fields' keyboard)
+	height   int  // from y0 to the screen's bottom
 }
 
+// newKeyboard is the terminal's keyboard (esc, tab, ctrl, alt, arrows).
 func newKeyboard(s *Screen, send func([]byte), onHide func(bool)) (*keyboard, error) {
+	return newKeyboardOf(s, kbLayout(), send, onHide)
+}
+
+// newTextKeyboard is the keyboard for typing into a page's fields.
+func newTextKeyboard(s *Screen, send func([]byte), onHide func(bool)) (*keyboard, error) {
+	kb, err := newKeyboardOf(s, textLayout(), send, onHide)
+	if kb != nil {
+		kb.themed = true
+	}
+	return kb, err
+}
+
+func newKeyboardOf(s *Screen, layers [2][][]*kbKey, send func([]byte), onHide func(bool)) (*keyboard, error) {
 	// The system font, with DejaVu for the key symbols (⇧ ⌫ ⌨).
 	big := textFace("inter", fonts.InterRegular, false, 42)
 	small := textFace("inter", fonts.InterRegular, false, 28)
-	kb := &keyboard{s: s, y0: s.H - kbHeight, layers: kbLayout(), visible: true,
+	h := len(layers[0])*kbRowH + 2*kbPad
+	kb := &keyboard{s: s, y0: s.H - h, height: h, layers: layers, visible: true,
 		pressed: map[int]*kbKey{}, repeats: map[int]chan struct{}{}, repeated: map[int]bool{}, typed: map[int]bool{},
 		track: map[int]int{}, tracked: map[int]bool{}, downX: map[int]int{},
 		send: send, onHide: onHide, big: big, small: small}
@@ -203,7 +249,7 @@ var (
 )
 
 func (kb *keyboard) colours() kbColours {
-	if kb.dark {
+	if kb.dark || kb.themed && apDark {
 		return kbDarkC
 	}
 	return kbLight
@@ -273,7 +319,7 @@ func (kb *keyboard) draw() {
 	if !kb.visible {
 		return
 	}
-	bg := image.NewRGBA(image.Rect(0, 0, kb.s.W, kbHeight))
+	bg := image.NewRGBA(image.Rect(0, 0, kb.s.W, kb.height))
 	ui.Fill(bg, bg.Rect, kb.colours().bg)
 	kb.s.blitRGBA(bg, 0, kb.y0)
 	for _, keys := range kb.layers[kb.layer] {

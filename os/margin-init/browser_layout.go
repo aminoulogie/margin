@@ -29,9 +29,9 @@ type brItemKind int
 const (
 	brText brItemKind = iota
 	brImage
-	brRule  // a line (hr, a quote's bar)
+	brRule      // a line (hr, a quote's bar)
 	brFieldItem // a form's field or button
-	brBox   // a code block's background
+	brBox       // a code block's background
 )
 
 type brItem struct {

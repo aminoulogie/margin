@@ -23,6 +23,8 @@ func (c *console) pageTyping() (string, bool) {
 		return c.somaUI.editing, true
 	case c.mode == modeWords && c.wui.edit:
 		return c.wui.editText, true
+	case c.mode == modeSettings && c.wifi.typing:
+		return masked(c.wifi.pass), true
 	case c.mode == modeSettings && c.apps.typing:
 		return c.apps.editing, true
 	case c.mode == modePlaybox && c.pb.typing:

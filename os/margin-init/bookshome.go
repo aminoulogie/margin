@@ -131,7 +131,7 @@ func (c *console) booksHomePage() *page {
 	}
 	widgets := c.homeOrder()
 	for i, name := range widgets {
-		hidden := c.cfg.HomeHidden[name]
+		hidden := c.homeHidden(name)
 		if hidden && !c.homeEdit {
 			continue
 		}
@@ -372,6 +372,7 @@ func (c *console) coverRow(p *page, id string, y int, items []rowItem, bg color.
 	paint(p.img)
 	p.addRow(id, band, contentW, paint)
 	r := &p.rows[len(p.rows)-1]
+	r.snap = rowCW + rowGap
 	r.covers = map[string]bool{}
 	for _, ri := range items {
 		if ri.it != nil && ri.it.cover != "" {
@@ -473,6 +474,7 @@ func (c *console) paintArrived() {
 		}
 		if hit {
 			r.paint(c.page.img)
+			c.pagePainted(r.r.Min.Y, r.r.Max.Y)
 			painted = append(painted, r.r)
 		}
 	}
@@ -718,6 +720,15 @@ var homeWidgets = []string{"rings", "todos", "continue", "picks"}
 
 var homeWidgetNames = map[string]string{"rings": "Rings", "todos": "To-dos", "continue": "Continue Reading", "picks": "Top Picks"}
 
+// homeHidden: hidden by choice; Soma's rings and to-dos are off until shown (they live in the
+// Soma tab's Overview now), the books first.
+func (c *console) homeHidden(name string) bool {
+	if c.cfg.HomeHidden == nil {
+		return name == "rings" || name == "todos"
+	}
+	return c.cfg.HomeHidden[name]
+}
+
 // homeOrder is the widgets in the chosen order, any new ones last.
 func (c *console) homeOrder() []string {
 	var out []string
@@ -769,7 +780,7 @@ func (c *console) homeEditTap(id string) bool {
 	case strings.HasPrefix(id, "home:hide:"):
 		n := strings.TrimPrefix(id, "home:hide:")
 		if c.cfg.HomeHidden == nil {
-			c.cfg.HomeHidden = map[string]bool{}
+			c.cfg.HomeHidden = map[string]bool{"rings": true, "todos": true}
 		}
 		if c.cfg.HomeHidden[n] {
 			delete(c.cfg.HomeHidden, n)

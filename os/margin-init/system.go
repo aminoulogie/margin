@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"math"
 	"os"
 	"strings"
 
@@ -33,48 +32,11 @@ var settingsPanes = []settingsPane{
 	{"power", "Restart & Shut Down", rgb(0xff3b30)},
 }
 
-// paneGlyph draws a pane's white symbol on its coloured square.
+// paneGlyph draws a pane's white symbol on its coloured square: lucide's, as Soma's are.
 func paneGlyph(img *image.RGBA, id string, cx, cy int) {
-	white := rgb(0xffffff)
-	switch id {
-	case "wifi":
-		for _, rad := range []int{6, 12, 18} {
-			for a := 225.0; a <= 315; a += 4 {
-				t := a * math.Pi / 180
-				ui.Circle(img, cx+int(float64(rad)*math.Cos(t)), cy+8+int(float64(rad)*math.Sin(t)), 2, white)
-			}
-		}
-		ui.Circle(img, cx, cy+8, 3, white)
-	case "battery":
-		ui.RoundRect(img, image.Rect(cx-16, cy-8, cx+12, cy+8), 3, white)
-		ui.Fill(img, image.Rect(cx+13, cy-3, cx+16, cy+3), white)
-	case "display":
-		ui.DrawText(img, apple().captionBold, cx-15, cy+9, white, "AA")
-	case "apps":
-		ui.RoundRect(img, image.Rect(cx-14, cy-14, cx-2, cy-2), 3, white)
-		ui.RoundRect(img, image.Rect(cx+2, cy-14, cx+14, cy-2), 3, white)
-		ui.RoundRect(img, image.Rect(cx-14, cy+2, cx-2, cy+14), 3, white)
-		ui.RoundRect(img, image.Rect(cx+2, cy+2, cx+14, cy+14), 3, white)
-	case "tasks":
-		for i, hgt := range []int{10, 22, 16} {
-			ui.Fill(img, image.Rect(cx-14+i*10, cy+12-hgt, cx-8+i*10, cy+12), white)
-		}
-	case "sleep":
-		ui.Circle(img, cx, cy, 14, white)
-		ui.Circle(img, cx+7, cy-6, 12, rgb(0xff9f0a))
-	case "wallpaper":
-		ui.Circle(img, cx-6, cy-4, 8, white)
-		ui.Circle(img, cx+7, cy+5, 10, white)
-	case "general":
-		ring(img, cx, cy, 11, 6, 1, white, white)
-		for a := 0; a < 360; a += 45 {
-			t := float64(a) * math.Pi / 180
-			ui.Circle(img, cx+int(15*math.Cos(t)), cy+int(15*math.Sin(t)), 3, white)
-		}
-	case "power":
-		ring(img, cx, cy+2, 12, 4, 0.85, white, white)
-		ui.Fill(img, image.Rect(cx-2, cy-16, cx+2, cy), white)
-	}
+	name := map[string]string{"wifi": "wifi", "battery": "battery-full", "display": "sun", "wallpaper": "image",
+		"sleep": "moon", "tasks": "cpu", "apps": "package", "general": "settings", "power": "power"}[id]
+	lucideIcon(img, name, cx, cy, 40, rgb(0xffffff))
 }
 
 // groupRows draws an inset grouped list section and returns the rows' rectangles.
@@ -103,6 +65,8 @@ func (c *console) settingsPage() *page {
 		h = max(h, 2400)
 	case "apps":
 		h = max(h, 900+(len(linuxApps)+len(c.apps.results)+12)*140)
+	case "wifi":
+		h = max(h, 1700+len(c.wifi.nets)*88)
 	}
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, apGrouped)
@@ -168,49 +132,7 @@ func (c *console) settingsPage() *page {
 	const rh = 88
 	switch pane.id {
 	case "wifi":
-		ssid, ip := savedSSID(), wifiAddr()
-		rows := groupRows(img, x, y, pw, 1, rh)
-		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Wi-Fi")
-		iosSwitch(img, rows[0].Max.X-24, (rows[0].Min.Y+rows[0].Max.Y)/2, ip != "" || c.wifiBusy, apDark)
-		if ip == "" && ssid != "" {
-			p.buttons = append(p.buttons, button{"wifi", rows[0]}) // on: join the saved network
-		}
-		y += rh + 20
-		if ssid != "" {
-			header("Network")
-			rows = groupRows(img, x, y, pw, 2, rh)
-			if ip != "" {
-				iconCheck(img, rows[0].Min.X+26, (rows[0].Min.Y+rows[0].Max.Y)/2, apBlue)
-			}
-			apText(img, f.body, rows[0].Min.X+76, rows[0].Min.Y+56, apLabel, ssid)
-			state := "Not Connected"
-			if ip != "" {
-				state = "Connected"
-			}
-			apTextRight(img, f.body, rows[0].Max.X-30, rows[0].Min.Y+56, apSecondary, state)
-			label := "Reconnect"
-			if c.wifiBusy {
-				label = "Connecting…"
-			}
-			apText(img, f.body, rows[1].Min.X+30, rows[1].Min.Y+56, apBlue, label)
-			p.buttons = append(p.buttons, button{"wifi", rows[1]})
-			y += 2 * rh
-		}
-		if ip != "" {
-			header("Address")
-			rows = groupRows(img, x, y, pw, 2, rh)
-			value(rows[0], "IP Address", ip)
-			value(rows[1], "SSH", "root@"+ip)
-			y += 2 * rh
-			if a := sendAddress(); a != "" {
-				header("Send to Books")
-				rows = groupRows(img, x, y, pw, 1, rh)
-				value(rows[0], "From a phone's browser", a)
-				y += rh
-				footer("On a phone or computer on the same Wi-Fi, open this address to send EPUB books to the Library.")
-			}
-		}
-		footer("To join a network, open Terminal and type: wifi connect \"name\" \"password\". The network is joined again at every start.")
+		y = c.wifiPane(p, x, y, pw)
 	case "battery":
 		pct, charging := ui.ReadBattery()
 		rows := groupRows(img, x, y, pw, 1, 260)
@@ -366,7 +288,7 @@ func (c *console) settingsPage() *page {
 		case c.gpuStarting:
 			footer("Starting the GPU...")
 		default:
-			footer("Off: every screen appears at once, like an e-reader. On: the GPU shows the screen (through Android's SurfaceFlinger), so scrolling follows your finger at 60 frames a second.")
+			footer("Pages follow your finger and glide on when flicked, drawn by the processor as fast as the panel refreshes (60 times a second at most). On, the GPU shows the screen instead (through Android's SurfaceFlinger).")
 		}
 	case "general":
 		header("About")

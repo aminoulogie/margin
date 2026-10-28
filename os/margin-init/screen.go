@@ -105,10 +105,14 @@ type Screen struct {
 	warmBuf          []byte
 	// What the device was last sent, to send only the rows that really changed: turned a
 	// quarter, one changed logical row (a line of text) dirties every native row.
-	shadow      []byte
-	shadowDev   io.WriterAt
-	shadowWarm  bool
-	shadowStale bool // rows were sent without it (video frames): compare nothing next time
+	shadow     []byte
+	shadowDev  io.WriterAt
+	shadowWarm bool
+	// frame: a moving picture's frame (a scroll, a transition) is being flushed. Nearly every
+	// row changes, so it goes out as is, without comparing or copying the shadow; the next
+	// ordinary Flush takes a fresh shadow (shadowStale).
+	frame       bool
+	shadowStale bool
 }
 
 func newScreen(dev io.WriterAt, fbW, fbH, stride, bpp int, red, green, blue bitfield, rot Rotation) *Screen {
@@ -152,10 +156,15 @@ func (s *Screen) Flush() error {
 	if s.dev == nil {
 		return nil
 	}
-	if s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm || s.shadowStale {
-		s.shadow = append(s.shadow[:0], s.buf...) // first, or a new device: send it all
+	switch {
+	case s.frame:
+		s.shadowStale = true
+	case s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm || s.shadowStale:
+		// First, a new device, or after frames: the rows not dirty are on the device as
+		// they are in buf, so buf is what it shows once these go.
+		s.shadow = append(s.shadow[:0], s.buf...)
 		s.shadowDev, s.shadowWarm, s.shadowStale = s.dev, s.warm, false
-	} else {
+	default:
 		row := func(y int) bool { // changed since sent
 			a, b := y*s.stride, (y+1)*s.stride
 			return !bytes.Equal(s.buf[a:b], s.shadow[a:b])
@@ -174,27 +183,6 @@ func (s *Screen) Flush() error {
 		lo, hi = l, h
 		copy(s.shadow[lo*s.stride:(hi+1)*s.stride], s.buf[lo*s.stride:(hi+1)*s.stride])
 	}
-	return s.write(lo, hi)
-}
-
-// FlushFrame writes the changed rows without comparing them with what was sent: a video
-// frame changes nearly all of them, and the comparison and its copy would cost as much
-// again. The next Flush then sends its rows whole.
-func (s *Screen) FlushFrame() error {
-	if s.dirtyLo > s.dirtyHi || s.hold {
-		return nil
-	}
-	lo, hi := s.dirtyLo, s.dirtyHi
-	s.dirtyLo, s.dirtyHi = s.fbH, -1
-	s.shadowStale = true
-	if s.dev == nil {
-		return nil
-	}
-	return s.write(lo, hi)
-}
-
-// write sends rows lo..hi of the back buffer to the device (warmer at night).
-func (s *Screen) write(lo, hi int) error {
 	rows := s.buf[lo*s.stride : (hi+1)*s.stride]
 	if s.warm && s.bpp == 32 && s.blue.offset%8 == 0 && s.green.offset%8 == 0 {
 		// Written warm, the back buffer left as drawn: a copy with blue and green turned down.
@@ -373,4 +361,12 @@ func words(b []byte) []uint32 {
 		return nil
 	}
 	return unsafe.Slice((*uint32)(unsafe.Pointer(&b[0])), len(b)/4)
+}
+
+// FlushFrame flushes a video frame as a moving picture (no shadow compare).
+func (s *Screen) FlushFrame() error {
+	s.frame = true
+	err := s.Flush()
+	s.frame = false
+	return err
 }

@@ -23,6 +23,7 @@ type hrow struct {
 	contentW int
 	paint    func(img *image.RGBA) // redraws the row at its current offset
 	covers   map[string]bool       // the covers in it (repainted alone when one arrives)
+	snap     int                   // the pitch of its covers: a flicked row comes to rest on one
 }
 
 // scrollState: per-mode scroll positions, per-row offsets, and the finger moving them.
@@ -52,6 +53,21 @@ type scrollState struct {
 	longGen   int    // bumped by each touch: a long press fires only for its own
 	longFired bool   // the finger was held: its lift isn't a tap
 	samples   []scrollSample
+	ox0, oy0  int // where the finger touched down (x0, y0 move to where a scroll took over)
+
+	// The processor's frames (fastscroll.go).
+	turn     turnedPage
+	cstrip   rowStrip
+	cpuOn    bool    // the processor is moving the page or a row: the finger, or a motion
+	looping  bool    // its frame loop is running
+	want     float64 // where the finger has taken it (past an end: stretched)
+	shown    int     // where the last frame put it
+	mpage    *page   // the page, and its drawing, being moved
+	mgen     int
+	motion   func(t float64) (float64, bool) // a fling, a spring back, a glide: position at t s
+	motionT  time.Time
+	frameN   int
+	frameSum time.Duration
 }
 
 const (
@@ -128,6 +144,7 @@ func (c *console) blitPage() {
 	if hh > 0 {
 		c.s.blitRGBA(img.SubImage(image.Rect(0, 0, img.Rect.Dx(), hh)).(*image.RGBA), 0, c.barH)
 	}
+	c.keepShown(sy) // already turned: scrolling starts from it
 	// Where you are on the page: a thin bar on the right, while scrolling.
 	if c.sc.drag && c.sc.moved && c.sc.vert {
 		track := vh - hh - 40
@@ -148,20 +165,31 @@ func (c *console) pageTouch(p TouchPoint) {
 		if c.page == nil {
 			return
 		}
-		sc.fling++ // a finger on a flinging page catches it (the overlay stays until it lifts)
+		c.stopMotion() // a finger on a moving page catches it
+		c.pressClear(true)
+		sc.fling++ // ...and on a flinging one (the GPU's overlay stays until it lifts)
 		sc.drag, sc.moved, sc.row, sc.samples = true, false, nil, nil
-		// Held still for a moment: a long press (as on iOS).
+		// Held still for a moment: a long press (as on iOS); a moment less: shown pressed.
 		sc.longGen++
 		sc.longFired = false
 		gen, lx, ly := sc.longGen, p.X, p.Y
+		time.AfterFunc(pressDelay, func() {
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if sc.longGen == gen && sc.drag && !sc.moved && c.screenOn {
+				c.pressShow(lx, ly)
+			}
+		})
 		time.AfterFunc(longPressAfter, func() {
 			drawMu.Lock()
 			defer drawMu.Unlock()
 			if sc.longGen == gen && sc.drag && !sc.moved && c.screenOn {
+				c.pressClear(true)
 				sc.longFired = c.pageLongPress(lx, ly)
 			}
 		})
-		sc.x0, sc.y0, sc.from = p.X, p.Y, c.scrollY()
+		sc.x0, sc.y0, sc.ox0, sc.oy0, sc.from = p.X, p.Y, p.X, p.Y, c.scrollY()
+		c.edgeDown(p.X, p.Y)
 		py := c.pageY(p.Y)
 		for i := range c.page.rows {
 			if r := &c.page.rows[i]; (image.Point{p.X, py}).In(r.r) && r.contentW > r.r.Dx() {
@@ -169,16 +197,32 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 		}
 	case p.Moved && sc.drag:
+		if c.edge.on {
+			c.edgeMove(p.X, p.Y)
+			return
+		}
 		dx, dy := p.X-sc.x0, p.Y-sc.y0
 		if !sc.moved {
 			if abs(dx) < scrollSlop && abs(dy) < scrollSlop {
 				return
 			}
 			sc.moved = true
+			c.pressClear(true)
+			if c.edgeStart(dx, dy) { // in from the left edge: going back
+				c.edgeMove(p.X, p.Y)
+				return
+			}
 			sc.vert = sc.row == nil || abs(dy) > abs(dx)
 			if !sc.vert {
 				sc.from = c.rowOffset(sc.row.id)
 			}
+			// The page moves from here on, without first jumping by the slop.
+			if sc.vert {
+				sc.y0 += scrollSlop * sign(dy)
+			} else {
+				sc.x0 += scrollSlop * sign(dx)
+			}
+			dx, dy = p.X-sc.x0, p.Y-sc.y0
 		}
 		if c.gpuScrolls() { // the GPU follows the finger, every frame
 			switch {
@@ -198,7 +242,10 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 		}
 		if !c.cfg.SmoothScroll {
-			return // paged (the default): the page jumps when the finger lifts
+			return // paged: the page jumps when the finger lifts
+		}
+		if c.fastScrolls() && c.cpuFollow(dx, dy) {
+			return // the frame loop shows it, as often as the panel can
 		}
 		if time.Since(sc.last) < map[bool]time.Duration{true: scrollEvery, false: rowDrawEvery}[sc.vert] {
 			return // the screen can't keep up with every move: draw a few times a second
@@ -217,6 +264,11 @@ func (c *console) pageTouch(p TouchPoint) {
 			return
 		}
 		moved := sc.moved
+		if c.edge.on {
+			sc.drag = false
+			c.edgeUp(p.X)
+			return
+		}
 		if sc.gpuOn {
 			sc.drag = false
 			if moved {
@@ -229,10 +281,15 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 			return
 		}
+		if sc.cpuOn {
+			sc.drag = false
+			c.cpuRelease()
+			return
+		}
 		switch {
 		case moved && !c.cfg.SmoothScroll:
 			sc.drag = false
-			c.pageJump(p.X-sc.x0, p.Y-sc.y0)
+			c.pageJump(p.X-sc.ox0, p.Y-sc.oy0)
 			return
 		case moved:
 			c.scrollTo(p.X-sc.x0, p.Y-sc.y0)
@@ -245,8 +302,23 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 			return
 		}
+		if !c.press.on { // a quick tap: shown pressed while what it opens is drawn
+			c.pressShow(p.X, p.Y)
+		}
+		c.pressClear(false)
 		c.pageTap(p.X, p.Y)
+		c.s.Flush()
 	}
+}
+
+func sign(v int) int {
+	switch {
+	case v < 0:
+		return -1
+	case v > 0:
+		return 1
+	}
+	return 0
 }
 
 // scrollTo moves the page (or the row under the finger) by the finger's travel and shows it.
@@ -267,6 +339,7 @@ func (c *console) scrollTo(dx, dy int) {
 	if off != c.rowOffset(r.id) {
 		c.sc.x[r.id] = off
 		r.paint(c.page.img) // just this row, at its new offset
+		c.pagePainted(r.r.Min.Y, r.r.Max.Y)
 		c.blitPage()
 		c.s.Flush()
 	}
@@ -290,6 +363,10 @@ func (c *console) pageJump(dx, dy int) {
 		if y == c.scrollY() {
 			return
 		}
+		if c.animOK() && c.fastScrolls() { // it glides there
+			c.startMotion(easeTo(float64(c.scrollY()), float64(y), 0.32))
+			return
+		}
 		sc.y[c.mode] = y
 		c.blitPage()
 		c.s.Flush()
@@ -307,8 +384,13 @@ func (c *console) pageJump(dx, dy int) {
 	if off == c.rowOffset(r.id) {
 		return
 	}
+	if c.animOK() && c.fastScrolls() && c.cpuStrip(r) != nil { // the covers glide along
+		c.startMotion(easeTo(float64(c.rowOffset(r.id)), float64(off), 0.32))
+		return
+	}
 	sc.x[r.id] = off
 	r.paint(c.page.img)
+	c.pagePainted(r.r.Min.Y, r.r.Max.Y)
 	c.blitPage()
 	c.s.Flush()
 }

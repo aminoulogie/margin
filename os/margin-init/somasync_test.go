@@ -742,16 +742,16 @@ func TestSomaLongPagesGrow(t *testing.T) {
 	drawMu.Lock()
 	defer drawMu.Unlock()
 	c.setMode(modeSoma)
-	c.somaUI.view = "today"
+	c.somaUI.work = "planner"
 	p := c.somaPage()
-	last := 0
+	last, n := 0, 0
 	for _, b := range p.buttons {
-		if b.id == "so:type:week" { // the last list's add row, under all forty
-			last = b.r.Max.Y
+		if strings.HasPrefix(b.id, "wk:todo:x") { // today's list, all forty
+			last, n = max(last, b.r.Max.Y), n+1
 		}
 	}
-	if last == 0 || last > p.img.Rect.Dy() {
-		t.Fatalf("the add row at %d is past the page's %d", last, p.img.Rect.Dy())
+	if n != 40 || last > p.img.Rect.Dy() {
+		t.Fatalf("%d of 40 to-dos, the last at %d on a page %d tall", n, last, p.img.Rect.Dy())
 	}
 }
 
@@ -760,6 +760,7 @@ func TestLongPress(t *testing.T) {
 	c, relay, k := somaTestLink(t)
 	soma.sync()
 	drawMu.Lock()
+	c.cfg.HomeHidden = map[string]bool{} // Soma's widgets shown on Home
 	c.setMode(modeBooksHome)
 	var ringsAt image.Rectangle
 	for _, b := range c.page.buttons {

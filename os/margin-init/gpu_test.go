@@ -203,6 +203,7 @@ func TestGPUQuadsMatchCPUFrames(t *testing.T) {
 	c.s.hold = false
 	copy(g.nu, c.s.buf)
 	sheet := c.lookupSheet()
+	cover := image.Rect(96, 700, 96+rowCW, 700+rowCH)
 	total := c.s.fbW * c.s.fbH
 	for _, tc := range []struct {
 		name  string
@@ -219,6 +220,7 @@ func TestGPUQuadsMatchCPUFrames(t *testing.T) {
 		{"slide back", func(t float64) { c.slideFrame(g.old, g.nu, t, -1) }, func(t float64) []quad { return c.slideQuads(t, -1) }, 0, 0},
 		{"curl", func(t float64) { c.curlFrame(g.old, g.nu, t) }, func(t float64) []quad { return c.curlQuads(gpuOld, gpuNew, t) }, 8, total / 100},
 		{"curl back", func(t float64) { c.curlFrame(g.nu, g.old, 1-t) }, func(t float64) []quad { return c.curlQuads(gpuNew, gpuOld, 1-t) }, 8, total / 100},
+		{"open", func(t float64) { c.openFrame(g.old, g.nu, cover, t) }, func(t float64) []quad { return c.openQuads(cover, t) }, 2, 0},
 	} {
 		for _, at := range []float64{0, 0.13, 0.5, 0.77, 1} {
 			tc.cpu(at)
