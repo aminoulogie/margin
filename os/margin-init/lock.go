@@ -133,6 +133,22 @@ func (c *console) drawLock() {
 // unlock leaves the lock screen for where Margin was. Caller holds drawMu.
 func (c *console) unlock() {
 	c.locked = false
+	c.lockBlur = nil
+	// Back to the page as it was left, at once: it's still drawn, so it's shown again rather
+	// than drawn again (a Soma page takes the Atom a second or more).
+	if c.page != nil && c.xapp == nil && c.mode != modeTerminal && c.mode != modeReader && c.pinMode == "" {
+		c.endGPUScroll()
+		clear(c.s.buf)
+		c.s.markRows(0, c.s.fbH-1)
+		c.drawBar()
+		c.blitPage()
+		c.drawToast()
+		if _, ok := c.pageTyping(); ok || (c.mode == modeStore && c.store.typing) {
+			c.skb.draw()
+		}
+		c.s.Flush()
+		return
+	}
 	c.redrawAll()
 }
 

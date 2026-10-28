@@ -30,7 +30,12 @@ func (c *console) needLock() bool { return !c.cfg.NoLock || c.cfg.PinHash != "" 
 // startPin opens the keypad. Caller holds drawMu.
 func (c *console) startPin(mode string) {
 	c.pinMode, c.pinEntry, c.pinMsg = mode, "", ""
-	c.pinBlur, c.pinBG = c.s.blurred(c.barH), nil
+	if mode == "unlock" && c.lockBlur != nil { // made while the lock screen was up
+		c.pinBlur = c.lockBlur
+	} else {
+		c.pinBlur = c.s.blurred(c.barH)
+	}
+	c.pinBG = nil
 	c.redrawAll()
 }
 
@@ -91,24 +96,33 @@ func (s *Screen) blurred(top int) *image.RGBA {
 			}
 		}
 	}
+	// Spread back out, bilinear in integers (the tablet's Atom does floats slowly), dimmed
+	// to 55% as iOS does.
+	sm := make([]int32, len(small))
+	for i, v := range small {
+		sm[i] = int32(v * 0.55 * 16)
+	}
 	img := canvas(w, h)
 	for y := 0; y < h; y++ {
-		fy := float64(y) / step
-		y0 := min(int(fy), sh-1)
+		if y%2 == 1 { // smooth enough that every other row is its neighbour's copy
+			copy(img.Pix[y*img.Stride:(y+1)*img.Stride], img.Pix[(y-1)*img.Stride:])
+			continue
+		}
+		y0 := min(y/step, sh-1)
 		y1 := min(y0+1, sh-1)
-		ty := fy - float64(y0)
+		ty := int32(y % step * 256 / step)
+		row := img.Pix[y*img.Stride:]
 		for x := 0; x < w; x++ {
-			fx := float64(x) / step
-			x0 := min(int(fx), sw-1)
+			x0 := min(x/step, sw-1)
 			x1 := min(x0+1, sw-1)
-			tx := fx - float64(x0)
-			o := img.PixOffset(x, y)
-			for c := 0; c < 3; c++ {
-				a := small[(y0*sw+x0)*3+c]*(1-tx) + small[(y0*sw+x1)*3+c]*tx
-				b := small[(y1*sw+x0)*3+c]*(1-tx) + small[(y1*sw+x1)*3+c]*tx
-				img.Pix[o+c] = uint8((a*(1-ty) + b*ty) * 0.55) // dimmed, as iOS does
+			tx := int32(x % step * 256 / step)
+			a, b, c, d := (y0*sw+x0)*3, (y0*sw+x1)*3, (y1*sw+x0)*3, (y1*sw+x1)*3
+			for ch := 0; ch < 3; ch++ {
+				top := sm[a+ch]*(256-tx) + sm[b+ch]*tx
+				bot := sm[c+ch]*(256-tx) + sm[d+ch]*tx
+				row[4*x+ch] = uint8((top*(256-ty) + bot*ty) >> 20)
 			}
-			img.Pix[o+3] = 255
+			row[4*x+3] = 255
 		}
 	}
 	return img
