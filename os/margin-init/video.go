@@ -378,7 +378,12 @@ func ffmpegVideoArgs(url string, p *videoProbe, base, speed float64, fw, fh int)
 		vf = append(vf, "setpts=PTS/"+strconv.FormatFloat(speed, 'f', 2, 64))
 	}
 	vf = append(vf, "fps="+p.rate, fmt.Sprintf("scale=%d:%d:flags=fast_bilinear", fw, fh), "setsar=1", "format=bgr0")
-	return append(seekArgs(url, base), "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", strings.Join(vf, ","), "-f", "rawvideo", "pipe:1")
+	// Decoder options go before -i: skipping the loop filter and the fast flag cost a little
+	// sharpness and save a lot of time on this processor.
+	in := seekArgs(url, base)
+	args := append(in[:4:4], "-flags2", "+fast", "-skip_loop_filter", "all")
+	args = append(args, in[4:]...)
+	return append(args, "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", strings.Join(vf, ","), "-f", "rawvideo", "pipe:1")
 }
 
 // ffmpegAudioArgs: the sound from base seconds, as 16-bit stereo at 48 kHz.
