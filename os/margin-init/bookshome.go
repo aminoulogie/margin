@@ -108,6 +108,9 @@ func (c *console) booksHomePage() *page {
 	if len(now) > 0 {
 		h += 260
 	}
+	if soma.linked() {
+		h += somaHomeHeight()
+	}
 	img := canvas(c.s.W, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -115,6 +118,11 @@ func (c *console) booksHomePage() *page {
 	c.booksTabs(p, "tab:home")
 	apText(img, f.serifLarge, mx, 228, apLabel, "Home")
 	y := 228
+
+	// Today, from Soma: rings, habits, to-dos.
+	if soma.linked() {
+		y = c.somaHomeToday(p, y)
+	}
 
 	// Continue.
 	if len(now) > 0 {

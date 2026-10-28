@@ -442,3 +442,17 @@ func TestSomaNotes(t *testing.T) {
 		t.Fatalf("the new note isn't open: %q", c.somaUI.note)
 	}
 }
+
+// Home shows Soma's day on top: rings, habits, to-dos to tick.
+func TestSomaOnHome(t *testing.T) {
+	c, _, _ := somaTestLink(t)
+	soma.sync()
+	drawMu.Lock()
+	defer drawMu.Unlock()
+	c.setMode(modeBooksHome)
+	shot(t, c, "home-soma")
+	c.somaTap("so:todo:t1")
+	if td := somaTodos(); len(td) == 0 || !td[0].Done {
+		t.Fatal("ticking a to-do on Home didn't tick it")
+	}
+}

@@ -644,3 +644,37 @@ func noteTask(l string) (task, done bool, text string) {
 	}
 	return false, false, ""
 }
+
+// --- the day's rings (rings.ts): eaten, protein, water, burned, each against its goal --------
+
+type somaRing struct {
+	Label, Unit string
+	Value, Goal float64
+	From, To    uint32 // the ring's gradient, as Soma draws it
+}
+
+func somaRingsFor(date string) []somaRing {
+	n := somaNutrition(date)
+	goals := obj{}
+	if o := somaObj("nutrition/" + date); o != nil {
+		if g, ok := o["goals"].(obj); ok {
+			goals = g
+		}
+	}
+	goal := func(k string, def float64) float64 {
+		if v := num(goals[k]); v > 0 {
+			return v
+		}
+		return def
+	}
+	burnt := 0.0
+	if s := somaTraining(date); s != nil {
+		burnt = s.Calories
+	}
+	return []somaRing{
+		{"Calories", "cal", n.Cals, goal("cals", 2400), 0xfa114f, 0xff4fa0},
+		{"Protein", "g", n.P, goal("protein", 160), 0x7dff00, 0xd8ff2e},
+		{"Water", "ml", n.Water, goal("water", 3500), 0x00d8ff, 0x3dffe8},
+		{"Burned", "cal", burnt, 500, 0xff6a00, 0xffc000},
+	}
+}
