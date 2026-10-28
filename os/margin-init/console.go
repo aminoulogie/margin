@@ -50,6 +50,10 @@ type console struct {
 	kb               *keyboard
 	tu               termUI                   // scrollback, selection, copy and paste (termui.go)
 	locked           bool                     // the lock screen is up (lock.go)
+	pinMode          string                   // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
+	pinEntry         string                   // the digits typed so far
+	pinFirst         string                   // a new passcode, the first time
+	pinMsg           string                   // "Wrong passcode"
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
@@ -120,6 +124,7 @@ func newConsole(s *Screen) (*console, error) {
 	c.glyphs = map[glyphKey]*image.RGBA{}
 	c.barH = c.ch + 8
 	c.screenOn, c.mode, c.cfg, c.lastInput = true, modeBooksHome, loadSettings(), time.Now()
+	c.locked = c.cfg.PinHash != "" // a restart asks for the passcode too
 	if c.pf, err = loadPageFonts(); err != nil {
 		return nil, err
 	}
@@ -192,9 +197,17 @@ func (c *console) touchLoop() {
 				return // only the power button wakes the screen
 			}
 			for _, p := range pts {
-				if c.locked { // the lock screen: a tap opens Margin where it was
+				if c.pinMode != "" {
+					c.pinTouch(p)
+					continue
+				}
+				if c.locked { // the lock screen: a tap opens Margin where it was (after the passcode)
 					if p.Up {
-						c.unlock()
+						if c.cfg.PinHash != "" {
+							c.startPin("unlock")
+						} else {
+							c.unlock()
+						}
 					}
 					continue
 				}

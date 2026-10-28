@@ -73,7 +73,7 @@ func (c *console) setScreen(on bool) {
 	powerSave(false)
 	blankScreen(c.s, false)
 	c.lastInput = time.Now()
-	c.locked = !c.cfg.NoLock // wake on the lock screen: the book's cover, the time
+	c.locked, c.pinMode = c.needLock(), "" // wake on the lock screen: the book's cover, the time
 	c.redrawAll()
 	setBacklight(c.cfg.Brightness)
 	log.Printf("screen on")

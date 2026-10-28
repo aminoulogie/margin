@@ -212,10 +212,18 @@ func (c *console) settingsPage() *page {
 		p.buttons = append(p.buttons, button{"dark", rows[0]})
 		y += rh + 20
 		header("Lock Screen")
-		rows = groupRows(img, x, y, pw, 1, rh)
-		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Show Book Cover on Wake")
+		rows = groupRows(img, x, y, pw, 2, rh)
+		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Show Lock Screen on Wake")
 		iosSwitch(img, rows[0].Max.X-24, (rows[0].Min.Y+rows[0].Max.Y)/2, !c.cfg.NoLock, apDark)
 		p.buttons = append(p.buttons, button{"lock", rows[0]})
+		apText(img, f.body, rows[1].Min.X+30, rows[1].Min.Y+56, apLabel, "Passcode")
+		state := "Off"
+		if c.cfg.PinHash != "" {
+			state = "On"
+		}
+		apText(img, f.body, rows[1].Max.X-40-ui.TextWidth(f.body, state+"  ›"), rows[1].Min.Y+56, apSecondary, state+"  ›")
+		p.buttons = append(p.buttons, button{"passcode", rows[1]})
+		y += rh
 		y += rh + 20
 		header("Brightness")
 		rows = groupRows(img, x, y, pw, 1, 120)

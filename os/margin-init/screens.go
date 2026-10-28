@@ -170,6 +170,13 @@ func (c *console) pageTap(x, y int) {
 	case "lock":
 		c.cfg.NoLock = !c.cfg.NoLock
 		c.cfg.save()
+	case "passcode":
+		if c.cfg.PinHash == "" {
+			c.startPin("set")
+		} else {
+			c.startPin("off")
+		}
+		return
 	case "anim":
 		c.cfg.Animations = !c.cfg.Animations
 		c.cfg.save()

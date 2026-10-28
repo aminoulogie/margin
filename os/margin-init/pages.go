@@ -184,6 +184,8 @@ type savedSettings struct {
 	Light bool `json:"light"`
 	// NoLock: wake straight into Margin, without the lock screen (cover, time).
 	NoLock bool `json:"no_lock_screen"`
+	// PinHash: the passcode's hash (passcode.go); "" for none.
+	PinHash string `json:"passcode,omitempty"`
 	// SmoothScroll: pages follow the finger. Off (the default): a swipe jumps a screen.
 	SmoothScroll bool `json:"smooth_scroll"`
 }

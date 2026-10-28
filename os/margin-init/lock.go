@@ -59,35 +59,65 @@ func (c *console) drawLock() {
 	apTextCenter(img, f.headline, w/2, 110, blend(white, top, 0.15), now.Format("Monday 2 January"))
 	apTextCenter(img, textFace("inter-semibold", fonts.InterSemiBold, true, 190), w/2, 270, white, now.Format("15:04"))
 
-	if it != nil {
-		cr := image.Rect((w-560)/2, 470, (w+560)/2, 470+840)
-		shadow(img, cr, 12, 0.35)
-		c.drawCover(img, cr, it)
-		y := cr.Max.Y + 90
-		for i, l := range layoutWords(f.serifTitle, strings.Fields(it.title), 0, w-160, false) {
-			if i == 2 {
-				break
+	// Widgets, as on iOS: today's habits from Soma, and the book.
+	glass := func(r image.Rectangle) {
+		ui.RoundRect(img, r, 36, blend(blend(top, rgb(0x000000), min(1, float64(r.Min.Y)/float64(h)*1.4)), white, 0.14))
+	}
+	wy := 430
+	if soma.linked() {
+		habits := somaHabits()
+		done := 0
+		for _, hb := range habits {
+			if hb.done(somaToday()) {
+				done++
 			}
-			lw := 0
-			if n := len(l.words); n > 0 {
-				lw = l.words[n-1].x + l.words[n-1].w
-			}
-			drawWords(img, f.serifTitle, l, (w-lw)/2, y, white)
-			y += 60
 		}
-		apTextCenter(img, f.callout, w/2, y+4, blend(white, rgb(0x000000), 0.3), clip(f.callout, it.author, w-160))
+		r := image.Rect(w/2-470, wy, w/2-15, wy+190)
+		glass(r)
+		frac := 0.0
+		if len(habits) > 0 {
+			frac = float64(done) / float64(len(habits))
+		}
+		ring(img, r.Min.X+105, r.Min.Y+95, 62, 18, frac, rgb(0x2c3a2f), rgb(0x30d158))
+		apText(img, f.title, r.Min.X+200, r.Min.Y+88, white, fmt.Sprintf("%d / %d", done, len(habits)))
+		apText(img, f.callout, r.Min.X+200, r.Min.Y+136, blend(white, top, 0.3), "habits today")
+		if m := somaReading(somaToday()); m > 0 {
+			apText(img, f.caption, r.Min.X+200, r.Min.Y+172, blend(white, top, 0.4), fmt.Sprintf("%d min read", m))
+		}
+	}
+	if it != nil {
+		r := image.Rect(w/2+15, wy, w/2+470, wy+190)
+		if !soma.linked() {
+			r = image.Rect(w/2-230, wy, w/2+230, wy+190)
+		}
+		glass(r)
+		cr := image.Rect(r.Min.X+24, r.Min.Y+20, r.Min.X+24+100, r.Min.Y+170)
+		c.drawCover(img, cr, it)
+		tx := cr.Max.X + 24
+		apText(img, f.headline, tx, r.Min.Y+70, white, clip(f.headline, it.title, r.Max.X-tx-20))
 		pct := c.lib.Progress[it.key].Pct
-		bar := image.Rect(w/2-220, y+60, w/2+220, y+68)
-		ui.RoundRect(img, bar, 4, rgb(0x3a3a3c))
+		apText(img, f.caption, tx, r.Min.Y+112, blend(white, top, 0.3), fmt.Sprintf("%d%% read", pct))
+		bar := image.Rect(tx, r.Min.Y+140, r.Max.X-28, r.Min.Y+148)
+		ui.RoundRect(img, bar, 4, blend(white, top, 0.7))
 		if pct > 0 {
 			ui.RoundRect(img, image.Rect(bar.Min.X, bar.Min.Y, bar.Min.X+max(bar.Dx()*pct/100, 8), bar.Max.Y), 4, white)
 		}
-		apTextCenter(img, f.caption, w/2, y+108, rgb(0x8d8d93), fmt.Sprintf("%d%% read", pct))
+	}
+
+	if it != nil {
+		// The cover itself, large, under the widgets: the book's own picture is the wallpaper.
+		cr := image.Rect((w-520)/2, 720, (w+520)/2, 720+780)
+		shadow(img, cr, 12, 0.35)
+		c.drawCover(img, cr, it)
 	} else {
 		apTextCenter(img, f.serifLarge, w/2, 900, white, "Margin")
 		apTextCenter(img, f.callout, w/2, 980, rgb(0x8d8d93), "Books")
 	}
-	apTextCenter(img, f.callout, w/2, h-90, rgb(0x8d8d93), "Tap to open")
+	hint := "Tap to open"
+	if c.cfg.PinHash != "" {
+		hint = "Tap to unlock"
+	}
+	apTextCenter(img, f.callout, w/2, h-90, rgb(0x8d8d93), hint)
 	ui.RoundRect(img, image.Rect(w/2-90, h-30, w/2+90, h-22), 4, rgb(0x8d8d93)) // iOS's home bar
 
 	c.s.blitRGBA(img, 0, c.barH)
