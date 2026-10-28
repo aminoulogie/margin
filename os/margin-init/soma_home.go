@@ -563,9 +563,11 @@ func (c *console) smDock(p *page) {
 	bar := image.Rect(16*sk, y0+12*sk, w-16*sk, y0+12*sk+70*sk)
 	ui.RoundRect(img, bar, bar.Dy()/2, blend(smBG, rgb(0xffffff), 0.16))
 	ui.RoundRect(img, bar.Inset(2), bar.Dy()/2-2, rgb(0x1a1d27))
-	items := []struct{ id, label, view string }{
-		{"so:view:notes", "Mind", "notes"}, {"so:view:goals", "Projects", "goals"}, {"so:view:money", "Money", "money"},
-		{"so:view:home", "Home", "home"}, {"so:view:reports", "Train", "reports"}, {"so:view:today", "Fuel", "today"},
+	items := []struct{ id, label, view, icon string }{
+		{"so:view:notes", "Mind", "notes", "brain-circuit"}, {"so:view:goals", "Projects", "goals", "folder-kanban"},
+		{"so:view:money", "Money", "money", "wallet"}, {"so:view:home", "Home", "home", "layout-grid"},
+		{"so:view:work", "Work", "work", "briefcase"}, {"so:view:reports", "Train", "reports", "dumbbell"},
+		{"so:view:today", "Fuel", "today", "utensils"},
 	}
 	iw := bar.Dx() / len(items)
 	for i, it := range items {
@@ -577,7 +579,7 @@ func (c *console) smDock(p *page) {
 			col = rgb(0xff5d7a)
 		}
 		cx, cy := (r.Min.X+r.Max.X)/2, r.Min.Y+26*sk
-		smDockIcon(img, it.label, cx, cy, col)
+		lucideIcon(img, it.icon, cx, cy, 22*sk, col)
 		apTextCenter(img, smFont("semi", 12), cx, r.Min.Y+54*sk, col, it.label)
 		p.buttons = append(p.buttons, button{it.id, r})
 	}

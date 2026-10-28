@@ -38,9 +38,12 @@ type somaUI struct {
 	typing     bool
 	field      string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
 	editing    string
-	url        string // the sync address, typed before the code
-	msg        string // the last thing that went wrong
-	slotY      int    // page y under the to-do being typed on the timeline
+	url        string            // the sync address, typed before the code
+	msg        string            // the last thing that went wrong
+	slotY      int               // page y under the to-do being typed on the timeline
+	work       string            // the Work tab's page: "overview", "projects", "project"... (work.go)
+	workProj   string            // the project open there
+	workSel    map[string]string // the tab, chip or segment chosen on each of its pages
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -85,6 +88,9 @@ func (c *console) somaPage() *page {
 		}
 	}
 	soma.mu.Unlock()
+	if su.view == "work" && soma.linked() {
+		return c.workPage()
+	}
 
 	// A first guess at the page's height; a page that turns out taller is drawn again at the
 	// height it needed (remembered, so it's drawn once from then on).
@@ -284,6 +290,9 @@ func (c *console) somaAddRow(p *page, id, label string, y int) int {
 
 // somaTap handles the Soma tab's buttons. Caller holds drawMu.
 func (c *console) somaTap(id string) bool {
+	if strings.HasPrefix(id, "wk:") {
+		return c.workTap(id)
+	}
 	if !strings.HasPrefix(id, "so:") {
 		return false
 	}

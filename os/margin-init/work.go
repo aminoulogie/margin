@@ -1,0 +1,641 @@
+package main
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"math"
+	"strings"
+	"time"
+
+	"golang.org/x/image/font"
+
+	"margin-init/fonts"
+	"margin-init/ui"
+)
+
+// The Work tab: Soma's workstation (src/workstation) on the tablet, in the look of its
+// tablet screens: a rail on the left (Overview, Projects, Planner, Time, Money, Reports,
+// Findings, Work log, Personal), and each page with its breadcrumb, title, tabs, chips, cards
+// and charts. Measurements are the tablet's pixels from those screens; y counts from the top
+// of the screen, the status bar included (wk.R and wk.Y take it off).
+
+var (
+	wkBG      = rgb(0x0b0c10)
+	wkSide    = rgb(0x111216)
+	wkSideSel = rgb(0x1b1d29)
+	wkCard    = rgb(0x15161d)
+	wkCardTop = rgb(0x1a1c24)
+	wkRim     = rgb(0x22232b)
+	wkLine    = rgb(0x1f2027)
+	wkFG      = rgb(0xeef0f3)
+	wkText2   = rgb(0xc4c7ce)
+	wkMuted   = rgb(0x9a9da6)
+	wkFaint   = rgb(0x676a74)
+	wkLime    = rgb(0xd3fd50)
+	wkInk     = rgb(0x0b0c10)
+	wkBlue    = rgb(0x5b8cff)
+	wkGreen   = rgb(0x3ecf8e)
+	wkAmber   = rgb(0xf0a63c)
+	wkRed     = rgb(0xf06a6a)
+	wkPurple  = rgb(0xa98bfa)
+	wkYellow  = rgb(0xe3f25a)
+)
+
+const (
+	wkSideW = 124  // the rail
+	wkX0    = 160  // the page's left edge
+	wkX1    = 1164 // and right
+)
+
+func wkFont(weight string, px float64) font.Face {
+	switch weight {
+	case "bold":
+		return textFace("inter-bold", fonts.InterBold, true, px)
+	case "semi":
+		return textFace("inter-semibold", fonts.InterSemiBold, true, px)
+	case "medium":
+		return textFace("inter-medium", fonts.InterMedium, false, px)
+	}
+	return textFace("inter", fonts.InterRegular, false, px)
+}
+
+type wk struct {
+	c   *console
+	p   *page
+	img *image.RGBA
+	oy  int // the status bar's height: screen y to page y
+}
+
+func (k *wk) Y(y int) int                          { return y - k.oy }
+func (k *wk) R(x0, y0, x1, y1 int) image.Rectangle { return image.Rect(x0, y0-k.oy, x1, y1-k.oy) }
+
+func (k *wk) btn(id string, r image.Rectangle) {
+	k.p.buttons = append(k.p.buttons, button{id, r})
+}
+
+func (k *wk) text(f font.Face, x, y int, col color.RGBA, s string) int {
+	apText(k.img, f, x, k.Y(y), col, s)
+	return x + ui.TextWidth(f, s)
+}
+
+func (k *wk) textR(f font.Face, right, y int, col color.RGBA, s string) {
+	apTextRight(k.img, f, right, k.Y(y), col, s)
+}
+
+func (k *wk) textC(f font.Face, cx, y int, col color.RGBA, s string) {
+	apText(k.img, f, cx-ui.TextWidth(f, s)/2, k.Y(y), col, s)
+}
+
+func (k *wk) icon(name string, cx, cy, size int, col color.RGBA) {
+	lucideIcon(k.img, name, cx, k.Y(cy), size, col)
+}
+
+// card is a panel: a hairline rim, the surface, a little lighter at the top.
+func (k *wk) card(r image.Rectangle) {
+	k.cardIn(r, wkCard)
+}
+
+func (k *wk) cardIn(r image.Rectangle, fill color.RGBA) {
+	r = r.Sub(image.Pt(0, k.oy))
+	ui.RoundRect(k.img, r, 20, wkRim)
+	in := r.Inset(2)
+	ui.RoundRect(k.img, in, 18, fill)
+	top := blend(fill, rgb(0xffffff), 0.035)
+	for y := in.Min.Y; y < in.Min.Y+min(120, in.Dy()); y++ {
+		t := 1 - float64(y-in.Min.Y)/120
+		glass(k.img, roundedRow(in, 18, y), 0, top, t)
+	}
+}
+
+// glow is the lime haze behind a page's header.
+func (k *wk) glow() {
+	cx, cy, rx, ry := 700.0, 110.0, 560.0, 230.0
+	for y := max(k.Y(0), 0); y < k.Y(360); y++ {
+		for x := wkSideW; x < k.c.s.W; x++ {
+			d := math.Hypot((float64(x)-cx)/rx, (float64(y+k.oy)-cy)/ry)
+			if d >= 1 {
+				continue
+			}
+			a := 0.07 * (1 - d) * (1 - d)
+			o := k.img.PixOffset(x, y)
+			k.img.Pix[o] = uint8(float64(k.img.Pix[o])*(1-a) + float64(wkLime.R)*a)
+			k.img.Pix[o+1] = uint8(float64(k.img.Pix[o+1])*(1-a) + float64(wkLime.G)*a)
+			k.img.Pix[o+2] = uint8(float64(k.img.Pix[o+2])*(1-a) + float64(wkLime.B)*a)
+		}
+	}
+}
+
+// header draws the breadcrumb, the title and the line under it. Returns nothing: the tabs
+// follow at a fixed place.
+func (k *wk) header(crumb []string, title, sub string, titleDot color.RGBA) {
+	x := wkX0
+	k.icon("building-2", x+10, 83, 24, wkMuted)
+	x += 32
+	for i, c := range crumb {
+		col := wkMuted
+		if i == len(crumb)-1 {
+			col = wkText2
+		}
+		x = k.text(wkFont("medium", 20), x, 91, col, c)
+		if i < len(crumb)-1 {
+			k.icon("chevron-right", x+20, 84, 20, wkMuted)
+			x += 40
+		}
+	}
+	tx := wkX0
+	if titleDot.A > 0 {
+		ui.RoundRect(k.img, k.R(tx, 120, tx+22, 142), 5, titleDot)
+		tx += 34
+	}
+	k.text(wkFont("bold", 42), tx, 152, wkFG, title)
+	k.text(wkFont("regular", 20), wkX0, 190, wkMuted, sub)
+}
+
+// primary is a lime button at the header's right; returns its left edge.
+func (k *wk) primary(id, icon, label string, right int) int {
+	f := wkFont("semi", 21)
+	w := 64 + ui.TextWidth(f, label) + 28
+	r := k.R(right-w, 103, right, 166)
+	ui.RoundRect(k.img, r, 14, wkLime)
+	lucideIcon(k.img, icon, r.Min.X+40, (r.Min.Y+r.Max.Y)/2, 26, wkInk)
+	apText(k.img, f, r.Min.X+64, (r.Min.Y+r.Max.Y)/2+8, wkInk, label)
+	k.btn(id, r)
+	return r.Min.X
+}
+
+// square is a dark icon button at the header's right; returns its left edge.
+func (k *wk) square(id, icon string, right int) int {
+	r := k.R(right-64, 103, right, 166)
+	ui.RoundRect(k.img, r, 14, wkRim)
+	ui.RoundRect(k.img, r.Inset(2), 12, rgb(0x16171e))
+	lucideIcon(k.img, icon, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, 28, wkFG)
+	k.btn(id, r)
+	return r.Min.X
+}
+
+// tabs are the underlined tabs under the header; n is a count shown after a label ("" none).
+func (k *wk) tabs(prefix string, labels []string, counts []string, sel int) {
+	x := wkX0
+	f := wkFont("semi", 22)
+	ui.Fill(k.img, k.R(wkX0, 286, wkX1, 288), wkLine)
+	for i, l := range labels {
+		w := ui.TextWidth(f, l)
+		if i < len(counts) && counts[i] != "" {
+			w += 8 + ui.TextWidth(f, counts[i])
+		}
+		col := wkText2
+		if i == sel {
+			col = wkFG
+			ui.RoundRect(k.img, k.R(x, 284, x+w+40, 289), 2, wkLime)
+		}
+		k.text(f, x+20, 260, col, l)
+		if i < len(counts) && counts[i] != "" {
+			k.text(f, x+20+ui.TextWidth(f, l)+8, 260, col, counts[i])
+		}
+		k.btn(fmt.Sprintf("%s:%d", prefix, i), k.R(x, 220, x+w+40, 290))
+		x += w + 46
+	}
+}
+
+// chips are the filters under the tabs: the chosen one lime. Returns their right edge.
+func (k *wk) chips(prefix string, y int, labels []string, icons []string, sel int) int {
+	x := wkX0
+	f := wkFont("medium", 21)
+	for i, l := range labels {
+		w := ui.TextWidth(f, l) + 40
+		ic := ""
+		if i < len(icons) {
+			ic = icons[i]
+		}
+		if ic != "" {
+			w += 34
+		}
+		r := k.R(x, y, x+w, y+53)
+		fg := wkText2
+		if i == sel {
+			ui.RoundRect(k.img, r, 12, wkLime)
+			fg = wkInk
+		} else {
+			ui.RoundRect(k.img, r, 12, wkRim)
+			ui.RoundRect(k.img, r.Inset(2), 10, rgb(0x15161c))
+		}
+		tx := r.Min.X + 20
+		if ic != "" {
+			lucideIcon(k.img, ic, tx+12, (r.Min.Y+r.Max.Y)/2, 24, fg)
+			tx += 34
+		}
+		face := f
+		if i == sel {
+			face = wkFont("semi", 21)
+		}
+		apText(k.img, face, tx, (r.Min.Y+r.Max.Y)/2+8, fg, l)
+		k.btn(fmt.Sprintf("%s:%d", prefix, i), r)
+		x += w + 13
+	}
+	return x
+}
+
+// outline is a dark outlined button ending at right; returns its left edge.
+func (k *wk) outline(id, icon, label string, right, y, h int) int {
+	f := wkFont("medium", 21)
+	w := ui.TextWidth(f, label) + 40
+	if icon != "" {
+		w += 34
+	}
+	if label == "" {
+		w = h
+	}
+	r := k.R(right-w, y, right, y+h)
+	ui.RoundRect(k.img, r, 12, wkRim)
+	ui.RoundRect(k.img, r.Inset(2), 10, rgb(0x15161c))
+	tx := r.Min.X + 20
+	if label == "" {
+		lucideIcon(k.img, icon, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, 24, wkFG)
+	} else {
+		if icon != "" {
+			lucideIcon(k.img, icon, tx+12, (r.Min.Y+r.Max.Y)/2, 24, wkText2)
+			tx += 34
+		}
+		apText(k.img, f, tx, (r.Min.Y+r.Max.Y)/2+8, wkFG, label)
+	}
+	k.btn(id, r)
+	return r.Min.X
+}
+
+// cardHead is a card's title row: an icon, the title, a faint note after a dot.
+func (k *wk) cardHead(x, y int, icon, title, note string) int {
+	k.icon(icon, x+12, y-8, 26, wkMuted)
+	e := k.text(wkFont("semi", 23), x+40, y, wkFG, title)
+	if note != "" {
+		e = k.text(wkFont("regular", 19), e+14, y, wkFaint, note)
+	}
+	return e
+}
+
+// delta is "↑ 12%" in green (or "↓ 9%" in red), then a faint note.
+func (k *wk) delta(x, y int, pct float64, good bool, note string) {
+	f := wkFont("semi", 19)
+	col := wkGreen
+	if !good {
+		col = wkRed
+	}
+	icon := "arrow-up"
+	if pct < 0 {
+		icon = "arrow-down"
+	}
+	if math.IsNaN(pct) {
+		k.text(wkFont("regular", 19), x, y, wkFaint, note)
+		return
+	}
+	k.icon(icon, x+8, y-7, 20, col)
+	e := k.text(f, x+22, y, col, fmt.Sprintf("%.0f%%", math.Abs(pct)))
+	k.text(wkFont("regular", 19), e+10, y, wkFaint, note)
+}
+
+// pctChange is the change from a to b in percent; NaN when there's nothing to compare with.
+func pctChange(a, b float64) float64 {
+	if a <= 0 {
+		return math.NaN()
+	}
+	return (b - a) / a * 100
+}
+
+// spark is a small line chart in r (page coordinates).
+func (k *wk) spark(r image.Rectangle, vals []float64, col color.RGBA) {
+	if len(vals) < 2 {
+		ui.Fill(k.img, image.Rect(r.Min.X, r.Max.Y-r.Dy()/2-1, r.Max.X, r.Max.Y-r.Dy()/2+2), col)
+		return
+	}
+	hi, lo := vals[0], vals[0]
+	for _, v := range vals {
+		hi, lo = max(hi, v), min(lo, v)
+	}
+	span := max(hi-lo, 1e-9)
+	pt := func(i int) (int, int) {
+		x := r.Min.X + i*r.Dx()/(len(vals)-1)
+		y := r.Max.Y - int((vals[i]-lo)/span*float64(r.Dy()))
+		if hi == lo {
+			y = r.Min.Y + r.Dy()/2
+		}
+		return x, y
+	}
+	for i := 1; i < len(vals); i++ {
+		x0, y0 := pt(i - 1)
+		x1, y1 := pt(i)
+		line(k.img, x0, y0, x1, y1, 3, col)
+	}
+}
+
+// kpi is a figure card: an icon and label, the value (a unit after it, smaller), a change
+// and a sparkline.
+func (k *wk) kpi(r image.Rectangle, icon, label, value, unit string, pct float64, good bool, note string, spark []float64, sparkCol color.RGBA, valCol color.RGBA) {
+	k.card(r)
+	x := r.Min.X + 26
+	k.icon(icon, x+10, r.Min.Y+34, 24, wkMuted)
+	k.text(wkFont("medium", 20), x+32, r.Min.Y+42, wkText2, label)
+	e := k.text(wkFont("bold", 40), x, r.Min.Y+96, valCol, value)
+	if unit != "" {
+		k.text(wkFont("medium", 22), e+3, r.Min.Y+96, wkMuted, unit)
+	}
+	k.delta(x, r.Min.Y+142, pct, good, note)
+	if spark != nil {
+		k.spark(image.Rect(r.Max.X-100, k.Y(r.Min.Y+118), r.Max.X-26, k.Y(r.Min.Y+136)), spark, sparkCol)
+	}
+}
+
+// badge is a tinted pill ending at right, centred on cy.
+func (k *wk) badge(right, cy int, text string, col color.RGBA) int {
+	f := wkFont("semi", 18)
+	w := ui.TextWidth(f, text) + 28
+	r := k.R(right-w, cy-18, right, cy+18)
+	ui.RoundRect(k.img, r, 18, blend(wkCard, col, 0.16))
+	apText(k.img, f, r.Min.X+14, k.Y(cy)+7, col, text)
+	return r.Min.X
+}
+
+// arc draws a ring's share frac from the top, clockwise, w wide, with round ends.
+func (k *wk) arc(cx, cy, rad, w int, frac float64, col, track color.RGBA) {
+	ring(k.img, cx, k.Y(cy), rad, w, min(max(frac, 0), 1), track, col)
+}
+
+// donut draws shares round a ring with small gaps, from the top.
+func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
+	tot := 0.0
+	for _, v := range parts {
+		tot += v
+	}
+	if tot <= 0 {
+		ring(k.img, cx, k.Y(cy), rad, w, 1, wkRim, wkRim)
+		return
+	}
+	cy = k.Y(cy)
+	a0 := 0.0
+	r0, r1 := float64(rad-w/2), float64(rad+w/2)
+	for i, v := range parts {
+		a1 := a0 + v/tot
+		gap := 0.006
+		for y := cy - rad - w; y <= cy+rad+w; y++ {
+			for x := cx - rad - w; x <= cx+rad+w; x++ {
+				dx, dy := float64(x)+0.5-float64(cx), float64(y)+0.5-float64(cy)
+				d := math.Hypot(dx, dy)
+				cov := min(d-r0+0.5, r1-d+0.5, 1)
+				if cov <= 0 || !(image.Point{x, y}.In(k.img.Rect)) {
+					continue
+				}
+				t := math.Atan2(dx, -dy) / (2 * math.Pi)
+				if t < 0 {
+					t++
+				}
+				if t < a0+gap || t > a1-gap {
+					continue
+				}
+				o := k.img.PixOffset(x, y)
+				c := cols[i%len(cols)]
+				k.img.Pix[o] = uint8(float64(k.img.Pix[o])*(1-cov) + float64(c.R)*cov)
+				k.img.Pix[o+1] = uint8(float64(k.img.Pix[o+1])*(1-cov) + float64(c.G)*cov)
+				k.img.Pix[o+2] = uint8(float64(k.img.Pix[o+2])*(1-cov) + float64(c.B)*cov)
+			}
+		}
+		a0 = a1
+	}
+}
+
+// --- the rail ---------------------------------------------------------------------------------
+
+var wkPages = []struct{ id, label, icon string }{
+	{"overview", "Overview", "gauge"}, {"projects", "Projects", "folder-kanban"}, {"planner", "Planner", "calendar-days"},
+	{"time", "Time", "timer"}, {"money", "Money", "wallet"}, {"reports", "Reports", "file-text"},
+	{"findings", "Findings", "shield-alert"}, {"worklog", "Work log", "briefcase"},
+}
+
+func (k *wk) rail(h int, badges map[string]int) {
+	img := k.img
+	ui.Fill(img, image.Rect(0, 0, wkSideW-1, h), wkSide)
+	ui.Fill(img, image.Rect(wkSideW-1, 0, wkSideW+1, h), rgb(0x1a1b1f))
+	logo := k.R(29, 66, 95, 133)
+	ui.RoundRect(img, logo, 16, wkLime)
+	apTextCenter(img, wkFont("bold", 28), 62, (logo.Min.Y+logo.Max.Y)/2, wkInk, "S")
+	page := k.c.somaUI.work
+	y := 155
+	item := func(id, label, icon string, y int) {
+		r := k.R(10, y, 114, y+86)
+		col := wkText2
+		if page == id || (id == "projects" && page == "project") {
+			ui.RoundRect(img, r, 16, wkSideSel)
+			col = wkFG
+		}
+		ic := col
+		if page == id || (id == "projects" && page == "project") {
+			ic = wkLime
+		}
+		k.icon(icon, 61, y+29, 30, ic)
+		k.textC(wkFont("medium", 17), 61, y+67, col, label)
+		if n := badges[id]; n > 0 {
+			ui.Circle(img, 82, k.Y(y+10), 12, wkRed)
+			apTextCenter(img, wkFont("semi", 15), 82, k.Y(y+10), rgb(0xffffff), fmt.Sprint(n))
+		}
+		k.btn("wk:go:"+id, r)
+	}
+	for _, it := range wkPages {
+		item(it.id, it.label, it.icon, y)
+		y += 91
+	}
+	ui.Fill(img, k.R(40, 896, 84, 898), rgb(0x24252b))
+	item("personal", "Personal", "heart-pulse", 912)
+	item("search", "Search", "search", 1645)
+	item("settings", "Settings", "settings", 1735)
+	av := image.Pt(61, k.Y(1868))
+	ui.Circle(img, av.X, av.Y, 30, rgb(0x8b7cff))
+	apTextCenter(img, wkFont("semi", 20), av.X, av.Y, rgb(0xffffff), wkInitials(wkUser()))
+	ui.Circle(img, av.X+21, av.Y+21, 9, wkSide)
+	ui.Circle(img, av.X+21, av.Y+21, 6, wkGreen)
+}
+
+func wkInitials(name string) string {
+	f := strings.Fields(name)
+	switch {
+	case len(f) >= 2:
+		return strings.ToUpper(f[0][:1] + f[1][:1])
+	case len(f) == 1 && len(f[0]) >= 2:
+		return strings.ToUpper(f[0][:2])
+	}
+	return "S"
+}
+
+// timerPill is the running timer, floating at the bottom: the project, the clock, what it's
+// worth, a break and a stop.
+func (k *wk) timerPill(h int) {
+	entries := wkEntries()
+	e, ok := wkRunning(entries)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	p, _ := wkProjectByID(e.ProjectID)
+	cx := 660
+	y0 := k.oy + h - 120 // screen y of the pill's top
+	r := k.R(cx-280, y0, cx+280, y0+90)
+	ui.RoundRect(k.img, r, 45, rgb(0x2a2c35))
+	ui.RoundRect(k.img, r.Inset(2), 43, rgb(0x16171f))
+	cy := (r.Min.Y + r.Max.Y) / 2
+	ui.Circle(k.img, r.Min.X+36, cy, 8, wkGreen)
+	apText(k.img, wkFont("regular", 18), r.Min.X+62, cy-8, wkText2, clip(wkFont("regular", 18), p.Name, 220))
+	d := e.dur(now)
+	apText(k.img, wkFont("bold", 27), r.Min.X+62, cy+24, wkFG, fmt.Sprintf("%02d:%02d:%02d", int(d.Hours()), int(d.Minutes())%60, int(d.Seconds())%60))
+	if p.Rate > 0 {
+		v := wkMoney2(d.Hours() * p.Rate)
+		f := wkFont("semi", 18)
+		w := ui.TextWidth(f, v) + 28
+		br := image.Rect(r.Max.X-178-w, cy-18, r.Max.X-178, cy+18)
+		ui.RoundRect(k.img, br, 18, blend(rgb(0x16171f), wkLime, 0.18))
+		apText(k.img, f, br.Min.X+14, cy+7, wkLime, v)
+	}
+	ui.Circle(k.img, r.Max.X-126, cy, 32, rgb(0x262833))
+	lucideIcon(k.img, "coffee", r.Max.X-126, cy, 28, wkFG)
+	ui.Circle(k.img, r.Max.X-48, cy, 32, wkRed)
+	lucideIcon(k.img, "square", r.Max.X-48, cy, 26, rgb(0xffffff))
+	k.btn("wk:stop", image.Rect(r.Max.X-82, r.Min.Y, r.Max.X, r.Max.Y))
+}
+
+// --- the page --------------------------------------------------------------------------------
+
+// workPage draws the Work tab. Caller holds drawMu.
+func (c *console) workPage() *page {
+	su := &c.somaUI
+	if su.work == "" {
+		su.work = "overview"
+	}
+	w := c.s.W
+	h := max(c.viewH(), su.need["work:"+su.work])
+	img := canvas(w, h)
+	ui.Fill(img, img.Rect, wkBG)
+	p := &page{img: img}
+	k := &wk{c: c, p: p, img: img, oy: c.barH}
+	k.glow()
+	var end int
+	switch su.work {
+	case "projects":
+		end = k.projects()
+	case "project":
+		end = k.project()
+	case "time":
+		end = k.timePage()
+	case "planner":
+		end = k.planner()
+	case "money":
+		end = k.money()
+	case "reports":
+		end = k.reports()
+	default:
+		end = k.overview()
+	}
+	end = k.Y(end) + 160 // room for the timer
+	if end > h {
+		su.need["work:"+su.work] = end
+		return c.workPage()
+	}
+	if end < h && h > c.viewH() {
+		p.img = img.SubImage(image.Rect(0, 0, w, max(end, c.viewH()))).(*image.RGBA)
+		k.img = p.img
+	}
+	open := 0
+	for _, f := range wkFindings() {
+		if !f.closed() {
+			open++
+		}
+	}
+	planned := 0
+	today := somaToday()
+	for _, t := range somaTodos() {
+		if !t.Done && !t.Cleared && (t.Date == today || t.Due == today) {
+			planned++
+		}
+	}
+	k.rail(p.img.Rect.Dy(), map[string]int{"planner": planned, "findings": open})
+	if su.work != "reports" { // the report's buttons sit where it would
+		k.timerPill(min(p.img.Rect.Dy(), c.viewH()))
+	}
+	return p
+}
+
+// workTap handles the Work tab's buttons. Caller holds drawMu.
+func (c *console) workTap(id string) bool {
+	su := &c.somaUI
+	switch {
+	case strings.HasPrefix(id, "wk:go:"):
+		to := strings.TrimPrefix(id, "wk:go:")
+		switch to {
+		case "personal":
+			su.view = "home"
+		case "settings":
+			c.setMode(modeSettings)
+			return true
+		case "findings", "worklog", "search":
+			c.toastMsg("Open it in Soma on the PC: this page isn't on the tablet yet")
+			return true
+		default:
+			su.work = to
+		}
+	case strings.HasPrefix(id, "wk:proj:"):
+		su.work, su.workProj = "project", strings.TrimPrefix(id, "wk:proj:")
+	case id == "wk:back":
+		su.work = "projects"
+	case id == "wk:stop":
+		wkStopTimer()
+	case strings.HasPrefix(id, "wk:start:"):
+		wkStartTimer(strings.TrimPrefix(id, "wk:start:"))
+	case strings.HasPrefix(id, "wk:tab:"), strings.HasPrefix(id, "wk:chip:"), strings.HasPrefix(id, "wk:seg:"), strings.HasPrefix(id, "wk:week:"), strings.HasPrefix(id, "wk:client:"):
+		if su.workSel == nil {
+			su.workSel = map[string]string{}
+		}
+		i := strings.LastIndex(id, ":")
+		su.workSel[su.work+id[:i]] = id[i+1:]
+	case strings.HasPrefix(id, "wk:step:"):
+		parts := strings.SplitN(strings.TrimPrefix(id, "wk:step:"), ":", 2)
+		if len(parts) == 2 {
+			somaStepTap(parts[0], parts[1])
+		}
+	case strings.HasPrefix(id, "wk:todo:"):
+		somaToggleTodo(strings.TrimPrefix(id, "wk:todo:"))
+	default:
+		return false
+	}
+	c.setScroll(modeSoma, 0)
+	c.showPage()
+	return true
+}
+
+// sel is which tab, chip or segment of a group is chosen on this page (def until one is).
+func (k *wk) sel(group string, def int) int {
+	su := &k.c.somaUI
+	v, ok := su.workSel[su.work+"wk:"+group]
+	if !ok {
+		return def
+	}
+	n := 0
+	fmt.Sscan(v, &n)
+	return n
+}
+
+// wkStopTimer ends the running time entry (stopTimer).
+func wkStopTimer() {
+	for _, o := range somaList("timeEntries") {
+		if num(o["end"]) == 0 && num(o["start"]) > 0 {
+			o["end"] = float64(time.Now().UnixMilli())
+			somaPut("timeEntries#"+str(o["id"]), o)
+		}
+	}
+}
+
+// wkStartTimer starts a timer on a project, stopping any other (startTimer: one at a time).
+func wkStartTimer(projectID string) {
+	wkStopTimer()
+	id := "te-" + somaNewID()
+	somaPut("timeEntries#"+id, obj{"id": id, "projectId": projectID, "start": float64(time.Now().UnixMilli())})
+	var order []string
+	for _, o := range somaList("timeEntries") {
+		order = append(order, str(o["id"]))
+	}
+	somaPut("timeEntries@order", order)
+}
