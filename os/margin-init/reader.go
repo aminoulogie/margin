@@ -875,7 +875,7 @@ func (th readerTheme) accent() color.RGBA {
 }
 
 // drawChrome is Soma's reader controls (BookChrome.tsx), floating over the page as glass:
-// top left, back and the contents; top right, Aa, line by line and the bookmark; at the
+// top left, back, the contents and the highlights; top right, Aa, line by line and the bookmark; at the
 // bottom, "Page N of M", a thin line through the book, and a strip of the chapter's pages
 // between ‹ and ›.
 func (c *console) drawChrome(p *page, th readerTheme) {
@@ -892,12 +892,14 @@ func (c *console) drawChrome(p *page, th readerTheme) {
 	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
 
 	// Top left: back, contents.
-	lp := image.Rect(24, 18, 24+200, 18+100)
+	lp := image.Rect(24, 18, 24+290, 18+100)
 	pill(lp)
 	iconBack(img, lp.Min.X+44, (lp.Min.Y+lp.Max.Y)/2, ink)
 	iconList(img, lp.Min.X+140, (lp.Min.Y+lp.Max.Y)/2, ink)
-	btn("shelf", image.Rect(0, 0, lp.Min.X+100, lp.Max.Y+10))
-	btn("contents", image.Rect(lp.Min.X+100, 0, lp.Max.X, lp.Max.Y+10))
+	iconPen(img, lp.Min.X+236, (lp.Min.Y+lp.Max.Y)/2, ink) // highlights and notes
+	btn("shelf", image.Rect(0, 0, lp.Min.X+95, lp.Max.Y+10))
+	btn("contents", image.Rect(lp.Min.X+95, 0, lp.Min.X+190, lp.Max.Y+10))
+	btn("marks", image.Rect(lp.Min.X+190, 0, lp.Max.X, lp.Max.Y+10))
 	// Top right: Aa, line by line, the bookmark.
 	rp := image.Rect(w-24-300, 18, w-24, 118)
 	pill(rp)
