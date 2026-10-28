@@ -2,10 +2,10 @@ package main
 
 import (
 	"crypto/sha256"
-	"math"
 	"encoding/hex"
 	"image"
 	"image/draw"
+	"math"
 
 	"margin-init/fonts"
 	"margin-init/ui"

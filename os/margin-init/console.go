@@ -57,7 +57,7 @@ type console struct {
 	pinMsg           string      // "Wrong passcode"
 	pinBG            *image.RGBA // the keypad, drawn once (passcode.go)
 	pinBGKey         string
-	pinBlur          *image.RGBA // what was on the screen when the keypad opened, blurred and dimmed
+	pinBlur          *image.RGBA              // what was on the screen when the keypad opened, blurred and dimmed
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
 	alarmDay         string                   // the day it was last dismissed
