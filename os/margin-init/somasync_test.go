@@ -625,3 +625,20 @@ func TestSomaWeekAndMove(t *testing.T) {
 		t.Fatalf("the PC sees the slot as %v", s)
 	}
 }
+
+// Reports switch between a week, a month and a year.
+func TestSomaReports(t *testing.T) {
+	c, _, _ := somaTestLink(t)
+	soma.sync()
+	drawMu.Lock()
+	defer drawMu.Unlock()
+	c.setMode(modeSoma)
+	c.somaTap("so:view:reports")
+	shot(t, c, "soma-reports")
+	for _, r := range []string{"month", "year", "week"} {
+		c.somaTap("so:rep:" + r)
+		if c.somaUI.repRange != r {
+			t.Fatalf("range %q", c.somaUI.repRange)
+		}
+	}
+}

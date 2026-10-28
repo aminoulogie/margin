@@ -23,18 +23,19 @@ import (
 // the rest is shown.
 
 type somaUI struct {
-	view    string    // "today", "calendar", "goals", "notes", "reports"
-	note    string    // the note open in "notes" ("" for the list)
-	month   time.Time // the calendar's month
-	sel     string    // the calendar's day
-	calWeek bool      // the calendar shows a week, not the month
-	moving  string    // a timed to-do being moved: the next time tapped is its new time
-	typing  bool
-	field   string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
-	editing string
-	url     string // the sync address, typed before the code
-	msg     string // the last thing that went wrong
-	slotY   int    // page y under the to-do being typed on the timeline
+	view     string    // "today", "calendar", "goals", "notes", "reports"
+	note     string    // the note open in "notes" ("" for the list)
+	month    time.Time // the calendar's month
+	sel      string    // the calendar's day
+	calWeek  bool      // the calendar shows a week, not the month
+	moving   string    // a timed to-do being moved: the next time tapped is its new time
+	repRange string    // the reports' range: "week", "month", "year"
+	typing   bool
+	field    string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
+	editing  string
+	url      string // the sync address, typed before the code
+	msg      string // the last thing that went wrong
+	slotY    int    // page y under the to-do being typed on the timeline
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -72,7 +73,7 @@ func (c *console) somaPage() *page {
 	}
 	soma.mu.Unlock()
 
-	h := map[string]int{"today": 2400, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3000}[su.view]
+	h := map[string]int{"today": 2400, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3400}[su.view]
 	img := canvas(w, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -612,119 +613,186 @@ func (c *console) somaReports(p *page, y int) int {
 	f := apple()
 	img := p.img
 	w, mx := c.s.W, 48
+	su := &c.somaUI
+	if su.repRange == "" {
+		su.repRange = "week"
+	}
+	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
+	seg := image.Rect(w/2-240, y+10, w/2+240, y+76)
+	ui.RoundRect(img, seg, 18, apCard2)
+	for i, m := range []string{"Week", "Month", "Year"} {
+		r := image.Rect(seg.Min.X+i*160, seg.Min.Y, seg.Min.X+(i+1)*160, seg.Max.Y)
+		if strings.ToLower(m) == su.repRange {
+			ui.RoundRect(img, r.Inset(5), 14, apCard)
+		}
+		apTextCenter(img, f.headline, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, m)
+		btn("so:rep:"+strings.ToLower(m), r)
+	}
+	y += 110
+
+	// The buckets: days for a week or a month, months for a year.
 	date := somaToday()
-
-	// Training: the last two weeks.
-	var sessions []*somaSession
-	for _, d := range days(date, 14) {
-		if s := somaTraining(d); s != nil {
-			sessions = append(sessions, s)
-		}
+	type bucket struct {
+		label string
+		days  []string
 	}
-	vol, sets := 0.0, 0
-	for _, s := range sessions {
-		vol += s.Volume
-		sets += s.Sets
-	}
-	y = somaSection(img, mx, y, "Training", fmt.Sprintf("%d sessions in 2 weeks  ·  %d sets  ·  %.0f kg", len(sessions), sets, vol))
-	if len(sessions) == 0 {
-		apText(img, f.callout, mx, y+30, apSecondary, "No training logged in the last two weeks.")
-		y += 60
-	}
-	for i := len(sessions) - 1; i >= 0; i-- {
-		s := sessions[i]
-		t, _ := time.Parse("2006-01-02", s.Date)
-		r := image.Rect(mx, y, w-mx, y+92)
-		ui.RoundRect(img, r, 18, apCard)
-		apText(img, f.headline, r.Min.X+30, r.Min.Y+40, apLabel, s.Split)
-		apText(img, f.caption, r.Min.X+30, r.Min.Y+76, apSecondary, t.Format("Mon 2 Jan"))
-		apText(img, f.callout, r.Min.X+420, r.Min.Y+58, apSecondary, fmt.Sprintf("%s  ·  %d sets  ·  %.0f kg  ·  %.0f kcal", s.Duration, s.Sets, s.Volume, s.Calories))
-		y += 102
-	}
-
-	// Nutrition: the last week, calories against the goal.
-	y += 20
-	y = somaSection(img, mx, y, "Nutrition", "last 7 days")
-	for _, d := range days(date, 7) {
-		n := somaNutrition(d)
-		t, _ := time.Parse("2006-01-02", d)
-		r := image.Rect(mx, y, w-mx, y+92)
-		ui.RoundRect(img, r, 18, apCard)
-		apText(img, f.headline, r.Min.X+30, r.Min.Y+56, apLabel, t.Format("Mon 2"))
-		if !n.Logged {
-			apText(img, f.callout, r.Min.X+200, r.Min.Y+56, apSecondary, "nothing logged")
-			y += 102
-			continue
-		}
-		bar := image.Rect(r.Min.X+200, r.Min.Y+30, r.Min.X+600, r.Min.Y+62)
-		ui.RoundRect(img, bar, 16, apCard2)
-		if n.GoalCals > 0 {
-			fill := min(n.Cals/n.GoalCals, 1.3) / 1.3
-			col := rgb(0x30d158)
-			if n.Cals > n.GoalCals*1.1 || n.Cals < n.GoalCals*0.8 {
-				col = rgb(0xff9f0a)
+	var bs []bucket
+	switch su.repRange {
+	case "year":
+		t, _ := time.Parse("2006-01-02", date)
+		for m := 11; m >= 0; m-- {
+			first := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -m, 0)
+			b := bucket{label: first.Format("Jan")[:1]}
+			for d := first; d.Month() == first.Month() && d.Format("2006-01-02") <= date; d = d.AddDate(0, 0, 1) {
+				b.days = append(b.days, d.Format("2006-01-02"))
 			}
-			ui.RoundRect(img, image.Rect(bar.Min.X, bar.Min.Y, bar.Min.X+max(int(float64(bar.Dx())*fill), 32), bar.Max.Y), 16, col)
+			bs = append(bs, b)
 		}
-		txt := fmt.Sprintf("%.0f/%.0f kcal  P %.0f/%.0f", n.Cals, n.GoalCals, n.P, n.GoalP)
-		if n.Kg > 0 {
-			txt += fmt.Sprintf("  %.1f kg", n.Kg)
+	default:
+		n := 7
+		if su.repRange == "month" {
+			n = 30
 		}
-		apText(img, f.callout, r.Min.X+630, r.Min.Y+58, apSecondary, clip(f.callout, txt, r.Max.X-r.Min.X-660))
-		y += 102
+		for _, d := range days(date, n) {
+			t, _ := time.Parse("2006-01-02", d)
+			l := t.Format("Mon")[:1]
+			if n == 30 {
+				l = ""
+				if t.Day()%5 == 0 {
+					l = strconv.Itoa(t.Day())
+				}
+			}
+			bs = append(bs, bucket{l, []string{d}})
+		}
 	}
+	// avg is a bucket's average over the days that have something; sum adds them up.
+	avg := func(b bucket, v func(string) (float64, bool)) float64 {
+		t, n := 0.0, 0
+		for _, d := range b.days {
+			if x, ok := v(d); ok {
+				t += x
+				n++
+			}
+		}
+		if n == 0 {
+			return 0
+		}
+		return t / float64(n)
+	}
+	sum := func(b bucket, v func(string) (float64, bool)) float64 {
+		t := 0.0
+		for _, d := range b.days {
+			if x, ok := v(d); ok {
+				t += x
+			}
+		}
+		return t
+	}
+	chart := func(title, note string, vals []float64, goal float64, col color.RGBA) {
+		y = somaSection(img, mx, y, title, note)
+		r := image.Rect(mx, y, w-mx, y+300)
+		ui.RoundRect(img, r, 22, apCard)
+		top := goal
+		for _, v := range vals {
+			top = max(top, v)
+		}
+		if top <= 0 {
+			top = 1
+		}
+		plot := image.Rect(r.Min.X+30, r.Min.Y+30, r.Max.X-30, r.Max.Y-60)
+		if goal > 0 {
+			gy := plot.Max.Y - int(float64(plot.Dy())*goal/top)
+			for x := plot.Min.X; x < plot.Max.X; x += 16 {
+				ui.Fill(img, image.Rect(x, gy, x+8, gy+2), apSecondary)
+			}
+		}
+		bw := plot.Dx() / max(len(vals), 1)
+		for i, v := range vals {
+			bh := int(float64(plot.Dy()) * v / top)
+			x := plot.Min.X + i*bw
+			if bh > 0 {
+				ui.RoundRect(img, image.Rect(x+bw/6, plot.Max.Y-max(bh, 6), x+bw-bw/6, plot.Max.Y), min(bw/4, 10), col)
+			}
+			apTextCenter(img, f.caption, x+bw/2, r.Max.Y-30, apSecondary, bs[i].label)
+		}
+		y += 330
+	}
+	series := func(v func(string) (float64, bool), useSum bool) []float64 {
+		out := make([]float64, len(bs))
+		for i, b := range bs {
+			if useSum && su.repRange == "year" {
+				out[i] = sum(b, v)
+			} else {
+				out[i] = avg(b, v)
+			}
+		}
+		return out
+	}
+	mean := func(vals []float64) float64 {
+		t, n := 0.0, 0
+		for _, v := range vals {
+			if v > 0 {
+				t += v
+				n++
+			}
+		}
+		if n == 0 {
+			return 0
+		}
+		return t / float64(n)
+	}
+	per := map[string]string{"week": "a day", "month": "a day", "year": "a day, by month"}[su.repRange]
 
-	// Habits: this week.
-	y += 20
-	monday := mondayOf(date)
-	var week []string
-	for _, d := range days(date, 7) {
-		if d >= monday {
-			week = append(week, d)
-		}
+	cals := series(func(d string) (float64, bool) { n := somaNutrition(d); return n.Cals, n.Logged }, false)
+	goalCals := somaNutrition(date).GoalCals
+	if goalCals == 0 {
+		goalCals = 2400
 	}
-	y = somaSection(img, mx, y, "Habits", "this week")
-	for _, h := range somaHabits() {
+	chart("Calories", fmt.Sprintf("%.0f kcal %s on average", mean(cals), per), cals, goalCals, rgb(0xfa114f))
+	prot := series(func(d string) (float64, bool) { n := somaNutrition(d); return n.P, n.Logged }, false)
+	chart("Protein", fmt.Sprintf("%.0f g %s on average", mean(prot), per), prot, max(somaNutrition(date).GoalP, 160), rgb(0x7dff00))
+
+	sessions := 0
+	trainVol := series(func(d string) (float64, bool) {
+		if s := somaTraining(d); s != nil {
+			sessions++
+			return s.Volume, true
+		}
+		return 0, false
+	}, true)
+	chart("Training", fmt.Sprintf("%d session%s  ·  volume in kg", sessions, map[bool]string{true: "", false: "s"}[sessions == 1]), trainVol, 0, rgb(0xff9f0a))
+
+	habits := somaHabits()
+	habitPct := series(func(d string) (float64, bool) {
+		if len(habits) == 0 {
+			return 0, false
+		}
 		n := 0
-		for _, d := range week {
+		for _, h := range habits {
 			if h.done(d) {
 				n++
 			}
 		}
-		r := image.Rect(mx, y, w-mx, y+76)
-		ui.RoundRect(img, r, 18, apCard)
-		apText(img, f.body, r.Min.X+30, r.Min.Y+50, apLabel, clip(f.body, h.Name, 460))
-		bar := image.Rect(r.Min.X+520, r.Min.Y+26, r.Max.X-150, r.Min.Y+50)
-		ui.RoundRect(img, bar, 12, apCard2)
-		if n > 0 {
-			ui.RoundRect(img, image.Rect(bar.Min.X, bar.Min.Y, bar.Min.X+max(bar.Dx()*n/max(len(week), 1), 24), bar.Max.Y), 12, somaColour(h.Color, apBlue))
-		}
-		apText(img, f.callout, r.Max.X-120, r.Min.Y+50, apSecondary, fmt.Sprintf("%d / %d", n, len(week)))
-		y += 86
-	}
+		return 100 * float64(n) / float64(len(habits)), true
+	}, false)
+	chart("Habits", fmt.Sprintf("%.0f%% done on average", mean(habitPct)), habitPct, 100, rgb(0x30d158))
 
-	// Reading: the last week.
-	y += 20
-	total := 0
-	for _, d := range days(date, 7) {
-		total += somaReading(d)
+	read := series(func(d string) (float64, bool) { m := somaReading(d); return float64(m), m > 0 }, true)
+	total := 0.0
+	for _, v := range read {
+		total += v
 	}
-	y = somaSection(img, mx, y, "Reading", fmt.Sprintf("%d min in 7 days", total))
-	top := 1
-	for _, d := range days(date, 7) {
-		top = max(top, somaReading(d))
-	}
-	bw := (w - 2*mx) / 7
-	for i, d := range days(date, 7) {
-		m := somaReading(d)
-		bh := 200 * m / top
-		x := mx + i*bw
-		ui.RoundRect(img, image.Rect(x+20, y+220-bh, x+bw-20, y+220), 10, apBlue)
-		t, _ := time.Parse("2006-01-02", d)
-		apTextCenter(img, f.caption, x+bw/2, y+250, apSecondary, t.Format("Mon"))
-		apTextCenter(img, f.caption, x+bw/2, y+200-bh, apSecondary, strconv.Itoa(m))
-	}
-	return y + 300
+	chart("Reading", fmt.Sprintf("%.0f min in all", total), read, 0, apBlue)
+
+	sleep := series(func(d string) (float64, bool) {
+		o := somaObj("nutrition/" + d)
+		if sl, ok := o["sleep"].(obj); ok && num(sl["hours"]) > 0 {
+			return num(sl["hours"]), true
+		}
+		return 0, false
+	}, false)
+	chart("Sleep", fmt.Sprintf("%.1f h a night on average", mean(sleep)), sleep, 8, rgb(0x5e5ce6))
+	return y
 }
 
 // somaTap handles the Soma tab's buttons. Caller holds drawMu.
@@ -777,6 +845,8 @@ func (c *console) somaTap(id string) bool {
 	case strings.HasPrefix(id, "so:step:"): // so:step:<project>:<step>
 		pj, st, _ := strings.Cut(strings.TrimPrefix(id, "so:step:"), ":")
 		somaStepTap(pj, st)
+	case strings.HasPrefix(id, "so:rep:"):
+		su.repRange = strings.TrimPrefix(id, "so:rep:")
 	case id == "so:cal:week", id == "so:cal:month":
 		su.calWeek = id == "so:cal:week"
 	case strings.HasPrefix(id, "so:wk:"):
