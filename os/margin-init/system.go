@@ -27,6 +27,7 @@ var settingsPanes = []settingsPane{
 	{"display", "Display & Brightness", rgb(0x0a84ff)},
 	{"wallpaper", "Wallpaper", rgb(0x5e5ce6)},
 	{"sleep", "Sleep & Alarm", rgb(0xff9f0a)},
+	{"tasks", "Task Manager", rgb(0x30d158)},
 	{"general", "General", rgb(0x8e8e93)},
 	{"power", "Restart & Shut Down", rgb(0xff3b30)},
 }
@@ -48,6 +49,10 @@ func paneGlyph(img *image.RGBA, id string, cx, cy int) {
 		ui.Fill(img, image.Rect(cx+13, cy-3, cx+16, cy+3), white)
 	case "display":
 		ui.DrawText(img, apple().captionBold, cx-15, cy+9, white, "AA")
+	case "tasks":
+		for i, hgt := range []int{10, 22, 16} {
+			ui.Fill(img, image.Rect(cx-14+i*10, cy+12-hgt, cx-8+i*10, cy+12), white)
+		}
 	case "sleep":
 		ui.Circle(img, cx, cy, 14, white)
 		ui.Circle(img, cx+7, cy-6, 12, rgb(0xff9f0a))
@@ -88,6 +93,8 @@ func (c *console) settingsPage() *page {
 		h = max(h, 2300) // taller than the screen: it scrolls
 	case "wallpaper":
 		h = max(h, 2200+len(c.walls.items)/3*560)
+	case "tasks":
+		h = max(h, 2400)
 	}
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, apGrouped)
@@ -218,6 +225,8 @@ func (c *console) settingsPage() *page {
 		}
 		y += 280
 		footer("The battery is the original one from 2014. Charge it with the 5 V 2 A adapter for the best results.")
+	case "tasks":
+		y = c.taskPane(p, x, y, pw)
 	case "sleep":
 		timeRow := func(r image.Rectangle, label, minus, plus string, mins int, on bool) {
 			apText(img, f.body, r.Min.X+30, r.Min.Y+56, apLabel, label)

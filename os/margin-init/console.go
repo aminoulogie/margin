@@ -66,6 +66,7 @@ type console struct {
 	ringsDay         string                   // the day the rings card shows ("" for today)
 	homeEdit         bool                     // Home's widgets are being rearranged (a long press)
 	lastMargin       mode                     // the Margin page last open (Home, Library, Store, Words)
+	tasks            taskState                // Settings > Task Manager (taskman.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
