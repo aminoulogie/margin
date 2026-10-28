@@ -70,7 +70,7 @@ func TestGPUScrollFollowsFinger(t *testing.T) {
 	c.pageTouch(TouchPoint{Down: true, X: 600, Y: 1500})
 	for _, y := range []int{1480, 1400, 1301, 1000, 777} {
 		c.pageTouch(TouchPoint{Moved: true, X: 600, Y: y})
-		if want := 1500 - y; c.scrollY() != want {
+		if want := max(1500-y-scrollSlop, 0); c.scrollY() != want { // past the slop, without a jump
 			t.Fatalf("finger at %d: page at %d, want %d", y, c.scrollY(), want)
 		}
 		if !c.sc.gpuOn || len(g.over) == 0 {
@@ -86,8 +86,8 @@ func TestGPUScrollFollowsFinger(t *testing.T) {
 	if c.sc.gpuOn || g.over != nil {
 		t.Fatal("the overlay is still up after the finger lifted")
 	}
-	if c.scrollY() != 723 {
-		t.Fatalf("settled at %d, want 723", c.scrollY())
+	if want := 1500 - 777 - scrollSlop; c.scrollY() != want {
+		t.Fatalf("settled at %d, want %d", c.scrollY(), want)
 	}
 	shows(t, c, g, "settled")
 	if differ(g.screen, c.s.buf, c.s, 0) != 0 {
@@ -171,6 +171,12 @@ func TestGPUFlingCaught(t *testing.T) {
 // flings it on; it ends painted into the page.
 func TestGPURow(t *testing.T) {
 	drawMu.Lock()
+	locked := true
+	defer func() { // a failure mustn't leave drawMu locked for the next test
+		if locked {
+			drawMu.Unlock()
+		}
+	}()
 	c, g := gpuScrollConsole(t)
 	y := c.barH + 600 + rowCH/2
 	r := c.rowByID("row")
@@ -184,10 +190,10 @@ func TestGPURow(t *testing.T) {
 	c.pageTouch(TouchPoint{Down: true, X: 900, Y: y})
 	for _, x := range []int{870, 500, 433, 120} {
 		c.pageTouch(TouchPoint{Moved: true, X: x, Y: y + 5})
-		if c.rowOffset("row") != 900-x || !c.sc.stripOn {
-			t.Fatalf("finger at %d: row at %d (strip %v), want %d", x, c.rowOffset("row"), c.sc.stripOn, 900-x)
+		if want := max(900-x-scrollSlop, 0); c.rowOffset("row") != want || !c.sc.stripOn {
+			t.Fatalf("finger at %d: row at %d (strip %v), want %d", x, c.rowOffset("row"), c.sc.stripOn, want)
 		}
-		expect(fmt.Sprint("row slid to ", 900-x))
+		expect(fmt.Sprint("row slid to ", 900-x-scrollSlop))
 	}
 	if g.strips != 1 {
 		t.Fatalf("the row went to the GPU %d times, want once", g.strips)
@@ -195,6 +201,7 @@ func TestGPURow(t *testing.T) {
 	lift(c, 3000, 120, y+5)
 	at := c.rowOffset("row")
 	drawMu.Unlock()
+	locked = false
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		drawMu.Lock()
@@ -209,7 +216,7 @@ func TestGPURow(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	drawMu.Lock()
-	defer drawMu.Unlock()
+	locked = true
 	end := r.contentW - r.r.Dx()
 	if c.rowOffset("row") <= at || c.rowOffset("row") > end {
 		t.Fatalf("flung from %d to %d (end %d)", at, c.rowOffset("row"), end)

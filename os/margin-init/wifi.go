@@ -95,6 +95,17 @@ scan)
 	need; up || exit 1
 	sleep 1
 	out=$(iw dev $IF scan 2>&1) || { echo "scan failed: $out (wifi debug)"; exit 1; }
+	if [ "$2" = "-m" ]; then # for Settings: signal, 1 if it needs a password, name (tab-separated)
+		echo "$out" | awk '
+			function put() { if (ssid != "") printf "%s\t%d\t%s\n", sig, lock, ssid }
+			/^BSS/ {put(); sig=""; ssid=""; lock=0}
+			/capability:/ && /Privacy/ {lock=1}
+			/^[ \t]*(RSN|WPA):/ {lock=1}
+			/signal:/ {sig=$2}
+			/^[ \t]*SSID: / {s=$0; sub(/^[ \t]*SSID: /,"",s); ssid=s}
+			END {put()}'
+		exit 0
+	fi
 	echo "$out" | awk '
 		/^BSS/ {sig=""}
 		/signal:/ {sig=$2}

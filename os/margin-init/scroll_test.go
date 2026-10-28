@@ -29,8 +29,8 @@ func TestScrollPageAndRow(t *testing.T) {
 	c.pageTouch(TouchPoint{Down: true, X: 900, Y: y})
 	c.pageTouch(TouchPoint{Moved: true, X: 500, Y: y + 5})
 	c.pageTouch(TouchPoint{Up: true, X: 500, Y: y + 5})
-	if got := c.rowOffset("row"); got != 400 {
-		t.Fatalf("row moved %d, want 400", got)
+	if got := c.rowOffset("row"); got != 400-scrollSlop { // it moves once past the slop, without jumping
+		t.Fatalf("row moved %d, want %d", got, 400-scrollSlop)
 	}
 	if c.scrollY() != 0 {
 		t.Fatal("a sideways move shouldn't scroll the page")

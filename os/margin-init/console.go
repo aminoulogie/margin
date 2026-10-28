@@ -72,6 +72,10 @@ type console struct {
 	apps             appsState                // Settings > Linux Apps (apps.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
+	press            pressState               // the button under a finger, shown pressed (press.go)
+	edge             edgeState                // a swipe in from the left edge, going back (edgeback.go)
+	tapFrom          image.Rectangle          // the button being tapped, on the screen (a book opens out of it)
+	wifi             wifiUI                   // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top
 	screenOn         bool
@@ -165,12 +169,14 @@ func newConsole(s *Screen) (*console, error) {
 	if c.kb, err = newKeyboard(s, c.input, c.keyboardShown); err != nil {
 		return nil, err
 	}
-	c.kb.dark = true                             // the terminal's keyboard
-	c.skb, err = newKeyboard(s, func(b []byte) { // typing on a page: the store's search, a word's meaning
+	c.kb.dark = true                                 // the terminal's keyboard
+	c.skb, err = newTextKeyboard(s, func(b []byte) { // typing on a page: the store's search, a word's meaning
 		if c.mode == modeWords {
 			c.wordsKey(b)
 		} else if c.mode == modeSoma {
 			c.somaKey(b)
+		} else if c.mode == modeSettings && c.wifi.typing {
+			c.wifiKey(b)
 		} else if c.mode == modeSettings {
 			c.appsKey(b)
 		} else {
@@ -178,7 +184,7 @@ func newConsole(s *Screen) (*console, error) {
 		}
 	}, func(visible bool) {
 		if !visible { // its hide key: stop typing
-			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing = false, false, false, false
+			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing, c.wifi.typing = false, false, false, false, false
 			c.showPage()
 		}
 	})
@@ -274,7 +280,7 @@ func (c *console) touchLoop() {
 					c.skb.touch(p)
 				case c.mode == modeWords && c.wui.edit && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
-				case c.mode == modeSettings && c.apps.typing && c.skb.visible && p.Y >= c.skb.y0:
+				case c.mode == modeSettings && (c.apps.typing || c.wifi.typing) && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeSoma && c.somaUI.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)

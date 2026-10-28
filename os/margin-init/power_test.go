@@ -3,17 +3,21 @@ package main
 import (
 	"bytes"
 	"image"
+	"path/filepath"
 	"testing"
 )
 
 func testConsole(t *testing.T) *console {
+	oldSettings := settingsPath // settings saved to a temp file, never the machine's own
+	settingsPath = filepath.Join(t.TempDir(), "settings.json")
+	t.Cleanup(func() { settingsPath = oldSettings })
 	s := newScreen(nil, 1920, 1200, 7680, 32, bitfield{16, 8, 0}, bitfield{8, 8, 0}, bitfield{0, 8, 0}, Rot90)
 	c, err := newConsole(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Defaults, whatever a settings file on this machine says.
-	c.cfg = savedSettings{Brightness: 80, ScreenOff: 5}
+	// Defaults, whatever a settings file on this machine says, and saved to a temp file.
+	c.cfg = savedSettings{Brightness: 80, ScreenOff: 5, Motion: 1}
 	// A fresh dictionary of saved words in a temp folder, no background fetching.
 	oldDir, oldDict, oldBg := dictDir, dict, dictBackground
 	dictDir, dict, dictBackground = t.TempDir(), newDictStore(), false
@@ -29,7 +33,7 @@ func testConsole(t *testing.T) *console {
 		c.screenOn = false // a toast's timer left running draws nothing after the test
 	})
 	// Nothing from Home in the background (not put back: stray arrivals read them later).
-	backgroundRedraws, homeLoads = false, false
+	backgroundRedraws, homeLoads, turnAhead, wifiAutoScan = false, false, false, false
 	setPalette(true)
 	return c
 }

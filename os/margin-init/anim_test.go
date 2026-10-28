@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"image"
+	"os"
 	"testing"
 	"time"
 )
@@ -102,20 +105,59 @@ func BenchmarkFrameRise(b *testing.B) {
 	benchFrame(b, func(c *console, old, nu []byte, t float64) { c.riseFrame(old, nu, c.lookupSheet(), t) })
 }
 
-// Off by default: screens change at once, no frames.
-func TestAnimationsOffByDefault(t *testing.T) {
+// Motion is on by default, and once for settings saved before it was (they said
+// "animations": false only because that was the default); after that the switch decides.
+func TestMotionOnByDefault(t *testing.T) {
 	c := testConsole(t)
-	c.cfg = loadSettings()
-	c.showPage()
-	before := animFrames
-	c.transition("push", c.fullSheet(), func() { c.setMode(modeSettings) })
-	if c.cfg.Animations || animFrames != before {
-		t.Error("animations should be off unless turned on")
+	c.cfg = loadSettings() // no file
+	if !c.cfg.Animations || !c.cfg.SmoothScroll {
+		t.Fatalf("a fresh tablet should have motion on: %+v", c.cfg)
 	}
+	os.WriteFile(settingsPath, []byte(`{"brightness": 60, "animations": false, "smooth_scroll": false}`), 0o644)
+	if s := loadSettings(); !s.Animations || !s.SmoothScroll || s.Brightness != 60 {
+		t.Fatalf("settings from before should be moved on once: %+v", s)
+	}
+	c.cfg = loadSettings()
+	c.setMode(modeSettings)
 	c.setPane = "display"
 	c.showPage()
-	tapButton(t, c, "anim")
-	if !c.cfg.Animations {
-		t.Error("the switch should turn them on")
+	tapButton(t, c, "anim") // off
+	if c.cfg.Animations || loadSettings().Animations {
+		t.Fatal("the switch should turn them off, and it should stay off")
+	}
+	before := animFrames
+	c.transition("push", c.fullSheet(), func() { c.setMode(modeBooksHome) })
+	if animFrames != before {
+		t.Error("animations off: screens change at once, no frames")
+	}
+}
+
+// Tapping a book in the Library opens it out of its cover (frames drawn), ending exactly on
+// the book's page.
+func TestBookOpensFromItsCover(t *testing.T) {
+	c := readerConsole(t)
+	c.cfg.Animations = true
+	c.setMode(modeBooks)
+	var cover image.Rectangle
+	for _, b := range c.page.buttons {
+		if b.id == "book0" {
+			cover = b.r.Add(image.Pt(0, c.barH))
+		}
+	}
+	old := append([]byte(nil), c.s.buf...)
+	before := animFrames
+	tapButton(t, c, "book0")
+	if c.mode != modeReader || animFrames == before {
+		t.Fatalf("mode %v, %d frames", c.mode, animFrames-before)
+	}
+	end := append([]byte(nil), c.s.buf...)
+	c.redrawAll()
+	if !sameBelowBar(c, end, c.s.buf) {
+		t.Fatal("the opening didn't end on the book's page")
+	}
+	// Frames to look at: a third and two thirds of the way.
+	for _, at := range []float64{0.3, 0.65} {
+		c.openFrame(old, end, cover, spring(at))
+		shot(t, c, fmt.Sprintf("anim-open-%02.0f", at*100))
 	}
 }

@@ -372,6 +372,7 @@ func (c *console) coverRow(p *page, id string, y int, items []rowItem, bg color.
 	paint(p.img)
 	p.addRow(id, band, contentW, paint)
 	r := &p.rows[len(p.rows)-1]
+	r.snap = rowCW + rowGap
 	r.covers = map[string]bool{}
 	for _, ri := range items {
 		if ri.it != nil && ri.it.cover != "" {
@@ -472,6 +473,7 @@ func (c *console) paintArrived() {
 		}
 		if hit {
 			r.paint(c.page.img)
+			c.pagePainted(r.r.Min.Y, r.r.Max.Y)
 			painted = append(painted, r.r)
 		}
 	}

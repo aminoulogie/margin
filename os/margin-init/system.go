@@ -103,6 +103,8 @@ func (c *console) settingsPage() *page {
 		h = max(h, 2400)
 	case "apps":
 		h = max(h, 900+(len(linuxApps)+len(c.apps.results)+12)*140)
+	case "wifi":
+		h = max(h, 1700+len(c.wifi.nets)*88)
 	}
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, apGrouped)
@@ -168,49 +170,7 @@ func (c *console) settingsPage() *page {
 	const rh = 88
 	switch pane.id {
 	case "wifi":
-		ssid, ip := savedSSID(), wifiAddr()
-		rows := groupRows(img, x, y, pw, 1, rh)
-		apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+56, apLabel, "Wi-Fi")
-		iosSwitch(img, rows[0].Max.X-24, (rows[0].Min.Y+rows[0].Max.Y)/2, ip != "" || c.wifiBusy, apDark)
-		if ip == "" && ssid != "" {
-			p.buttons = append(p.buttons, button{"wifi", rows[0]}) // on: join the saved network
-		}
-		y += rh + 20
-		if ssid != "" {
-			header("Network")
-			rows = groupRows(img, x, y, pw, 2, rh)
-			if ip != "" {
-				iconCheck(img, rows[0].Min.X+26, (rows[0].Min.Y+rows[0].Max.Y)/2, apBlue)
-			}
-			apText(img, f.body, rows[0].Min.X+76, rows[0].Min.Y+56, apLabel, ssid)
-			state := "Not Connected"
-			if ip != "" {
-				state = "Connected"
-			}
-			apTextRight(img, f.body, rows[0].Max.X-30, rows[0].Min.Y+56, apSecondary, state)
-			label := "Reconnect"
-			if c.wifiBusy {
-				label = "Connecting…"
-			}
-			apText(img, f.body, rows[1].Min.X+30, rows[1].Min.Y+56, apBlue, label)
-			p.buttons = append(p.buttons, button{"wifi", rows[1]})
-			y += 2 * rh
-		}
-		if ip != "" {
-			header("Address")
-			rows = groupRows(img, x, y, pw, 2, rh)
-			value(rows[0], "IP Address", ip)
-			value(rows[1], "SSH", "root@"+ip)
-			y += 2 * rh
-			if a := sendAddress(); a != "" {
-				header("Send to Books")
-				rows = groupRows(img, x, y, pw, 1, rh)
-				value(rows[0], "From a phone's browser", a)
-				y += rh
-				footer("On a phone or computer on the same Wi-Fi, open this address to send EPUB books to the Library.")
-			}
-		}
-		footer("To join a network, open Terminal and type: wifi connect \"name\" \"password\". The network is joined again at every start.")
+		y = c.wifiPane(p, x, y, pw)
 	case "battery":
 		pct, charging := ui.ReadBattery()
 		rows := groupRows(img, x, y, pw, 1, 260)
@@ -366,7 +326,7 @@ func (c *console) settingsPage() *page {
 		case c.gpuStarting:
 			footer("Starting the GPU...")
 		default:
-			footer("Off: every screen appears at once, like an e-reader. On: the GPU shows the screen (through Android's SurfaceFlinger), so scrolling follows your finger at 60 frames a second.")
+			footer("Pages follow your finger and glide on when flicked, drawn by the processor as fast as the panel refreshes (60 times a second at most). On, the GPU shows the screen instead (through Android's SurfaceFlinger).")
 		}
 	case "general":
 		header("About")

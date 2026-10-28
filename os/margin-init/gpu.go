@@ -173,6 +173,23 @@ func (c *console) riseQuads(old, nu int32, r image.Rectangle, t float64) []quad 
 	}
 }
 
+// openQuads: openFrame's new screen growing out of r.
+func (c *console) openQuads(r image.Rectangle, t float64) []quad {
+	w, h, bar := c.s.W, c.s.H, c.barH
+	back := c.same(gpuOld, frect{0, bar, w, h})
+	back.mul = float32(1 - openDim*t)
+	d := c.openRect(r, t)
+	q := []quad{back, c.pic(gpuNew, d, frect{0, bar, w, h})}
+	hf := float32(c.s.fbH)
+	for _, e := range c.openEdges(d) {
+		e.y0, e.y1 = max(e.y0, bar), min(e.y1, h)
+		q = append(q, quad{kind: 3, x0: float32(e.y0), y0: hf - float32(e.x0), x1: float32(e.y1), y1: hf - float32(e.x1),
+			a0: float32(1 - t), a1: float32(1 - t),
+			r: float32(apSeparator.R) / 255, g: float32(apSeparator.G) / 255, b: float32(apSeparator.B) / 255})
+	}
+	return append(q, c.same(gpuNew, frect{0, 0, w, bar}))
+}
+
 func (c *console) slideQuads(t float64, dir int) []quad {
 	w, h, bar := c.s.W, c.s.H, c.barH
 	o := int(float64(w) * t)

@@ -108,6 +108,11 @@ type Screen struct {
 	shadow     []byte
 	shadowDev  io.WriterAt
 	shadowWarm bool
+	// frame: a moving picture's frame (a scroll, a transition) is being flushed. Nearly every
+	// row changes, so it goes out as is, without comparing or copying the shadow; the next
+	// ordinary Flush takes a fresh shadow (shadowStale).
+	frame       bool
+	shadowStale bool
 }
 
 func newScreen(dev io.WriterAt, fbW, fbH, stride, bpp int, red, green, blue bitfield, rot Rotation) *Screen {
@@ -151,10 +156,15 @@ func (s *Screen) Flush() error {
 	if s.dev == nil {
 		return nil
 	}
-	if s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm {
-		s.shadow = append(s.shadow[:0], s.buf...) // first, or a new device: send it all
-		s.shadowDev, s.shadowWarm = s.dev, s.warm
-	} else {
+	switch {
+	case s.frame:
+		s.shadowStale = true
+	case s.shadow == nil || s.shadowDev != s.dev || s.shadowWarm != s.warm || s.shadowStale:
+		// First, a new device, or after frames: the rows not dirty are on the device as
+		// they are in buf, so buf is what it shows once these go.
+		s.shadow = append(s.shadow[:0], s.buf...)
+		s.shadowDev, s.shadowWarm, s.shadowStale = s.dev, s.warm, false
+	default:
 		row := func(y int) bool { // changed since sent
 			a, b := y*s.stride, (y+1)*s.stride
 			return !bytes.Equal(s.buf[a:b], s.shadow[a:b])

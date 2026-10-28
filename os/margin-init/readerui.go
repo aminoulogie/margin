@@ -780,7 +780,11 @@ func (c *console) readerTap(id string) bool {
 		if _, err := fmt.Sscanf(id, "book%d", &i); err == nil && i < len(c.shelf) {
 			c.fromStore = false
 			c.readerFrom = c.mode
-			c.transition("push", image.Rectangle{}, func() { c.openBookAt(c.shelf[i].path) })
+			kind, from := "push", c.tapFrom
+			if !from.Empty() {
+				kind = "open" // the book grows out of its cover
+			}
+			c.transition(kind, from, func() { c.openBookAt(c.shelf[i].path) })
 		}
 		return true
 	case id == "shelf:prev" || id == "shelf:next":

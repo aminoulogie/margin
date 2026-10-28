@@ -68,6 +68,7 @@ func (c *console) showPage() {
 		return
 	}
 	c.endGPUScroll()
+	c.sc.cpuOn, c.sc.motion, c.press.on = false, nil, false // whatever moved or was pressed, drawn again
 	c.pageGen++
 	covers.mu.Lock()
 	covers.loaded = func(url string) { // whichever screen shows it now
@@ -101,10 +102,11 @@ func (c *console) showPage() {
 	}
 	c.blitPage() // the window of a tall page that's scrolled to
 	c.prefetchPage()
+	c.prefetchTurn()
 	if c.mode != modeReader { // the reader draws its own, under its overlays
 		c.drawToast()
 	}
-	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && c.apps.typing) {
+	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && (c.apps.typing || c.wifi.typing)) {
 		c.skb.draw()
 		c.drawTypeBar()
 	}
@@ -125,14 +127,19 @@ func (c *console) pageTap(x, y int) {
 	if c.page == nil {
 		return
 	}
-	id := c.page.hit(x, c.pageY(y))
-	if id == "" {
-		return
+	if id, r := c.page.hitRect(x, c.pageY(y)); id != "" {
+		c.tapFrom, _ = c.onScreen(r, y)
+		c.tapID(id)
+		c.tapFrom = image.Rectangle{}
 	}
+}
+
+// tapID does what the page's button id does, as a tap on it. Caller holds drawMu.
+func (c *console) tapID(id string) {
 	if id != c.confirm {
 		c.confirm = ""
 	}
-	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) || c.appsTap(id) || c.appsSearchTap(id) {
+	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) || c.appsTap(id) || c.appsSearchTap(id) || c.wifiTap(id) {
 		return
 	}
 	switch {
