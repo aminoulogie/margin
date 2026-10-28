@@ -923,3 +923,93 @@ func somaMoveTodo(id, date string, start int) {
 	o["scope"], o["date"], o["cleared"] = "day", date, false
 	somaPut("todos#"+id, o)
 }
+
+// --- logging food, water and training from the tablet ----------------------------------------
+
+// somaDay is the day's nutrition record, made the way Soma's emptyDay does if there's none.
+func somaDay(date string) obj {
+	if o := somaObj("nutrition/" + date); o != nil {
+		return o
+	}
+	return obj{"goals": obj{"cals": 2400, "protein": 160, "carbs": 260, "fat": 70, "water": 3500}, "water": 0, "creatine": 0, "items": []any{}}
+}
+
+// parseFood reads "Chicken wrap 450 35": a name, then calories, then protein (both optional).
+func parseFood(s string) (name string, cals, protein float64) {
+	f := strings.Fields(s)
+	var nums []float64
+	for len(f) > 0 {
+		v, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(f[len(f)-1]), "g"), "kcal"), 64)
+		if err != nil || len(nums) == 2 {
+			break
+		}
+		nums = append([]float64{v}, nums...)
+		f = f[:len(f)-1]
+	}
+	name = strings.Join(f, " ")
+	if len(nums) > 0 {
+		cals = nums[0]
+	}
+	if len(nums) > 1 {
+		protein = nums[1]
+	}
+	return
+}
+
+// somaAddFood logs what was eaten now, as a FoodItem with the macros typed and the rest zero.
+func somaAddFood(text string) bool {
+	name, cals, p := parseFood(text)
+	if name == "" || cals <= 0 {
+		return false
+	}
+	date := somaToday()
+	day := somaDay(date)
+	items, _ := day["items"].([]any)
+	now := time.Now().UnixMilli()
+	meal := "Snacks"
+	switch h := time.Now().In(displayZone).Hour(); {
+	case h < 11:
+		meal = "Breakfast"
+	case h < 16:
+		meal = "Lunch"
+	case h >= 18:
+		meal = "Dinner"
+	}
+	it := obj{"name": name, "serving": 1, "unit": "serving", "cals": cals, "p": p, "c": 0, "f": 0, "fiber": 0,
+		"sodium": 0, "potassium": 0, "calcium": 0, "iron": 0, "magnesium": 0, "zinc": 0, "meal": meal,
+		"loggedAt": now, "eatenAt": now}
+	day["items"] = append(items, it)
+	somaPut("nutrition/"+date, day)
+	return true
+}
+
+func somaAddWater(ml float64) {
+	date := somaToday()
+	day := somaDay(date)
+	day["water"] = max(0, num(day["water"])+ml)
+	somaPut("nutrition/"+date, day)
+}
+
+// parseWorkout reads "Push 60": the split, then minutes.
+func parseWorkout(s string) (split string, mins int) {
+	f := strings.Fields(s)
+	if len(f) > 1 {
+		if v, err := strconv.Atoi(strings.TrimSuffix(f[len(f)-1], "min")); err == nil {
+			mins, f = v, f[:len(f)-1]
+		}
+	}
+	return strings.Join(f, " "), mins
+}
+
+// somaLogWorkout saves a session that just ended, without its sets (log those in Train).
+func somaLogWorkout(text string) bool {
+	split, mins := parseWorkout(text)
+	if split == "" || mins <= 0 {
+		return false
+	}
+	date := somaToday()
+	somaPut("history/"+date, obj{"timestamp": time.Now().UnixMilli(), "split": split,
+		"durationFormatted": fmt.Sprintf("%d:00", mins), "caloriesBurned": mins * 6, "totalVol": 0,
+		"totalSets": 0, "axialVol": 0, "exercises": []any{}, "muscles": obj{}})
+	return true
+}

@@ -73,7 +73,7 @@ func (c *console) somaPage() *page {
 	}
 	soma.mu.Unlock()
 
-	h := map[string]int{"today": 2400, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3400}[su.view]
+	h := map[string]int{"today": 3200, "calendar": 6500, "goals": 6000, "notes": 8000, "reports": 3400}[su.view]
 	img := canvas(w, max(h, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img, header: tabsH}
@@ -205,6 +205,25 @@ func (c *console) somaToday(p *page, y int) int {
 		y += 60
 	}
 	y = c.somaHabitRows(p, habits, date, y)
+
+	// Food, water and training, logged here.
+	y += 20
+	n := somaNutrition(date)
+	y = somaSection(img, mx, y, "Food", fmt.Sprintf("%.0f kcal  ·  %.0f g protein  ·  %.0f ml water", n.Cals, n.P, n.Water))
+	for i, ml := range []int{250, 500} {
+		r := image.Rect(mx+i*230, y, mx+i*230+210, y+84)
+		ui.RoundRect(img, r, 42, apCard2)
+		apTextCenter(img, f.headline, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, rgb(0x00d8ff), fmt.Sprintf("+%d ml", ml))
+		btn(fmt.Sprintf("so:water:%d", ml), r)
+	}
+	y += 104
+	y = c.somaAddRow(p, "food", "Add food: name, kcal, protein (Wrap 450 35)", y)
+	if s := somaTraining(date); s != nil {
+		apText(img, f.callout, mx, y+40, apSecondary, fmt.Sprintf("Trained today: %s, %s", s.Split, s.Duration))
+		y += 70
+	} else {
+		y = c.somaAddRow(p, "workout", "Log a workout: split, minutes (Push 60)", y)
+	}
 
 	y += 20
 	y = somaSection(img, mx, y, "Reading", fmt.Sprintf("%d min today", somaReading(date)))
@@ -863,6 +882,9 @@ func (c *console) somaTap(id string) bool {
 		m, _ := strconv.Atoi(strings.TrimPrefix(id, "so:moveto:"))
 		somaMoveTodo(su.moving, su.sel, m)
 		su.moving = ""
+	case strings.HasPrefix(id, "so:water:"):
+		ml, _ := strconv.Atoi(strings.TrimPrefix(id, "so:water:"))
+		somaAddWater(float64(ml))
 	case strings.HasPrefix(id, "so:amt:"): // so:amt:<habit>:<delta>
 		h, d, _ := strings.Cut(strings.TrimPrefix(id, "so:amt:"), ":")
 		delta, _ := strconv.ParseFloat(d, 64)
@@ -945,6 +967,14 @@ func (c *console) somaDone() {
 	su.typing, su.editing = false, ""
 	c.skb.visible = false
 	switch su.field {
+	case "food":
+		if text != "" && !somaAddFood(text) {
+			su.msg = "Type the food, then its calories (and protein): Wrap 450 35"
+		}
+	case "workout":
+		if text != "" && !somaLogWorkout(text) {
+			su.msg = "Type the split, then the minutes: Push 60"
+		}
 	case "todo":
 		somaAddTodo(text, "day", somaToday())
 	case "week":

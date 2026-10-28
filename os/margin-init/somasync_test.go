@@ -642,3 +642,36 @@ func TestSomaReports(t *testing.T) {
 		}
 	}
 }
+
+// Food, water and a workout logged on the tablet reach the PC as Soma keeps them.
+func TestSomaLogging(t *testing.T) {
+	if n, c, p := parseFood("Chicken wrap 450 35g"); n != "Chicken wrap" || c != 450 || p != 35 {
+		t.Fatalf("parseFood: %q %v %v", n, c, p)
+	}
+	c, relay, k := somaTestLink(t)
+	soma.sync()
+	today := somaToday()
+	relay.recs = map[string]struct {
+		seq  int64
+		blob string
+	}{} // no training today yet
+	delete(soma.Recs, "history/"+today)
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:water:500")
+	c.somaTap("so:type:food")
+	c.somaKey([]byte("Wrap 450 35\r"))
+	c.somaTap("so:type:workout")
+	c.somaKey([]byte("Pull 55\r"))
+	drawMu.Unlock()
+	soma.sync()
+	day, _ := relay.pcGet(t, k, "nutrition/"+today)
+	items := day["items"].([]any)
+	last := items[len(items)-1].(obj)
+	if day["water"] != float64(2000) || last["name"] != "Wrap" || last["cals"] != float64(450) || last["p"] != float64(35) || last["meal"] == "" {
+		t.Fatalf("the PC sees the day as %v", day)
+	}
+	if h, _ := relay.pcGet(t, k, "history/"+today); h["split"] != "Pull" || h["durationFormatted"] != "55:00" || h["exercises"] == nil {
+		t.Fatalf("the PC sees the workout as %v", h)
+	}
+}
