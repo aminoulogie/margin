@@ -527,3 +527,75 @@ func TestSleepAndAlarm(t *testing.T) {
 		t.Fatal("sleepStart still set")
 	}
 }
+
+// Amounts climb like Soma's ramps; runs forgive a missed day a week; habits group by time;
+// to-dos take a priority; the evening review moves what's left to tomorrow.
+func TestSomaHabitsAndReview(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	today := somaToday()
+	d0, _ := time.Parse("2006-01-02", today)
+	day := func(n int) string { return d0.AddDate(0, 0, n).Format("2006-01-02") }
+	at := time.Now().UnixMilli()
+	// A ramp from 10 pages, +5 a day it's met, started two days ago: met both days, so today's is 20.
+	relay.pcPut(t, k, "habits#r1", obj{"id": "r1", "name": "Read pages", "color": "#30d158", "history": obj{},
+		"ramp": obj{"start": 10, "target": 50, "step": 5, "from": day(-2), "unit": "page", "advance": "earned"},
+		"amountLog": obj{day(-2): 10, day(-1): 15}}, at)
+	// Done every day for two weeks but one: a 13-day run (the miss is forgiven).
+	hist := obj{}
+	for i := 1; i <= 14; i++ {
+		if i != 5 {
+			hist[day(-i)] = true
+		}
+	}
+	relay.pcPut(t, k, "habits#s1", obj{"id": "s1", "name": "Stretch", "color": "#0a84ff", "history": hist}, at)
+	soma.sync()
+	var r1, s1 somaHabit
+	for _, h := range somaHabits() {
+		switch h.ID {
+		case "r1":
+			r1 = h
+		case "s1":
+			s1 = h
+		}
+	}
+	if _, rung, _ := r1.amount(today); rung != 20 {
+		t.Fatalf("today's rung %v, want 20", rung)
+	}
+	if n := s1.streak(today); n != 13 {
+		t.Fatalf("run %d, want 13", n)
+	}
+
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	for i := 0; i < 4; i++ {
+		c.somaTap("so:amt:r1:5")
+	}
+	c.somaTap("so:when:s1")
+	c.somaTap("so:prio:t1")
+	c.somaTap("so:type:todo")
+	c.somaKey([]byte("Later\r"))
+	c.somaTap("so:todo:t1")
+	shot(t, c, "soma-today")
+	n := somaMoveToTomorrow()
+	drawMu.Unlock()
+	soma.sync()
+
+	h, _ := relay.pcGet(t, k, "habits#r1")
+	if h["amountLog"].(obj)[today] != float64(20) || h["history"].(obj)[today] != true {
+		t.Fatalf("the PC sees the ramp as %v", h)
+	}
+	if s, _ := relay.pcGet(t, k, "habits#s1"); s["time"] != "morning" {
+		t.Fatalf("time %v", s["time"])
+	}
+	if t1, _ := relay.pcGet(t, k, "todos#t1"); t1["priority"] != "high" || t1["date"] != today {
+		t.Fatalf("t1 %v (done: it stays today)", t1)
+	}
+	if n != 1 {
+		t.Fatalf("moved %d, want 1 (Later)", n)
+	}
+	for _, td := range somaTodos() {
+		if td.Text == "Later" && td.Date != day(1) {
+			t.Fatalf("Later is on %s", td.Date)
+		}
+	}
+}

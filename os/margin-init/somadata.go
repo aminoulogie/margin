@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strconv"
@@ -166,6 +167,7 @@ func somaToggleHabit(id string) error {
 
 type somaTodo struct {
 	ID, Text, Date, Scope, Due string
+	Priority                   string // "high", "low", or "" (Soma: TodoItem.priority)
 	Done, Cleared              bool
 	SlotDate                   string
 	SlotStart, SlotMins        int
@@ -174,7 +176,7 @@ type somaTodo struct {
 func somaTodos() []somaTodo {
 	var out []somaTodo
 	for _, o := range somaList("todos") {
-		t := somaTodo{ID: str(o["id"]), Text: str(o["text"]), Date: str(o["date"]), Scope: str(o["scope"]), Due: str(o["due"])}
+		t := somaTodo{ID: str(o["id"]), Text: str(o["text"]), Date: str(o["date"]), Scope: str(o["scope"]), Due: str(o["due"]), Priority: str(o["priority"])}
 		t.Done, _ = o["done"].(bool)
 		t.Cleared, _ = o["cleared"].(bool)
 		if t.Scope != "week" {
@@ -677,4 +679,230 @@ func somaRingsFor(date string) []somaRing {
 		{"Water", "ml", n.Water, goal("water", 3500), 0x00d8ff, 0x3dffe8},
 		{"Burned", "cal", burnt, 500, 0xff6a00, 0xffc000},
 	}
+}
+
+// --- amounts (habit-ramp.ts): a habit that climbs, a little more each day -------------------
+
+type somaRampT struct {
+	Start, Target, Step float64
+	From, Unit, Advance string
+}
+
+func (h somaHabit) rampOf() *somaRampT {
+	r, ok := h.o["ramp"].(obj)
+	if !ok {
+		return nil
+	}
+	return &somaRampT{num(r["start"]), num(r["target"]), num(r["step"]), str(r["from"]), str(r["unit"]), str(r["advance"])}
+}
+
+func (r *somaRampT) build() bool { return r.Target >= r.Start }
+
+func (r *somaRampT) meets(rung float64, v float64, ok bool) bool {
+	if !ok {
+		return false
+	}
+	if r.build() {
+		return v >= rung-1e-6
+	}
+	return v <= rung+1e-6
+}
+
+func (r *somaRampT) rungAfter(n int) float64 {
+	step := math.Abs(r.Step)
+	var rung float64
+	if r.build() {
+		rung = min(r.Target, r.Start+step*float64(n))
+	} else {
+		rung = max(r.Target, r.Start-step*float64(n))
+	}
+	if r.Unit == "min" {
+		rung = math.Round(rung*60) / 60
+	}
+	return rung
+}
+
+// rungOn is the day's amount to reach (rungOn).
+func (r *somaRampT) rungOn(date string, log obj) float64 {
+	from, err1 := time.Parse("2006-01-02", r.From)
+	d, err2 := time.Parse("2006-01-02", date)
+	if err1 != nil || err2 != nil {
+		return r.Start
+	}
+	elapsed := int(math.Round(d.Sub(from).Hours() / 24))
+	if elapsed <= 0 {
+		return r.Start
+	}
+	if r.Advance == "calendar" {
+		return r.rungAfter(elapsed)
+	}
+	earned := 0
+	for i := 0; i < elapsed; i++ {
+		v, ok := log[from.AddDate(0, 0, i).Format("2006-01-02")].(float64)
+		if r.meets(r.rungAfter(earned), v, ok) {
+			earned++
+		}
+	}
+	return r.rungAfter(earned)
+}
+
+// somaAmount is a ramp habit's day: what's logged and what's needed.
+func (h somaHabit) amount(date string) (logged, rung float64, unit string) {
+	r := h.rampOf()
+	if r == nil {
+		return 0, 0, ""
+	}
+	log, _ := h.o["amountLog"].(obj)
+	logged = num(log[date])
+	return logged, r.rungOn(date, log), r.Unit
+}
+
+// somaLogAmount adds delta to today's amount (logAmount), and ticks the day when it's met.
+func somaLogAmount(id string, delta float64) {
+	o := somaObj("habits#" + id)
+	if o == nil {
+		return
+	}
+	h := somaHabit{ID: id, o: o}
+	r := h.rampOf()
+	if r == nil {
+		return
+	}
+	date := somaToday()
+	log, _ := o["amountLog"].(obj)
+	if log == nil {
+		log = obj{}
+	}
+	v := max(0, num(log[date])+delta)
+	if r.Unit == "min" {
+		v = math.Round(v*60) / 60
+	} else {
+		v = math.Round(v)
+	}
+	log[date] = v
+	o["amountLog"] = log
+	hist, _ := o["history"].(obj)
+	if hist == nil {
+		hist = obj{}
+	}
+	hist[date] = r.meets(r.rungOn(date, log), v, true)
+	o["history"] = hist
+	somaPut("habits#"+id, o)
+}
+
+// rampStep is how much one tap adds: a sensible amount for the unit.
+func rampStep(unit string) float64 {
+	switch unit {
+	case "sec":
+		return 10
+	case "min":
+		return 5
+	case "page":
+		return 5
+	}
+	return 1
+}
+
+// --- streaks: a run of days, one missed day allowed each week --------------------------------
+
+// streak counts back from today (or yesterday, while today isn't done yet): a missed day is
+// forgiven once per Monday-to-Sunday week.
+func (h somaHabit) streak(today string) int {
+	d, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return 0
+	}
+	if !h.done(today) {
+		d = d.AddDate(0, 0, -1)
+	}
+	n := 0
+	forgiven := map[string]bool{}
+	for i := 0; i < 3650; i++ {
+		day := d.Format("2006-01-02")
+		if h.done(day) {
+			n++
+		} else {
+			wk := mondayOf(day)
+			if forgiven[wk] {
+				break
+			}
+			forgiven[wk] = true
+		}
+		d = d.AddDate(0, 0, -1)
+		if since := str(h.o["since"]); since != "" && d.Format("2006-01-02") < since {
+			break
+		}
+		if i > 7 && n == 0 {
+			break
+		}
+	}
+	return n
+}
+
+// time is when a habit is done: "morning", "evening", or "" (any time). Kept in Soma's habit.
+func (h somaHabit) when() string { return str(h.o["time"]) }
+
+func somaHabitWhen(id string) {
+	o := somaObj("habits#" + id)
+	if o == nil {
+		return
+	}
+	switch str(o["time"]) {
+	case "":
+		o["time"] = "morning"
+	case "morning":
+		o["time"] = "evening"
+	default:
+		delete(o, "time")
+	}
+	somaPut("habits#"+id, o)
+}
+
+// --- to-dos: priority, and the evening review ------------------------------------------------
+
+func (t somaTodo) rank() int {
+	switch t.Priority {
+	case "high":
+		return 0
+	case "low":
+		return 2
+	}
+	return 1
+}
+
+func somaTodoPriority(id string) {
+	o := somaObj("todos#" + id)
+	if o == nil {
+		return
+	}
+	switch str(o["priority"]) {
+	case "":
+		o["priority"] = "high"
+	case "high":
+		o["priority"] = "low"
+	default:
+		delete(o, "priority")
+	}
+	somaPut("todos#"+id, o)
+}
+
+// somaMoveToTomorrow moves today's unfinished to-dos onto tomorrow (the evening review).
+func somaMoveToTomorrow() int {
+	today := somaToday()
+	d, _ := time.Parse("2006-01-02", today)
+	tomorrow := d.AddDate(0, 0, 1).Format("2006-01-02")
+	n := 0
+	for _, t := range somaTodos() {
+		if t.Done || t.Scope != "day" || !t.active(today) {
+			continue
+		}
+		o := somaObj("todos#" + t.ID)
+		o["date"] = tomorrow
+		if s, ok := o["slot"].(obj); ok && str(s["date"]) == today {
+			s["date"] = tomorrow
+		}
+		somaPut("todos#"+t.ID, o)
+		n++
+	}
+	return n
 }

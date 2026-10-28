@@ -1013,6 +1013,13 @@ func (c *console) readTick() {
 	c.lastRead = now
 	if d > 0 && d < 2*time.Minute {
 		c.lib.Reading[now.Format("2006-01-02")] += int(d.Seconds())
+		// Soma's reading log counts it too, a minute at a time (reading-clock.ts does the same
+		// for a book open in Soma).
+		if c.somaReadSecs += d.Seconds(); c.somaReadSecs >= 60 && soma.linked() {
+			m := int(c.somaReadSecs / 60)
+			c.somaReadSecs -= float64(m * 60)
+			somaAddReading(somaToday(), m)
+		}
 	}
 }
 

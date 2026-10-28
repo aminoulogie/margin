@@ -201,31 +201,7 @@ func (c *console) somaToday(p *page, y int) int {
 		apText(img, f.callout, mx, y+30, apSecondary, "No habits yet: add them in Soma.")
 		y += 60
 	}
-	week := days(date, 7)
-	for _, h := range habits {
-		r := image.Rect(mx, y, w-mx, y+104)
-		ui.RoundRect(img, r, 22, apCard)
-		col := somaColour(h.Color, apBlue)
-		cx, cy := r.Min.X+56, (r.Min.Y+r.Max.Y)/2
-		if h.done(date) {
-			ui.Circle(img, cx, cy, 26, col)
-			iconCheck(img, cx-14, cy, rgb(0xffffff))
-		} else {
-			ui.Circle(img, cx, cy, 26, col)
-			ui.Circle(img, cx, cy, 21, apCard)
-		}
-		apText(img, f.headline, r.Min.X+110, cy+12, apLabel, clip(f.headline, h.Name, r.Dx()-110-300))
-		for i, d := range week { // the last seven days
-			dx := r.Max.X - 260 + i*36
-			if h.done(d) {
-				ui.Circle(img, dx, cy, 11, col)
-			} else {
-				ui.Circle(img, dx, cy, 11, apCard2)
-			}
-		}
-		btn("so:habit:"+h.ID, r)
-		y += 120
-	}
+	y = c.somaHabitRows(p, habits, date, y)
 
 	y += 20
 	y = somaSection(img, mx, y, "Reading", fmt.Sprintf("%d min today", somaReading(date)))
@@ -238,6 +214,21 @@ func (c *console) somaToday(p *page, y int) int {
 	y += 120
 
 	todos := somaTodos()
+	sort.SliceStable(todos, func(i, j int) bool { return todos[i].rank() < todos[j].rank() })
+	// The evening review: what's left today moves to tomorrow in one tap.
+	left := 0
+	for _, t := range todos {
+		if t.Scope == "day" && t.active(date) && !t.Done {
+			left++
+		}
+	}
+	if left > 0 && (time.Now().In(displayZone).Hour() >= 18 || c.winding) {
+		r := image.Rect(mx, y, w-mx, y+92)
+		ui.RoundRect(img, r, 22, rgb(0x2c2c54))
+		apText(img, f.headline, r.Min.X+34, r.Min.Y+58, rgb(0xbf9fff), fmt.Sprintf("Move %d unfinished to tomorrow", left))
+		btn("so:tomorrow", r)
+		y += 120
+	}
 	for _, list := range []struct{ scope, title, add string }{{"day", "To Do Today", "todo"}, {"week", "This Week", "week"}} {
 		var items []somaTodo
 		left := 0
@@ -280,8 +271,18 @@ func (c *console) somaTodoRows(p *page, items []somaTodo, y int) int {
 		if t.SlotDate != "" {
 			text = clockOf(float64(t.SlotStart)/60) + "  " + text
 		}
-		apText(img, f.body, r.Min.X+96, cy+14, col, clip(f.body, text, r.Dx()-130))
-		p.buttons = append(p.buttons, button{"so:todo:" + t.ID, r})
+		apText(img, f.body, r.Min.X+96, cy+14, col, clip(f.body, text, r.Dx()-230))
+		// Priority: ! high, · low; tap to change.
+		pr := image.Rect(r.Max.X-110, r.Min.Y, r.Max.X, r.Max.Y)
+		switch t.Priority {
+		case "high":
+			apTextCenter(img, f.title, (pr.Min.X+pr.Max.X)/2, cy, apRed, "!")
+		case "low":
+			apTextCenter(img, f.caption, (pr.Min.X+pr.Max.X)/2, cy, apSecondary, "low")
+		default:
+			apTextCenter(img, f.caption, (pr.Min.X+pr.Max.X)/2, cy, apCard2, "!")
+		}
+		p.buttons = append(p.buttons, button{"so:todo:" + t.ID, image.Rect(r.Min.X, r.Min.Y, pr.Min.X, r.Max.Y)}, button{"so:prio:" + t.ID, pr})
 		y += 104
 	}
 	return y
@@ -730,6 +731,18 @@ func (c *console) somaTap(id string) bool {
 	case strings.HasPrefix(id, "so:step:"): // so:step:<project>:<step>
 		pj, st, _ := strings.Cut(strings.TrimPrefix(id, "so:step:"), ":")
 		somaStepTap(pj, st)
+	case strings.HasPrefix(id, "so:amt:"): // so:amt:<habit>:<delta>
+		h, d, _ := strings.Cut(strings.TrimPrefix(id, "so:amt:"), ":")
+		delta, _ := strconv.ParseFloat(d, 64)
+		somaLogAmount(h, delta)
+	case strings.HasPrefix(id, "so:when:"):
+		somaHabitWhen(strings.TrimPrefix(id, "so:when:"))
+	case strings.HasPrefix(id, "so:prio:"):
+		somaTodoPriority(strings.TrimPrefix(id, "so:prio:"))
+	case id == "so:tomorrow":
+		if n := somaMoveToTomorrow(); n > 0 {
+			c.toastMsg(fmt.Sprintf("Moved %d to tomorrow", n))
+		}
 	case strings.HasPrefix(id, "so:todo:"):
 		somaToggleTodo(strings.TrimPrefix(id, "so:todo:"))
 	case strings.HasPrefix(id, "so:read:"):
@@ -1194,6 +1207,7 @@ func (c *console) somaHomeToday(p *page, y int) int {
 			items = append(items, t)
 		}
 	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].rank() < items[j].rank() })
 	if len(items) > 5 {
 		items = items[:5]
 	}
@@ -1228,4 +1242,88 @@ func (c *console) sleepPill(p *page, cy int) {
 	ui.RoundRect(p.img, r, 38, rgb(0x2c2c54))
 	apTextCenter(p.img, f.headline, (r.Min.X+r.Max.X)/2, cy, rgb(0xbf9fff), label)
 	p.buttons = append(p.buttons, button{id, r})
+}
+
+// somaHabitRows draws the habits, in Morning and Evening groups when they have times: a tick
+// (or - / + for an amount), the run of days, the last week, and the time to tap through.
+func (c *console) somaHabitRows(p *page, habits []somaHabit, date string, y int) int {
+	f := apple()
+	img := p.img
+	w, mx := c.s.W, 48
+	btn := func(id string, r image.Rectangle) { p.buttons = append(p.buttons, button{id, r}) }
+	grouped := false
+	for _, h := range habits {
+		grouped = grouped || h.when() != ""
+	}
+	groups := []struct{ when, title string }{{"", ""}}
+	if grouped {
+		groups = []struct{ when, title string }{{"morning", "Morning"}, {"evening", "Evening"}, {"", "Any Time"}}
+	}
+	week := days(date, 7)
+	for _, g := range groups {
+		first := true
+		for _, h := range habits {
+			if grouped && h.when() != g.when {
+				continue
+			}
+			if first && g.title != "" {
+				apText(img, f.captionBold, mx+8, y+34, apSecondary, strings.ToUpper(g.title))
+				y += 50
+			}
+			first = false
+			r := image.Rect(mx, y, w-mx, y+112)
+			ui.RoundRect(img, r, 22, apCard)
+			col := somaColour(h.Color, apBlue)
+			cx, cy := r.Min.X+56, (r.Min.Y+r.Max.Y)/2
+			ui.Circle(img, cx, cy, 26, col)
+			if h.done(date) {
+				iconCheck(img, cx-14, cy, rgb(0xffffff))
+			} else {
+				ui.Circle(img, cx, cy, 21, apCard)
+			}
+			apText(img, f.headline, r.Min.X+110, cy-4, apLabel, clip(f.headline, h.Name, r.Dx()-110-560))
+			sub := ""
+			if n := h.streak(date); n > 0 {
+				sub = fmt.Sprintf("%d-day run", n)
+			}
+			whenLabel := map[string]string{"morning": "Morning", "evening": "Evening"}[h.when()]
+			if whenLabel == "" {
+				whenLabel = "Any time"
+			}
+			if sub != "" {
+				sub += "  ·  "
+			}
+			apText(img, f.caption, r.Min.X+110, cy+34, apSecondary, sub+whenLabel)
+			btn("so:when:"+h.ID, image.Rect(r.Min.X+100, cy+4, r.Min.X+110+ui.TextWidth(f.caption, sub+whenLabel)+20, r.Max.Y))
+			if h.ramp() { // an amount: logged of today's, and - / +
+				logged, rung, unit := h.amount(date)
+				step := rampStep(unit)
+				for i, b := range []struct {
+					t string
+					d float64
+				}{{"−", -step}, {"+", step}} {
+					br := image.Rect(r.Max.X-220+i*100, r.Min.Y+18, r.Max.X-130+i*100, r.Max.Y-18)
+					ui.RoundRect(img, br, 30, apCard2)
+					apTextCenter(img, f.title, (br.Min.X+br.Max.X)/2, (br.Min.Y+br.Max.Y)/2, apBlue, b.t)
+					btn(fmt.Sprintf("so:amt:%s:%g", h.ID, b.d), br)
+				}
+				label := fmt.Sprintf("%g / %g %s", logged, rung, unit)
+				apText(img, f.callout, r.Max.X-250-ui.TextWidth(f.callout, label), cy+10, apSecondary, label)
+			} else {
+				for i, d := range week { // the last seven days
+					dx := r.Max.X - 260 + i*36
+					if h.done(d) {
+						ui.Circle(img, dx, cy, 11, col)
+					} else {
+						ui.Circle(img, dx, cy, 11, apCard2)
+					}
+				}
+				btn("so:habit:"+h.ID, image.Rect(r.Min.X, r.Min.Y, r.Min.X+100+ui.TextWidth(f.headline, h.Name)+40, cy+4))
+				btn("so:habit:"+h.ID, image.Rect(r.Max.X-300, r.Min.Y, r.Max.X, r.Max.Y))
+				btn("so:habit:"+h.ID, image.Rect(r.Min.X, cy+4, r.Min.X+100, r.Max.Y))
+			}
+			y += 126
+		}
+	}
+	return y
 }

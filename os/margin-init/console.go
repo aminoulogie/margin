@@ -59,6 +59,7 @@ type console struct {
 	alarmDay         string                   // the day it was last dismissed
 	winding          bool                     // wind-down: warm and dim
 	weather          weatherNow               // Algiers, for the morning
+	somaReadSecs     float64                  // reading time not yet added to Soma (reader.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
