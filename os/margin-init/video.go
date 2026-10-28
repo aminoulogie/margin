@@ -849,18 +849,21 @@ func (c *console) videoKeepUp(v *videoPlayer) {
 	if v.light || v.state != "playing" || v.run == nil {
 		return
 	}
-	n := v.drops + v.shown
-	if float64(n) < 10*v.run.rate {
+	if v.keepSince.IsZero() {
+		v.keepSince = time.Now()
+	}
+	if time.Since(v.keepSince) < 6*time.Second {
 		return
 	}
-	if v.drops*3 > n {
+	n := v.drops + v.shown
+	if n >= 3 && v.drops*3 > n {
 		log.Printf("playbox: %d of %d frames late: lighter picture", v.drops, n)
 		v.light = true
 		c.toastVideo("Lighter picture, to keep up")
 		c.videoStart(v.pos, false)
 		return
 	}
-	v.drops, v.shown = 0, 0
+	v.drops, v.shown, v.keepSince = 0, 0, time.Time{}
 }
 
 // videoWait waits for the picture's ffmpeg to end and says how: the end of the film, or a
