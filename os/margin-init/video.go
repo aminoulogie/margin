@@ -739,7 +739,9 @@ func (c *console) videoPrepare(v *videoPlayer) {
 		return
 	}
 	v.url, v.probe = url, p
-	if p.duration > 0 && v.pos > p.duration-10 {
+	if p.h > 720 || strings.Contains(strings.ToLower(p.videoCodec), "hevc") {
+		v.light = true
+	}	if p.duration > 0 && v.pos > p.duration-10 {
 		v.pos = 0 // it had ended: from the start
 	}
 	c.videoStart(v.pos, false)
