@@ -1825,7 +1825,7 @@ func testSound() string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := alpineCtxCmd(ctx, "/usr/bin/aplay", "-q", "/tmp/playbox-test.wav").CombinedOutput()
+	out, err := alpineCtxCmd(ctx, "/usr/bin/aplay", "-q", "-D", soundDev(), "/tmp/playbox-test.wav").CombinedOutput()
 	if err != nil {
 		return "No sound: " + lastLines(string(out), 1)
 	}
