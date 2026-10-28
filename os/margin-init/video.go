@@ -670,7 +670,11 @@ func (c *console) videoPrepare(v *videoPlayer) {
 			out, err = apkOut("apk", "add", "ffmpeg", "alsa-utils")
 			log.Printf("playbox: apk add ffmpeg alsa-utils: %v %s", err, lastLines(string(out), 3))
 			if err != nil || !ffmpegInstalled() {
-				err = fmt.Errorf("Couldn't install the video player (ffmpeg). Is Wi-Fi on? %s", lastLines(string(out), 1))
+				why := lastLines(string(out), 1)
+				if why == "" && err != nil {
+					why = err.Error()
+				}
+				err = fmt.Errorf("Couldn't install the video player (ffmpeg). Is Wi-Fi on? %s", why)
 			}
 		}
 		ffmpegInstall.Unlock()
