@@ -12,6 +12,10 @@ func TestLinuxApps(t *testing.T) {
 	oldRun, oldOut := apkRun, apkOut
 	apkRun = func(args ...string) error { ran = append(ran, args); return nil }
 	apkOut = func(args ...string) ([]byte, error) {
+		if args[1] == "add" || args[1] == "del" {
+			ran = append(ran, args)
+			return nil, nil
+		}
 		if args[3] == "nothing" {
 			return nil, errors.New("exit 1")
 		}

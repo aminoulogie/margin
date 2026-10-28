@@ -91,9 +91,48 @@ type appsState struct {
 }
 
 var (
-	apkRun = func(args ...string) error { return runInAlpine(args...) }
-	apkOut = func(args ...string) ([]byte, error) { return outputInAlpine(args...) }
+	apkRun = func(args ...string) error { _, err := apkTry(args...); return err }
+	apkOut = func(args ...string) ([]byte, error) { return apkTry(args...) }
 )
+
+// apkTry runs an apk command the ways that can work, until one does: through margin-init's
+// proxy, then straight out; and when a package can't be found, again after fetching the
+// package lists (they may never have been, or be old). Community is turned on first: most
+// desktop apps are there. What it printed last comes back, to say what went wrong.
+func apkTry(args ...string) ([]byte, error) {
+	ensureCommunity()
+	var out []byte
+	var err error
+	for _, refresh := range []bool{false, true} {
+		for _, run := range []func(...string) ([]byte, error){outputInAlpine, outputInAlpineDirect} {
+			if refresh {
+				run("apk", "update")
+			}
+			if out, err = run(args...); err == nil {
+				return out, nil
+			}
+		}
+	}
+	return out, err
+}
+
+// ensureCommunity adds Alpine's community repository beside main, if it isn't there.
+func ensureCommunity() {
+	path := alpineRoot + "/etc/apk/repositories"
+	b, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(b), "/community") {
+		return
+	}
+	var add []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); strings.HasSuffix(l, "/main") && !strings.HasPrefix(l, "#") {
+			add = append(add, strings.TrimSuffix(l, "/main")+"/community")
+		}
+	}
+	if len(add) > 0 {
+		os.WriteFile(path, []byte(strings.TrimRight(string(b), "\n")+"\n"+strings.Join(add, "\n")+"\n"), 0o644)
+	}
+}
 
 // installed: apk has the package (its database), or the command is there.
 func (a linuxApp) installed() bool {
@@ -251,13 +290,13 @@ func (c *console) appsTap(id string) bool {
 		}
 		as.busy[pkg] = label
 		go func() {
-			err := apkRun("apk", verb, pkg)
+			out, err := apkOut("apk", verb, pkg)
 			drawMu.Lock()
 			defer drawMu.Unlock()
 			delete(as.busy, pkg)
 			switch {
 			case err != nil:
-				as.msg = fmt.Sprintf("%s: apk %s failed (is Wi-Fi on?)", app.name, verb)
+				as.msg = fmt.Sprintf("%s: apk %s failed: %s", app.name, verb, lastLine(string(out)))
 			case act == "get":
 				c.toastMsg(app.name + " installed")
 			default:
@@ -366,4 +405,13 @@ func (c *console) appsKey(b []byte) {
 		c.appsSearch(as.editing)
 	}
 	c.fieldTyped()
+}
+
+// lastLine is a command's last line of output, what usually says why it failed.
+func lastLine(s string) string {
+	ls := strings.Split(strings.TrimSpace(s), "\n")
+	if l := strings.TrimSpace(ls[len(ls)-1]); l != "" {
+		return l
+	}
+	return "no output"
 }

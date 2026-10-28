@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/draw"
 	_ "image/png"
@@ -89,8 +90,8 @@ func (c *console) launchX(xa *xapp) error {
 		xa.status = "Getting the display (once)..."
 		c.drawXapp(true)
 		drawMu.Unlock()
-		if err := apkRun(append([]string{"apk", "add"}, desktopDeps...)...); err != nil {
-			return err
+		if out, err := apkOut(append([]string{"apk", "add"}, desktopDeps...)...); err != nil {
+			return errors.New(lastLine(string(out)))
 		}
 	}
 	w, h := c.s.W, c.s.H-c.xTop()
