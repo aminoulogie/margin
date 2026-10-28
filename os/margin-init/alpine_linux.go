@@ -62,8 +62,19 @@ func runInAlpine(args ...string) error {
 	return cmd.Run()
 }
 
+// alpineArgs makes a bare command name ("apk") findable: exec.Command looks a name without a
+// slash up in the host's (Android's) PATH before the chroot, where Alpine's programs aren't, and
+// fails with no output at all. Through Alpine's shell, the lookup happens inside the chroot.
+func alpineArgs(args []string) []string {
+	if len(args) == 0 || strings.Contains(args[0], "/") {
+		return args
+	}
+	return append([]string{"/bin/sh", "-c", `exec "$@"`, "sh"}, args...)
+}
+
 // outputInAlpine runs a command in Alpine and returns what it printed.
 func outputInAlpine(args ...string) ([]byte, error) {
+	args = alpineArgs(args)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = "/root"
 	proxy := "http://" + proxyAddr
