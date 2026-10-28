@@ -50,6 +50,7 @@ type console struct {
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
+	xapp             *xapp       // a desktop app open full screen (desktop.go)
 	locked           bool        // the lock screen is up (lock.go)
 	pinMode          string      // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
 	pinEntry         string      // the digits typed so far
@@ -58,6 +59,7 @@ type console struct {
 	pinBG            *image.RGBA // the keypad, drawn once (passcode.go)
 	pinBGKey         string
 	pinBlur          *image.RGBA              // what was on the screen when the keypad opened, blurred and dimmed
+	lockBlur         *image.RGBA              // the lock screen blurred, made once it's up so the keypad opens at once
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
 	alarmDay         string                   // the day it was last dismissed
@@ -171,7 +173,9 @@ func newConsole(s *Screen) (*console, error) {
 	}
 	c.kb.dark = true                                 // the terminal's keyboard
 	c.skb, err = newTextKeyboard(s, func(b []byte) { // typing on a page: the store's search, a word's meaning
-		if c.mode == modeWords {
+		if c.xapp != nil {
+			c.xappKey(b)
+		} else if c.mode == modeWords {
 			c.wordsKey(b)
 		} else if c.mode == modeSoma {
 			c.somaKey(b)
@@ -240,6 +244,10 @@ func (c *console) touchLoop() {
 							c.unlock()
 						}
 					}
+					continue
+				}
+				if c.xapp != nil { // a desktop app has the screen
+					c.xappTouch(p)
 					continue
 				}
 				// The left of the status bar ("‹ Books" in Terminal and Settings) goes back to

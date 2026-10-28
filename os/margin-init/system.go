@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"math"
 	"os"
 	"strings"
 
@@ -33,48 +32,11 @@ var settingsPanes = []settingsPane{
 	{"power", "Restart & Shut Down", rgb(0xff3b30)},
 }
 
-// paneGlyph draws a pane's white symbol on its coloured square.
+// paneGlyph draws a pane's white symbol on its coloured square: lucide's, as Soma's are.
 func paneGlyph(img *image.RGBA, id string, cx, cy int) {
-	white := rgb(0xffffff)
-	switch id {
-	case "wifi":
-		for _, rad := range []int{6, 12, 18} {
-			for a := 225.0; a <= 315; a += 4 {
-				t := a * math.Pi / 180
-				ui.Circle(img, cx+int(float64(rad)*math.Cos(t)), cy+8+int(float64(rad)*math.Sin(t)), 2, white)
-			}
-		}
-		ui.Circle(img, cx, cy+8, 3, white)
-	case "battery":
-		ui.RoundRect(img, image.Rect(cx-16, cy-8, cx+12, cy+8), 3, white)
-		ui.Fill(img, image.Rect(cx+13, cy-3, cx+16, cy+3), white)
-	case "display":
-		ui.DrawText(img, apple().captionBold, cx-15, cy+9, white, "AA")
-	case "apps":
-		ui.RoundRect(img, image.Rect(cx-14, cy-14, cx-2, cy-2), 3, white)
-		ui.RoundRect(img, image.Rect(cx+2, cy-14, cx+14, cy-2), 3, white)
-		ui.RoundRect(img, image.Rect(cx-14, cy+2, cx-2, cy+14), 3, white)
-		ui.RoundRect(img, image.Rect(cx+2, cy+2, cx+14, cy+14), 3, white)
-	case "tasks":
-		for i, hgt := range []int{10, 22, 16} {
-			ui.Fill(img, image.Rect(cx-14+i*10, cy+12-hgt, cx-8+i*10, cy+12), white)
-		}
-	case "sleep":
-		ui.Circle(img, cx, cy, 14, white)
-		ui.Circle(img, cx+7, cy-6, 12, rgb(0xff9f0a))
-	case "wallpaper":
-		ui.Circle(img, cx-6, cy-4, 8, white)
-		ui.Circle(img, cx+7, cy+5, 10, white)
-	case "general":
-		ring(img, cx, cy, 11, 6, 1, white, white)
-		for a := 0; a < 360; a += 45 {
-			t := float64(a) * math.Pi / 180
-			ui.Circle(img, cx+int(15*math.Cos(t)), cy+int(15*math.Sin(t)), 3, white)
-		}
-	case "power":
-		ring(img, cx, cy+2, 12, 4, 0.85, white, white)
-		ui.Fill(img, image.Rect(cx-2, cy-16, cx+2, cy), white)
-	}
+	name := map[string]string{"wifi": "wifi", "battery": "battery-full", "display": "sun", "wallpaper": "image",
+		"sleep": "moon", "tasks": "cpu", "apps": "package", "general": "settings", "power": "power"}[id]
+	lucideIcon(img, name, cx, cy, 40, rgb(0xffffff))
 }
 
 // groupRows draws an inset grouped list section and returns the rows' rectangles.

@@ -89,7 +89,7 @@ func (c *console) somaPage() *page {
 		}
 	}
 	soma.mu.Unlock()
-	if su.view == "work" && soma.linked() {
+	if soma.linked() { // Soma is its workstation now
 		return c.workPage()
 	}
 
@@ -483,6 +483,10 @@ func (c *console) somaDone() {
 		}
 	case "clockin":
 		wkClockIn(text)
+	case "set:" + strings.TrimPrefix(su.field, "set:"):
+		if text != "" {
+			wkSetSetting(strings.TrimPrefix(su.field, "set:"), text)
+		}
 	case "finding":
 		wkAddFinding(text)
 	case "todo":

@@ -76,7 +76,7 @@ func parseScan(out string) []wifiNet {
 }
 
 // lastLine is the last thing a command said: why it failed.
-func lastLine(out []byte) string {
+func wifiLastLine(out []byte) string {
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
 }
@@ -95,7 +95,7 @@ func (c *console) wifiScan(force bool) {
 		defer drawMu.Unlock()
 		w.scanning, w.scanned = false, time.Now()
 		if err != nil {
-			w.scanErr = lastLine(out)
+			w.scanErr = wifiLastLine(out)
 			if w.scanErr == "" {
 				w.scanErr = "The scan didn't work."
 			}
@@ -127,7 +127,7 @@ func (c *console) wifiJoin(ssid, pass string) {
 		defer drawMu.Unlock()
 		w.joining, c.wifiBusy = "", false
 		if err != nil {
-			w.msg = lastLine(out)
+			w.msg = wifiLastLine(out)
 			if w.msg == "" {
 				w.msg = "Couldn't join “" + ssid + "”."
 			}
@@ -146,7 +146,7 @@ func (c *console) wifiOff() {
 	go func() {
 		out, err := wifiCmd("off")
 		if err != nil {
-			log.Printf("wifi off: %v: %s", err, lastLine(out))
+			log.Printf("wifi off: %v: %s", err, wifiLastLine(out))
 		}
 		drawMu.Lock()
 		defer drawMu.Unlock()

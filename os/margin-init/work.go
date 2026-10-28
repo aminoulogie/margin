@@ -404,7 +404,7 @@ func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 // --- the rail ---------------------------------------------------------------------------------
 
 var wkPersonal = []struct{ id, label, icon string }{
-	{"health", "Health", "heart-pulse"}, {"today", "Today", "layout-grid"}, {"training", "Training", "dumbbell"},
+	{"health", "Health", "heart-pulse"}, {"training", "Training", "dumbbell"},
 	{"nutrition", "Nutrition", "utensils"}, {"mind", "Mind", "brain-circuit"}, {"stats", "Stats", "trending-up"},
 }
 
@@ -416,59 +416,39 @@ var wkPages = []struct{ id, label, icon string }{
 
 func (k *wk) rail(h int, badges map[string]int) {
 	img := k.img
-	ui.Fill(img, image.Rect(0, 0, wkSideW-1, h), wkSide)
-	ui.Fill(img, image.Rect(wkSideW-1, 0, wkSideW+1, h), rgb(0x1a1b1f))
-	logo := k.R(29, 66, 95, 133)
-	ui.RoundRect(img, logo, 16, wkLime)
-	apTextCenter(img, wkFont("bold", 28), 62, (logo.Min.Y+logo.Max.Y)/2, wkInk, "S")
+	top := tabsH // under Margin's tab bar
+	ui.Fill(img, image.Rect(0, top, wkSideW-1, h), wkSide)
+	ui.Fill(img, image.Rect(wkSideW-1, top, wkSideW+1, h), rgb(0x1a1b1f))
 	page := k.c.somaUI.work
-	y := 155
 	item := func(id, label, icon string, y int) {
-		r := k.R(10, y, 114, y+86)
-		col := wkText2
+		r := k.R(10, y, 114, y+78)
+		col, ic := wkText2, wkText2
 		if page == id || (id == "projects" && page == "project") {
 			ui.RoundRect(img, r, 16, wkSideSel)
-			col = wkFG
+			col, ic = wkFG, wkLime
 		}
-		ic := col
-		if page == id || (id == "projects" && page == "project") {
-			ic = wkLime
-		}
-		k.icon(icon, 61, y+29, 30, ic)
-		k.textC(wkFont("medium", 17), 61, y+67, col, label)
+		k.icon(icon, 61, y+27, 28, ic)
+		k.textC(wkFont("medium", 16), 61, y+62, col, label)
 		if n := badges[id]; n > 0 {
 			ui.Circle(img, 82, k.Y(y+10), 12, wkRed)
 			apTextCenter(img, wkFont("semi", 15), 82, k.Y(y+10), rgb(0xffffff), fmt.Sprint(n))
 		}
 		k.btn("wk:go:"+id, r)
 	}
-	personal := false
+	// One list, as Soma's own rail: the work, then the personal side, then settings.
+	y := 72
+	for _, it := range wkPages {
+		item(it.id, it.label, it.icon, y)
+		y += 82
+	}
+	ui.Fill(img, k.R(40, y+4, 84, y+6), rgb(0x24252b))
+	y += 14
 	for _, it := range wkPersonal {
-		personal = personal || it.id == page
+		item(it.id, it.label, it.icon, y)
+		y += 82
 	}
-	if personal { // Personal's pages, Workspace above them
-		item("workspace", "Workspace", "briefcase", y)
-		ui.Fill(img, k.R(40, y+96, 84, y+98), rgb(0x24252b))
-		y += 112
-		for _, it := range wkPersonal {
-			item(it.id, it.label, it.icon, y)
-			y += 91
-		}
-	} else {
-		for _, it := range wkPages {
-			item(it.id, it.label, it.icon, y)
-			y += 91
-		}
-		ui.Fill(img, k.R(40, 896, 84, 898), rgb(0x24252b))
-		item("personal", "Personal", "heart-pulse", 912)
-	}
-	item("search", "Search", "search", 1645)
-	item("settings", "Settings", "settings", 1735)
-	av := image.Pt(61, k.Y(1868))
-	ui.Circle(img, av.X, av.Y, 30, rgb(0x8b7cff))
-	apTextCenter(img, wkFont("semi", 20), av.X, av.Y, rgb(0xffffff), wkInitials(wkUser()))
-	ui.Circle(img, av.X+21, av.Y+21, 9, wkSide)
-	ui.Circle(img, av.X+21, av.Y+21, 6, wkGreen)
+	ui.Fill(img, k.R(40, y+4, 84, y+6), rgb(0x24252b))
+	item("settings", "Settings", "settings", y+14)
 }
 
 func wkInitials(name string) string {
@@ -525,12 +505,16 @@ func (c *console) workPage() *page {
 	if su.work == "" {
 		su.work = "overview"
 	}
+	if su.need == nil {
+		su.need = map[string]int{}
+	}
 	w := c.s.W
 	h := max(c.viewH(), su.need["work:"+su.work])
 	img := canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
-	p := &page{img: img}
-	k := &wk{c: c, p: p, img: img, oy: c.barH}
+	p := &page{img: img, header: tabsH}
+	// Margin's tab bar stays at the top: the pages sit under it.
+	k := &wk{c: c, p: p, img: img, oy: c.barH - (tabsH - 24)}
 	k.glow()
 	var end int
 	switch su.work {
@@ -560,10 +544,13 @@ func (c *console) workPage() *page {
 		end = k.mindPage()
 	case "stats":
 		end = k.stats()
+	case "settings":
+		end = k.settingsPage()
 	default:
 		end = k.overview()
 	}
-	end = k.Y(end) + 160 // room for the timer
+	end = k.Y(end) + 160         // room for the timer
+	k.oy = c.barH - (tabsH - 24) // a page may have moved its lower part down
 	if end > h {
 		su.need["work:"+su.work] = end
 		return c.workPage()
@@ -589,6 +576,7 @@ func (c *console) workPage() *page {
 	if su.work != "reports" { // the report's buttons sit where it would
 		k.timerPill(min(p.img.Rect.Dy(), c.viewH()))
 	}
+	c.booksTabs(p, "tab:soma")
 	return p
 }
 
@@ -599,18 +587,6 @@ func (c *console) workTap(id string) bool {
 	case strings.HasPrefix(id, "wk:go:"):
 		to := strings.TrimPrefix(id, "wk:go:")
 		switch to {
-		case "personal":
-			su.workGroup, su.work = "personal", "health"
-		case "workspace":
-			su.workGroup, su.work = "", "overview"
-		case "today":
-			su.view = "home"
-		case "settings":
-			c.setMode(modeSettings)
-			return true
-		case "search":
-			c.toastMsg("Search isn't on the tablet yet")
-			return true
 		default:
 			su.work = to
 		}

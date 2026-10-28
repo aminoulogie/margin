@@ -197,6 +197,10 @@ func (k *wk) overview() int {
 	k.kpi(image.Rect(wkX0+2*cw+40, 644, wkX1, 817), "folder-kanban", "Active projects", fmt.Sprint(active), "",
 		math.NaN(), true, fmt.Sprintf("%d overdue", overdue), []float64{1, 1}, wkBlue, wkFG)
 
+	// Today's rings, as Soma draws them on the phone: calories, protein, water, burned.
+	k.ringsCard(image.Rect(wkX0, 847, wkX1, 1147), somaToday())
+	k.oy -= 320 // everything below moves down under it
+
 	// Hours by project, a bar a day, stacked by project, with what's planned on the days ahead.
 	ch := image.Rect(wkX0, 847, wkX1, 1344)
 	k.card(ch)
@@ -455,4 +459,22 @@ func wkAttention(projects []wkProject, todos []somaTodo, now time.Time) []wkAttn
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].days < out[j].days })
 	return out
+}
+
+// ringsCard is the day's four rings with each one's figure beside them.
+func (k *wk) ringsCard(r image.Rectangle, date string) {
+	k.card(r)
+	k.cardHead(r.Min.X+28, r.Min.Y+46, "target", "Today's rings", "")
+	ringSet(k.img, r.Min.X+40, k.Y(r.Min.Y+70), 210, somaRingSpecs(date), false, true)
+	x, y := r.Min.X+300, r.Min.Y+100
+	for i, rg := range somaRingsFor(date) {
+		col := rgb(rg.To)
+		cx := x + (i%2)*350
+		cy := y + (i/2)*100
+		k.text(wkFont("semi", 18), cx, cy, wkMuted, strings.ToUpper(rg.Label))
+		e := k.text(wkFont("bold", 34), cx, cy+42, col, fmt.Sprintf("%.0f", rg.Value))
+		e = k.text(wkFont("semi", 22), e, cy+42, wkMuted, fmt.Sprintf("/%.0f", rg.Goal))
+		k.text(wkFont("semi", 16), e+6, cy+42, col, strings.ToUpper(rg.Unit))
+		k.hBar(k.R(cx, cy+58, cx+300, cy+64), rg.Value/max(rg.Goal, 1), col)
+	}
 }

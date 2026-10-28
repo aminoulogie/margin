@@ -74,6 +74,17 @@ func (c *console) setScreen(on bool) {
 	blankScreen(c.s, false)
 	c.lastInput = time.Now()
 	c.locked, c.pinMode = c.needLock(), "" // wake on the lock screen: the book's cover, the time
+	c.lockBlur = nil
+	if c.locked && c.cfg.PinHash != "" {
+		go func() { // the keypad's background, ready before the first tap
+			time.Sleep(300 * time.Millisecond)
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if c.locked && c.pinMode == "" && c.screenOn && c.lockBlur == nil {
+				c.lockBlur = c.s.blurred(c.barH)
+			}
+		}()
+	}
 	c.redrawAll()
 	setBacklight(c.brightNow())
 	log.Printf("screen on")
