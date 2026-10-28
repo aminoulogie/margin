@@ -94,7 +94,7 @@ func TestKeyboardTypes(t *testing.T) {
 	}
 }
 
-func TestKeyboardCommitsWhereTheFingerLifts(t *testing.T) {
+func TestKeyboardTypesOnTouch(t *testing.T) {
 	kb, sent, _ := testKeyboard(t)
 	var q, w *kbKey
 	for _, k := range kb.layers[0][2] {
@@ -108,9 +108,12 @@ func TestKeyboardCommitsWhereTheFingerLifts(t *testing.T) {
 	cq := q.r.Min.Add(q.r.Max).Div(2).Add(image.Pt(0, kb.y0))
 	cw := w.r.Min.Add(w.r.Max).Div(2).Add(image.Pt(0, kb.y0))
 	kb.touch(TouchPoint{Slot: 1, X: cq.X, Y: cq.Y, Down: true})
+	if len(*sent) != 1 || (*sent)[0] != "q" {
+		t.Fatalf("on touch: sent %q, want [q]", *sent)
+	}
 	kb.touch(TouchPoint{Slot: 1, X: cw.X, Y: cw.Y, Moved: true})
 	kb.touch(TouchPoint{Slot: 1, X: cw.X, Y: cw.Y, Up: true})
-	if len(*sent) != 1 || (*sent)[0] != "w" {
-		t.Fatalf("sent %q, want [w]", *sent)
+	if len(*sent) != 1 {
+		t.Fatalf("after lifting: sent %q, want [q] only", *sent)
 	}
 }

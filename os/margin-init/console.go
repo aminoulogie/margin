@@ -48,13 +48,13 @@ type console struct {
 	mu               sync.Mutex
 	master           *os.File // the shell's pty, nil between shells
 	kb               *keyboard
-	tu               termUI                   // scrollback, selection, copy and paste (termui.go)
-	locked           bool                     // the lock screen is up (lock.go)
-	pinMode          string                   // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
-	pinEntry         string                   // the digits typed so far
-	pinFirst         string                   // a new passcode, the first time
-	pinMsg           string                   // "Wrong passcode"
-	pinBG            *image.RGBA              // the keypad, drawn once (passcode.go)
+	tu               termUI      // scrollback, selection, copy and paste (termui.go)
+	locked           bool        // the lock screen is up (lock.go)
+	pinMode          string      // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
+	pinEntry         string      // the digits typed so far
+	pinFirst         string      // a new passcode, the first time
+	pinMsg           string      // "Wrong passcode"
+	pinBG            *image.RGBA // the keypad, drawn once (passcode.go)
 	pinBGKey         string
 	walls            wallState                // Settings > Wallpaper (wallpaper.go)
 	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
@@ -85,10 +85,12 @@ type console struct {
 	book             *openBook
 	shelf            []shelfBook
 	store            storeState
-	skb              *keyboard // the store's search keyboard
-	fromStore        bool      // the open book came from the store (a preview or a download)
-	rd               readerUI  // the reader's selection, menus, panels, gestures
-	pcache           pageCache // the current book page, drawn once
+	skb              *keyboard         // the store's search keyboard
+	typeGen          int               // the page redraw a pause in typing is waiting for (typebar.go)
+	kbFingers        map[int]*keyboard // fingers that came down on a keyboard
+	fromStore        bool              // the open book came from the store (a preview or a download)
+	rd               readerUI          // the reader's selection, menus, panels, gestures
+	pcache           pageCache         // the current book page, drawn once
 	marksVersion     int
 	lastRead         time.Time
 	words            *wordBook
@@ -133,7 +135,7 @@ func newConsole(s *Screen) (*console, error) {
 	}
 	adv, _ := reg.GlyphAdvance('M')
 	m := reg.Metrics()
-	c := &console{s: s, reg: reg, bold: bold, cw: adv.Ceil(),
+	c := &console{s: s, reg: reg, kbFingers: map[int]*keyboard{}, bold: bold, cw: adv.Ceil(),
 		ch: (m.Ascent + m.Descent).Ceil() + 2, asc: m.Ascent.Ceil() + 1, clients: map[net.Conn]bool{}}
 	c.glyphs = map[glyphKey]*image.RGBA{}
 	c.barH = c.ch + 8
@@ -239,6 +241,27 @@ func (c *console) touchLoop() {
 						c.transition("pop", image.Rectangle{}, func() { c.setMode(modeBooksHome) })
 					}
 					continue
+				}
+				// A finger that touched a keyboard stays its, even once its key (Enter, say)
+				// has put the keyboard away.
+				if kb := c.kbFingers[p.Slot]; kb != nil && !p.Down {
+					if p.Up {
+						delete(c.kbFingers, p.Slot)
+					}
+					if kb.visible {
+						kb.touch(p)
+					}
+					continue
+				}
+				if p.Down {
+					switch {
+					case c.mode == modeTerminal && c.kb.visible && p.Y >= c.kb.y0:
+						c.kbFingers[p.Slot] = c.kb
+					case c.skb.visible && p.Y >= c.skb.y0 && c.mode != modeTerminal:
+						if _, ok := c.pageTyping(); ok || (c.mode == modeStore && c.store.typing) {
+							c.kbFingers[p.Slot] = c.skb
+						}
+					}
 				}
 				switch {
 				case c.mode == modeTerminal && c.kb.visible && p.Y >= c.kb.y0:

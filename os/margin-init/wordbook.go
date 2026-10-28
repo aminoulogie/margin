@@ -458,5 +458,5 @@ func (c *console) wordsKey(b []byte) {
 		c.wordsTap("w:editdone")
 		return
 	}
-	c.showPage()
+	c.fieldTyped()
 }

@@ -449,7 +449,7 @@ func (c *console) somaKey(b []byte) {
 	if su.editing, done = editLine(su.editing, &c.fieldBack, b, 200); done {
 		c.somaDone()
 	}
-	c.showPage()
+	c.fieldTyped()
 }
 
 // somaDone finishes what was being typed: a to-do is added, the link is tried.

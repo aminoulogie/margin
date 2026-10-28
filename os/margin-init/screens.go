@@ -106,6 +106,7 @@ func (c *console) showPage() {
 	}
 	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && c.apps.typing) {
 		c.skb.draw()
+		c.drawTypeBar()
 	}
 	c.s.Flush()
 }

@@ -32,8 +32,9 @@ const (
 	repeatEvery = 45 * time.Millisecond  // then this often, speeding up to repeatFast
 	repeatFast  = 15 * time.Millisecond
 
-	// Holding ⌫: after a second, one character every 10 ms, steadily, until the finger lifts.
-	deleteDelay = time.Second
+	// Holding ⌫: one character as it's touched, then after a moment one every 10 ms,
+	// steadily, until the finger lifts.
+	deleteDelay = 300 * time.Millisecond
 	deleteEvery = 10 * time.Millisecond
 
 	trackStep = 22 // pixels of finger travel per character, sliding on the space bar
@@ -144,6 +145,7 @@ type keyboard struct {
 	track    map[int]int // slot -> x where the space bar's trackpad last moved the cursor
 	downX    map[int]int
 	tracked  map[int]bool
+	typed    map[int]bool // fingers whose key already typed, on touching it
 	send     func([]byte)
 	onHide   func(visible bool) // console relayout
 	big      font.Face
@@ -156,7 +158,7 @@ func newKeyboard(s *Screen, send func([]byte), onHide func(bool)) (*keyboard, er
 	big := textFace("inter", fonts.InterRegular, false, 42)
 	small := textFace("inter", fonts.InterRegular, false, 28)
 	kb := &keyboard{s: s, y0: s.H - kbHeight, layers: kbLayout(), visible: true,
-		pressed: map[int]*kbKey{}, repeats: map[int]chan struct{}{}, repeated: map[int]bool{},
+		pressed: map[int]*kbKey{}, repeats: map[int]chan struct{}{}, repeated: map[int]bool{}, typed: map[int]bool{},
 		track: map[int]int{}, tracked: map[int]bool{}, downX: map[int]int{},
 		send: send, onHide: onHide, big: big, small: small}
 	kb.layout()
@@ -397,6 +399,12 @@ func (kb *keyboard) touch(p TouchPoint) {
 			} else {
 				kb.pressed[p.Slot] = key
 			}
+			// A key types the moment it's touched, not when the finger lifts; the space
+			// bar waits, as sliding on it moves the cursor instead.
+			if p.Down && key != nil && key.act != actHide && !(key.act == actType && key.out == " ") {
+				kb.typed[p.Slot] = true
+				kb.commit(key)
+			}
 		}
 	case p.Up:
 		key := kb.keyAt(p.X, p.Y)
@@ -404,7 +412,8 @@ func (kb *keyboard) touch(p TouchPoint) {
 			key = prev
 		}
 		delete(kb.pressed, p.Slot)
-		repeated := kb.repeated[p.Slot]
+		repeated := kb.repeated[p.Slot] || kb.typed[p.Slot]
+		delete(kb.typed, p.Slot)
 		kb.stopRepeat(p.Slot)
 		if prev != nil {
 			kb.drawKey(prev, false)

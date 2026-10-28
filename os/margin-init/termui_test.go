@@ -166,9 +166,9 @@ func TestHeldBackspaceDeletesSteadily(t *testing.T) {
 	drawMu.Unlock()
 	w.Close()
 	got, _ := io.ReadAll(r)
-	// Held 2.2 s: nothing for the first second, then one every 10 ms (about 120), no words.
+	// Held 2.2 s: one on touch, then from 0.3 s one every 10 ms (about 190), no words.
 	dels, words := strings.Count(string(got), "\x7f"), strings.Count(string(got), "\x17")
-	if dels < 80 || dels > 135 || words != 0 {
+	if dels < 150 || dels > 200 || words != 0 {
 		t.Fatalf("held ⌫ sent %d deletes and %d word deletes", dels, words)
 	}
 }

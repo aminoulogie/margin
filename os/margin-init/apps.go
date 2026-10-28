@@ -277,5 +277,5 @@ func (c *console) appsKey(b []byte) {
 		as.typing, c.skb.visible = false, false
 		c.appsSearch(as.editing)
 	}
-	c.showPage()
+	c.fieldTyped()
 }
