@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"math"
 	"encoding/hex"
 	"image"
 	"image/draw"
@@ -29,7 +30,88 @@ func (c *console) needLock() bool { return !c.cfg.NoLock || c.cfg.PinHash != "" 
 // startPin opens the keypad. Caller holds drawMu.
 func (c *console) startPin(mode string) {
 	c.pinMode, c.pinEntry, c.pinMsg = mode, "", ""
+	c.pinBlur, c.pinBG = c.s.blurred(c.barH), nil
 	c.redrawAll()
+}
+
+// blurred is the screen below the status bar as it is now, blurred heavily and dimmed, as
+// iOS puts behind its passcode: sampled every 12 pixels, smoothed, and spread back out.
+// nil when the screen is nearly black (nothing to blur).
+func (s *Screen) blurred(top int) *image.RGBA {
+	const step = 12
+	w, h := s.W, s.H-top
+	sw, sh := w/step+1, h/step+1
+	small := make([]float64, sw*sh*3)
+	sum := 0.0
+	for y := 0; y < sh; y++ {
+		for x := 0; x < sw; x++ {
+			fx, fy := s.rot.toFB(min(x*step, s.W-1), min(top+y*step, s.H-1), s.fbW, s.fbH)
+			o := fy*s.stride + fx*(s.bpp/8)
+			if s.bpp != 32 || o+3 >= len(s.buf) {
+				return nil
+			}
+			v := uint32(s.buf[o]) | uint32(s.buf[o+1])<<8 | uint32(s.buf[o+2])<<16
+			i := (y*sw + x) * 3
+			small[i], small[i+1], small[i+2] = float64(v>>s.red.offset&0xff), float64(v>>s.green.offset&0xff), float64(v>>s.blue.offset&0xff)
+			sum += small[i] + small[i+1] + small[i+2]
+		}
+	}
+	if sum/float64(sw*sh*3) < 6 {
+		return nil
+	}
+	// Three box passes each way: close to a Gaussian, about 60 screen pixels wide.
+	tmp := make([]float64, len(small))
+	for pass := 0; pass < 3; pass++ {
+		for y := 0; y < sh; y++ {
+			for x := 0; x < sw; x++ {
+				for c := 0; c < 3; c++ {
+					a, n := 0.0, 0.0
+					for d := -2; d <= 2; d++ {
+						if xx := x + d; xx >= 0 && xx < sw {
+							a += small[(y*sw+xx)*3+c]
+							n++
+						}
+					}
+					tmp[(y*sw+x)*3+c] = a / n
+				}
+			}
+		}
+		for y := 0; y < sh; y++ {
+			for x := 0; x < sw; x++ {
+				for c := 0; c < 3; c++ {
+					a, n := 0.0, 0.0
+					for d := -2; d <= 2; d++ {
+						if yy := y + d; yy >= 0 && yy < sh {
+							a += tmp[(yy*sw+x)*3+c]
+							n++
+						}
+					}
+					small[(y*sw+x)*3+c] = a / n
+				}
+			}
+		}
+	}
+	img := canvas(w, h)
+	for y := 0; y < h; y++ {
+		fy := float64(y) / step
+		y0 := min(int(fy), sh-1)
+		y1 := min(y0+1, sh-1)
+		ty := fy - float64(y0)
+		for x := 0; x < w; x++ {
+			fx := float64(x) / step
+			x0 := min(int(fx), sw-1)
+			x1 := min(x0+1, sw-1)
+			tx := fx - float64(x0)
+			o := img.PixOffset(x, y)
+			for c := 0; c < 3; c++ {
+				a := small[(y0*sw+x0)*3+c]*(1-tx) + small[(y0*sw+x1)*3+c]*tx
+				b := small[(y1*sw+x0)*3+c]*(1-tx) + small[(y1*sw+x1)*3+c]*tx
+				img.Pix[o+c] = uint8((a*(1-ty) + b*ty) * 0.55) // dimmed, as iOS does
+			}
+			img.Pix[o+3] = 255
+		}
+	}
+	return img
 }
 
 func (c *console) pinTitle() string {
@@ -77,8 +159,12 @@ func (c *console) pinBase() *image.RGBA {
 	f := apple()
 	w, h := c.s.W, c.s.H-c.barH
 	img := canvas(w, h)
-	for y := 0; y < h; y++ {
-		ui.Fill(img, image.Rect(0, y, w, y+1), blend(rgb(0x1c2a44), rgb(0x000000), min(1, float64(y)/float64(h)*1.3)))
+	if c.pinBlur != nil && c.pinBlur.Rect.Dx() == w && c.pinBlur.Rect.Dy() == h {
+		copy(img.Pix, c.pinBlur.Pix)
+	} else {
+		for y := 0; y < h; y++ {
+			ui.Fill(img, image.Rect(0, y, w, y+1), blend(rgb(0x1c2a44), rgb(0x000000), min(1, float64(y)/float64(h)*1.3)))
+		}
 	}
 	white := rgb(0xffffff)
 	apTextCenter(img, f.title, w/2, 330, white, c.pinTitle())
@@ -91,7 +177,7 @@ func (c *console) pinBase() *image.RGBA {
 			continue
 		}
 		cx, cy := (k.r.Min.X+k.r.Max.X)/2, (k.r.Min.Y+k.r.Max.Y)/2
-		ui.Circle(img, cx, cy, k.r.Dx()/2, rgb(0x3a3a3c))
+		glass(img, k.r, k.r.Dx()/2, rgb(0xffffff), 0.2) // a frosted key, the blur showing through
 		apTextCenter(img, digits, cx, cy, white, k.key)
 	}
 	c.pinBG, c.pinBGKey = img, key
@@ -127,9 +213,21 @@ func (c *console) drawPinDynamic() {
 	c.drawPinStrip(c.pinDotsRect(), func(img *image.RGBA) {
 		for i := 0; i < pinLen; i++ {
 			cx := c.s.W/2 - (pinLen-1)*40 + i*80
-			ui.Circle(img, cx, 450, 18, white)
-			if i >= len(c.pinEntry) {
-				ui.Circle(img, cx, 450, 15, blend(rgb(0x1c2a44), rgb(0x000000), 0.3))
+			if i < len(c.pinEntry) {
+				ui.Circle(img, cx, 450, 18, white)
+				continue
+			}
+			// An empty dot: a white ring, the background showing inside.
+			for y := 450 - 19; y <= 450+19; y++ {
+				for x := cx - 19; x <= cx+19; x++ {
+					d := math.Hypot(float64(x-cx)+0.5, float64(y-450)+0.5)
+					if a := min(18.5-d, d-14.5, 1); a > 0 && image.Pt(x, y).In(img.Rect) {
+						o := img.PixOffset(x, y)
+						for c := 0; c < 3; c++ {
+							img.Pix[o+c] = uint8(float64(img.Pix[o+c])*(1-a) + 255*a)
+						}
+					}
+				}
 			}
 		}
 	})

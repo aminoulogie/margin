@@ -51,6 +51,8 @@ func TestPasscode(t *testing.T) {
 			tap(string(d))
 		}
 	}
+	c.setMode(modeBooksHome) // something behind the keypad to blur
+	c.showPage()
 	c.startPin("set")
 	shot(t, c, "passcode")
 	typePin("1234")
