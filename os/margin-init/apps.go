@@ -52,7 +52,7 @@ var linuxApps = []linuxApp{
 }
 
 type appsState struct {
-	typing  bool   // the search box has the keyboard
+	typing  bool // the search box has the keyboard
 	editing string
 	busy    map[string]string // package → "Installing..." / "Removing..."
 	msg     string
