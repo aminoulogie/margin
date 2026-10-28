@@ -125,6 +125,7 @@ func (c *console) redrawAll() {
 			c.renderView()
 		} else {
 			c.t.MarkAll()
+			c.termDrawn = nil
 			c.render()
 			c.drawShortcuts()
 		}

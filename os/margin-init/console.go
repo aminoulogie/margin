@@ -49,6 +49,7 @@ type console struct {
 	master           *os.File // the shell's pty, nil between shells
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
+	termDrawn        []termRow   // what render last drew on each terminal row
 	locked           bool        // the lock screen is up (lock.go)
 	pinMode          string      // the passcode keypad is up: "unlock", "set", "confirm", "off" (passcode.go)
 	pinEntry         string      // the digits typed so far
@@ -298,6 +299,12 @@ func colorOf(i uint8, def color.RGBA, bold bool) color.RGBA {
 	return ansi[i]
 }
 
+// termRow is a terminal row as last drawn.
+type termRow struct {
+	cells  []vt.Cell
+	cursor int
+}
+
 // render draws the rows that changed and writes them to the screen. Callers hold drawMu.
 func (c *console) render() {
 	if !c.screenOn || c.mode != modeTerminal {
@@ -316,23 +323,38 @@ func (c *console) render() {
 	if len(rows) == 0 {
 		return
 	}
-	line := image.NewRGBA(image.Rect(0, 0, c.t.Cols*c.cw, c.ch))
+	if len(c.termDrawn) != c.t.Rows {
+		c.termDrawn = make([]termRow, c.t.Rows)
+	}
 	for _, y := range rows {
 		cells, cursor := c.t.Snapshot(y)
-		for x, cell := range cells {
+		// Only the cells that changed since this row was drawn: a typed character is one
+		// cell, and the screen sends far less (turned a quarter, a whole row is all of it).
+		d := &c.termDrawn[y]
+		a, b := 0, len(cells)-1
+		if d.cells != nil && len(d.cells) == len(cells) {
+			same := func(x int) bool { return cells[x] == d.cells[x] && (x == cursor) == (x == d.cursor) }
+			for a <= b && same(a) {
+				a++
+			}
+			for b >= a && same(b) {
+				b--
+			}
+		}
+		d.cells, d.cursor = cells, cursor
+		if a > b {
+			continue
+		}
+		line := image.NewRGBA(image.Rect(0, 0, (b-a+1)*c.cw, c.ch))
+		for x := a; x <= b; x++ {
+			cell := cells[x]
 			fg, bg := colorOf(cell.FG, consoleFG, cell.Bold), colorOf(cell.BG, consoleBG, false)
 			if x == cursor {
 				fg, bg = bg, consoleFG
 			}
-			c.putGlyph(line, x*c.cw, cell.Ch, fg, bg, cell.Bold)
+			c.putGlyph(line, (x-a)*c.cw, cell.Ch, fg, bg, cell.Bold)
 		}
-		oy := c.offY + y*c.ch
-		for py := 0; py < c.ch; py++ {
-			row := line.Pix[line.PixOffset(0, py):]
-			for px := 0; px < line.Rect.Dx(); px++ {
-				c.s.Set(c.offX+px, oy+py, row[4*px], row[4*px+1], row[4*px+2])
-			}
-		}
+		c.s.blitRGBA(line, c.offX+a*c.cw, c.offY+y*c.ch)
 	}
 	if err := c.s.Flush(); err != nil {
 		log.Printf("flush: %v", err)

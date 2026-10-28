@@ -111,6 +111,7 @@ func (c *console) selectionText() string {
 // renderView draws every row of the (possibly scrolled-back) view with the selection, then
 // the shortcuts bar. Caller holds drawMu.
 func (c *console) renderView() {
+	c.termDrawn = nil // drawn whole here: render starts again from what the terminal holds
 	line := image.NewRGBA(image.Rect(0, 0, c.t.Cols*c.cw, c.ch))
 	hist := c.t.History()
 	for y := 0; y < c.t.Rows; y++ {
@@ -213,6 +214,7 @@ func (c *console) goLive() {
 	if c.tu.back != 0 {
 		c.tu.back = 0
 		c.t.MarkAll()
+		c.termDrawn = nil
 	}
 }
 
