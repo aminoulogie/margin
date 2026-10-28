@@ -120,6 +120,10 @@ func (c *console) redrawAll() {
 		c.drawLock()
 		return
 	}
+	if c.xapp != nil {
+		c.drawXapp(true)
+		return
+	}
 	if c.mode == modeTerminal {
 		if c.tu.back > 0 || c.tu.selOn {
 			c.renderView()
