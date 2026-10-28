@@ -45,6 +45,20 @@ type somaUI struct {
 	workProj   string            // the project open there
 	workSel    map[string]string // the tab, chip or segment chosen on each of its pages
 	workGroup  string            // the rail's group: "" (Workspace) or "personal"
+	workSub    string            // a page within a page: "movement:<key>", "session:<date>", "habit:<id>"
+	sheet      string            // the sheet open over the page: "<name>:<arg>" (work_ui.go)
+	sheetPage  int               // which part of a long sheet is shown
+	sheetBack  string            // the sheet a field is being typed from
+	sheetStack []string          // the sheets the open one was opened from
+	keep       bool              // the tap being handled keeps the sheet open
+	prompt     string            // what the field being typed is for, shown until something is typed
+	undo       *wkUndo           // the last thing deleted, for a few seconds
+	calMonth   time.Time         // the date sheet's month
+	dateWhat   string            // what the date sheet sets: "<setter>:<arg>"
+	dateCur    string            // and the date it has now
+	dateTitle  string
+	toTop      bool         // the tap being handled opened another page: scroll to its top
+	pf         wkProjFilter // how Projects are sorted and filtered
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
@@ -466,8 +480,12 @@ func (c *console) somaKey(b []byte) {
 func (c *console) somaDone() {
 	su := &c.somaUI
 	text := strings.TrimSpace(su.editing)
-	su.typing, su.editing = false, ""
+	su.typing, su.editing, su.prompt = false, "", ""
 	c.skb.visible = false
+	if f, ok := strings.CutPrefix(su.field, "w."); ok {
+		c.wkTyped(f, text)
+		return
+	}
 	switch su.field {
 	case "sleep":
 		if msg := somaLogSleepHours(text); msg != "" {

@@ -41,6 +41,12 @@ func (c *console) drawTypeBar() {
 	ui.Fill(img, img.Rect, apBG)
 	r := image.Rect(pageGutter, 14, c.s.W-pageGutter, typeBarH-14)
 	ui.RoundRect(img, r, r.Dy()/2, apCard2)
+	if text == "" && c.mode == modeSoma && c.somaUI.prompt != "" { // what the field is for
+		apText(img, f.body, r.Min.X+30, r.Min.Y+56, apLabel, "|")
+		apText(img, f.body, r.Min.X+44, r.Min.Y+56, apSecondary, clip(f.body, c.somaUI.prompt, r.Dx()-80))
+		c.s.blitRGBA(img, 0, y0)
+		return
+	}
 	text = withCursor(text, c.fieldBack)
 	for text != "" && ui.TextWidth(f.body, text) > r.Dx()-60 { // the end, where the typing is
 		text = string([]rune(text)[1:])

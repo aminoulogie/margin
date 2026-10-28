@@ -98,7 +98,7 @@ func (k *wk) checkbox(x, cy int, done bool) {
 	cb := k.R(x, cy-17, x+34, cy+17)
 	if done {
 		ui.RoundRect(k.img, cb, 8, wkLime)
-		lucideIcon(k.img, "check", x+17, k.Y(cy), 22, wkInk)
+		lucideIcon(k.img, "check", x+17, k.Y(cy), 22, wkOnLime)
 	} else {
 		ui.RoundRect(k.img, cb, 8, rgb(0x3a3c46))
 		ui.RoundRect(k.img, cb.Inset(2), 6, wkCard)
@@ -116,188 +116,6 @@ func (k *wk) struck(x, y int, s string, done bool, width int) int {
 		ui.Fill(k.img, k.R(x, y-8, e, y-6), wkFaint)
 	}
 	return e
-}
-
-func (k *wk) projects() int {
-	now := time.Now().In(displayZone)
-	all := wkProjects()
-	entries := wkEntries()
-	clients := map[string]bool{}
-	for _, p := range all {
-		if p.Client != "" {
-			clients[p.Client] = true
-		}
-	}
-	q := time.Date(now.Year(), time.Month((int(now.Month())-1)/3*3+1), 1, 0, 0, 0, 0, displayZone)
-	qh := wkSum(wkHours(entries, q, now.AddDate(0, 0, 1), now))
-	k.header([]string{wkUser() + " · Freelance", "Projects"}, "Projects",
-		fmt.Sprintf("%d projects · %d clients · %.0f h this quarter", len(all), len(clients), qh.Hours()), color.RGBA{})
-	x := k.primary("wk:newproject", "plus", "New project", wkX1)
-	k.square("wk:sort", "arrow-up-down", x-13)
-	k.tabs("wk:tab", []string{"All projects", "Board", "Timeline", "Archive"}, nil, k.sel("tab", 0))
-
-	n := map[string]int{}
-	for _, p := range all {
-		st, _ := statusOf(p, now)
-		n[p.Status]++
-		if st == "Overdue" {
-			n["overdue"]++
-		}
-	}
-	chip := k.sel("chip", 0)
-	k.chips("wk:chip", 308, []string{fmt.Sprintf("All %d", len(all)), fmt.Sprintf("Active %d", n["active"]),
-		fmt.Sprintf("Overdue %d", n["overdue"]), fmt.Sprintf("Paused %d", n["paused"]), fmt.Sprintf("Done %d", n["done"])}, nil, chip)
-	k.outline("wk:clients", "building-2", "All clients    ", wkX1, 308, 53)
-	k.icon("chevron-down", wkX1-32, 334, 22, wkText2)
-
-	// The figures.
-	drifting, prog, nAct := 0, 0.0, 0
-	overdueName := ""
-	for _, p := range all {
-		if p.Status != "active" {
-			continue
-		}
-		nAct++
-		prog += p.progress()
-		if st, _ := statusOf(p, now); st == "Drifting" {
-			drifting++
-		} else if st == "Overdue" && overdueName == "" {
-			overdueName = p.Name
-		}
-	}
-	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, displayZone)
-	mh := wkHours(entries, month, month.AddDate(0, 1, 0), now)
-	cw := (wkX1 - wkX0 - 60) / 4
-	box := func(i int) image.Rectangle { return image.Rect(wkX0+i*(cw+20), 386, wkX0+i*(cw+20)+cw, 549) }
-	small := func(r image.Rectangle, icon, label, value, unit, foot string) {
-		k.card(r)
-		k.icon(icon, r.Min.X+34, r.Min.Y+34, 24, wkMuted)
-		k.text(wkFont("medium", 20), r.Min.X+56, r.Min.Y+42, wkText2, label)
-		e := k.text(wkFont("bold", 40), r.Min.X+24, r.Min.Y+96, wkFG, value)
-		if unit != "" {
-			k.text(wkFont("medium", 22), e+3, r.Min.Y+96, wkMuted, unit)
-		}
-		k.text(wkFont("regular", 19), r.Min.X+24, r.Min.Y+136, wkFaint, clip(wkFont("regular", 19), foot, r.Dx()-48))
-	}
-	small(box(0), "folder-open", "Active", fmt.Sprint(nAct), "", fmt.Sprintf("%d drifting", drifting))
-	late := "none late"
-	if overdueName != "" {
-		late = overdueName
-	}
-	small(box(1), "alarm-clock", "Overdue", fmt.Sprint(n["overdue"]), "", late)
-	small(box(2), "clock", "This month", fmt.Sprintf("%.0f", wkSum(mh).Hours()), "h", fmt.Sprintf("across %d", len(mh)))
-	avg := 0.0
-	if nAct > 0 {
-		avg = prog / float64(nAct) * 100
-	}
-	small(box(3), "chart-pie", "Avg progress", fmt.Sprintf("%.0f%%", avg), "", "active projects")
-
-	// The projects.
-	run, running := wkRunning(entries)
-	y := 575
-	shown := 0
-	for _, p := range all {
-		st, scol := statusOf(p, now)
-		switch {
-		case chip == 1 && p.Status != "active", chip == 2 && st != "Overdue", chip == 3 && p.Status != "paused", chip == 4 && p.Status != "done":
-			continue
-		}
-		col := wkColour(p, p.order)
-		cr := image.Rect(wkX0, y, wkX1, y+153)
-		k.card(cr)
-		if running && run.ProjectID == p.ID { // the one the timer runs on: a lime rim
-			r := cr.Sub(image.Pt(0, k.oy))
-			ui.RoundRect(k.img, r, 20, blend(wkCard, wkLime, 0.5))
-			ui.RoundRect(k.img, r.Inset(2), 18, rgb(0x17181d))
-		}
-		ui.RoundRect(k.img, k.R(187, y+20, 193, y+133), 3, col)
-		f := wkFont("bold", 25)
-		name := clip(f, p.Name, 330)
-		e := k.text(f, 217, y+48, wkFG, name)
-		k.badge(e+14+ui.TextWidth(wkFont("semi", 18), st)+28, y+40, st, scol)
-		sub := fmt.Sprintf("%d of %d steps", p.done(), len(p.Steps))
-		if p.Client != "" {
-			sub = p.Client + " · " + sub
-		}
-		k.text(wkFont("regular", 20), 217, y+83, wkFaint, sub)
-		k.hBar(k.R(217, y+113, 490, y+121), p.progress(), col)
-		k.text(wkFont("bold", 21), 505, y+122, wkFG, fmt.Sprintf("%.0f%%", p.progress()*100))
-		k.textR(wkFont("regular", 18), 916, y+55, wkFaint, "Due")
-		if d, ok := p.daysLeft(now); ok {
-			due, _ := time.Parse("2006-01-02", p.Due)
-			dc, sc, note := wkFG, wkFaint, fmt.Sprintf("%d days", d)
-			switch {
-			case d < 0:
-				dc, sc, note = wkRed, wkRed, fmt.Sprintf("%d days late", -d)
-			case d <= 3:
-				dc, sc = wkAmber, wkAmber
-			}
-			k.textR(wkFont("semi", 22), 916, y+84, dc, due.Format("Mon 2 Jan"))
-			k.textR(wkFont("regular", 19), 916, y+113, sc, note)
-		} else {
-			k.textR(wkFont("semi", 22), 916, y+92, wkFG, "No date")
-		}
-		k.spark(k.R(958, y+30, 1086, y+66), weeklyHours(entries, p.ID, 8, now), col)
-		h := projectHours(entries, p.ID, now)
-		k.textR(wkFont("regular", 20), 1086, y+108, wkFaint, "h")
-		k.textR(wkFont("bold", 22), 1066, y+108, wkFG, fmt.Sprintf("%.1f", h.Hours()))
-		k.icon("chevron-right", 1122, y+72, 22, wkMuted)
-		k.btn("wk:proj:"+p.ID, k.R(wkX0, y, wkX1, y+153))
-		y += 173
-		shown++
-	}
-	if shown == 0 {
-		k.text(wkFont("regular", 21), wkX0+20, y+40, wkMuted, "No projects here. Add them in Soma on the PC or the phone.")
-		y += 100
-	}
-
-	// Where the month went, and the hours week by week.
-	y += 2
-	split := image.Rect(wkX0, y, 652, y+330)
-	k.card(split)
-	k.cardHead(wkX0+28, y+43, "chart-pie", "Time split", "· "+now.Format("January"))
-	type part struct {
-		name string
-		h    float64
-		col  color.RGBA
-	}
-	var parts []part
-	tot := 0.0
-	for _, p := range all {
-		if h := mh[p.ID].Hours(); h > 0 {
-			parts = append(parts, part{shortName(p.Name), h, wkColour(p, p.order)})
-			tot += h
-		}
-	}
-	sort.SliceStable(parts, func(i, j int) bool { return parts[i].h > parts[j].h })
-	var vals []float64
-	var cols []color.RGBA
-	for _, pt := range parts {
-		vals = append(vals, pt.h)
-		cols = append(cols, pt.col)
-	}
-	k.donut(290, y+175, 90, 26, vals, cols)
-	k.textC(wkFont("bold", 30), 290, y+183, wkFG, fmt.Sprintf("%.0f h", tot))
-	k.textC(wkFont("regular", 18), 290, y+207, wkMuted, now.Format("January"))
-	ly := y + 92
-	for i, pt := range parts {
-		if i == 5 {
-			break
-		}
-		ui.RoundRect(k.img, k.R(388, ly-14, 404, ly+2), 4, pt.col)
-		k.text(wkFont("regular", 20), 415, ly, wkText2, clip(wkFont("regular", 20), pt.name, 150))
-		k.textR(wkFont("semi", 20), 623, ly, wkFG, fmt.Sprintf("%.0f%%", pt.h/tot*100))
-		ly += 42
-	}
-	hw := image.Rect(672, y, wkX1, y+330)
-	k.card(hw)
-	k.cardHead(700, y+43, "trending-up", "Hours per week", "")
-	_, weekT := wkTargets()
-	k.lineChart(image.Rect(750, y+95, 1122, y+249), weeklyHours(entries, "", 8, now), weekT/2, 707, func(i int) string {
-		_, w := now.AddDate(0, 0, -7*(7-i)).ISOWeek()
-		return fmt.Sprintf("W%d", w)
-	})
-	return y + 330
 }
 
 // lineChart is an area chart of vals in r (screen-y coordinates), a dashed line at target,
@@ -345,7 +163,7 @@ func (k *wk) lineChart(r image.Rectangle, vals []float64, target float64, labelX
 	lx, ly := pt(n-1, vals[n-1])
 	ui.Fill(k.img, image.Rect(lx-1, ly, lx+1, base), rgb(0x3a3b44))
 	ui.Circle(k.img, lx, ly, 8, wkLime)
-	ui.Circle(k.img, lx, ly, 4, rgb(0x2a2b20))
+	ui.Circle(k.img, lx, ly, 4, blend(wkCard, wkLime, 0.2))
 	k.bubble(lx, ly-34, fmt.Sprintf("%.0f h", vals[n-1]), r.Max.X+30)
 	k.text(wkFont("regular", 17), r.Min.X, r.Max.Y+28, wkFaint, xlabel(0))
 	k.textR(wkFont("regular", 17), r.Max.X, r.Max.Y+28, wkFaint, xlabel(n-1))
@@ -359,188 +177,6 @@ func (k *wk) bubble(cx, cy int, lbl string, maxX int) {
 	b := image.Rect(bx, cy-17, bx+bw, cy+17)
 	ui.RoundRect(k.img, b, 9, rgb(0xf5f6f8))
 	apTextCenter(k.img, f, (b.Min.X+b.Max.X)/2, cy, wkInk, lbl)
-}
-
-// --- a project ----------------------------------------------------------------------------------
-
-func (k *wk) project() int {
-	now := time.Now().In(displayZone)
-	p, ok := wkProjectByID(k.c.somaUI.workProj)
-	if !ok {
-		k.c.somaUI.work = "projects"
-		return k.projects()
-	}
-	entries := wkEntries()
-	col := wkColour(p, p.order)
-	sub := p.Client
-	if p.Note != "" {
-		sub = strings.TrimPrefix(sub+" · "+p.Note, " · ")
-	}
-	k.header([]string{wkUser() + " · Freelance", "Projects ›"}, clip(wkFont("bold", 42), p.Name, 620), sub, col)
-	x := k.square("wk:share", "share-2", wkX1)
-	k.square("wk:back", "chevron-left", x-13)
-	var pf []wkFinding
-	for _, f := range wkFindings() {
-		if f.ProjectID == p.ID && !f.closed() {
-			pf = append(pf, f)
-		}
-	}
-	k.tabs("wk:tab", []string{"Overview", "Steps", "Time", "Notes", "Files", "Findings"},
-		[]string{"", fmt.Sprint(len(p.Steps)), "", "", "", fmt.Sprint(len(pf))}, k.sel("tab", 0))
-
-	// The summary.
-	hero := image.Rect(wkX0, 312, wkX1, 648)
-	k.cardIn(hero, blend(wkCard, col, 0.08))
-	k.arc(285, 435, 84, 18, p.progress(), col, rgb(0x262833))
-	k.textC(wkFont("bold", 38), 285, 445, wkFG, fmt.Sprintf("%.0f%%", p.progress()*100))
-	k.textC(wkFont("regular", 17), 285, 470, wkMuted, fmt.Sprintf("%d of %d steps", p.done(), len(p.Steps)))
-	st, scol := statusOf(p, now)
-	bx := 408
-	pillL := func(text string, c color.RGBA) {
-		f := wkFont("semi", 18)
-		w := ui.TextWidth(f, text) + 30
-		r := k.R(bx, 350, bx+w, 386)
-		ui.RoundRect(k.img, r, 18, blend(wkCard, c, 0.18))
-		apText(k.img, f, r.Min.X+15, r.Min.Y+25, c, text)
-		bx += w + 12
-	}
-	pillL(st, scol)
-	if p.Rate > 0 {
-		pillL("Billable · "+wkMoney(p.Rate)+"/h", wkBlue)
-	}
-	if p.Priority != "" {
-		pillL(strings.ToUpper(p.Priority[:1])+p.Priority[1:]+" priority", wkText2)
-	}
-	logged := projectHours(entries, p.ID, now)
-	stats := []struct{ l, v string }{{"Logged", fmt.Sprintf("%.1f h", logged.Hours())}, {"Value", wkMoney(logged.Hours() * p.Rate)}, {"Due", "No date"}}
-	d, has := p.daysLeft(now)
-	if has {
-		stats[2].v = fmt.Sprintf("%d days", d)
-		if d < 0 {
-			stats[2].v = fmt.Sprintf("%d days late", -d)
-		}
-	}
-	for i, s := range stats {
-		k.text(wkFont("regular", 19), 408+i*248, 428, wkFaint, s.l)
-		k.text(wkFont("bold", 34), 408+i*248, 468, wkFG, s.v)
-	}
-	ln := ""
-	if !p.Created.IsZero() {
-		ln = "Started " + p.Created.In(displayZone).Format("2 Jan")
-	}
-	if has {
-		due, _ := time.Parse("2006-01-02", p.Due)
-		ln += " · " + due.Format("Mon 2 Jan") + " deadline"
-		if !p.Created.IsZero() && p.progress() > 0 {
-			finish := p.Created.Add(time.Duration(float64(now.Sub(p.Created)) / p.progress()))
-			if finish.Before(due.Add(24 * time.Hour)) {
-				ln += " · on track to finish " + finish.In(displayZone).Format("2 Jan")
-			} else {
-				ln += " · at this pace, " + finish.In(displayZone).Format("2 Jan")
-			}
-		}
-	}
-	k.text(wkFont("regular", 19), 408, 514, wkFaint, clip(wkFont("regular", 19), strings.TrimPrefix(ln, " · "), 730))
-	run, running := wkRunning(entries)
-	if running && run.ProjectID == p.ID {
-		dd := run.dur(now)
-		k.boxBtn("wk:stop", 191, 556, 531, 618, "square", fmt.Sprintf("Stop timer · %02d:%02d", int(dd.Hours()), int(dd.Minutes())%60), wkRed, rgb(0xffffff))
-	} else {
-		k.boxBtn("wk:start:"+p.ID, 191, 556, 531, 618, "timer", "Start timer", wkLime, wkInk)
-	}
-	k.boxBtn("wk:go:reports", 549, 556, 891, 618, "file-text", "Client report", color.RGBA{}, wkFG)
-	k.boxBtn("wk:note", 909, 556, 1048, 618, "file", "Note", color.RGBA{}, wkFG)
-	k.boxBtn("wk:more", 1066, 556, 1133, 618, "ellipsis", "", color.RGBA{}, wkFG)
-
-	// The steps.
-	left := 0
-	for _, s := range p.Steps {
-		if !s.Done {
-			left++
-		}
-	}
-	sc := image.Rect(wkX0, 674, wkX1, 674+92+84*max(len(p.Steps), 1))
-	k.card(sc)
-	e := k.cardHead(wkX0+28, 727, "list-checks", "Next steps", "")
-	k.text(wkFont("regular", 19), e+14, 727, wkFaint, fmt.Sprintf("%d left", left))
-	k.outline("wk:addstep", "plus", "Add step", 1136, 696, 50)
-	y := 766
-	for _, s := range p.Steps {
-		ui.Fill(k.img, k.R(wkX0+2, y, wkX1-2, y+2), wkLine)
-		cy := y + 42
-		k.checkbox(188, cy, s.Done)
-		k.struck(240, cy+8, s.Label, s.Done, 760)
-		when := ""
-		switch {
-		case s.Done && !s.At.IsZero():
-			when = s.At.In(displayZone).Format("2 Jan")
-			if dayStart(s.At).Equal(dayStart(now)) {
-				when = "Today"
-			}
-		case s.WorkMs > 0:
-			when = fmt.Sprintf("%.1f h", float64(s.WorkMs)/3.6e6)
-		}
-		right := 1136
-		if !s.Done {
-			k.icon("grip-vertical", 1124, cy, 22, wkFaint)
-			right = 1093
-		}
-		k.textR(wkFont("regular", 20), right, cy+7, wkMuted, when)
-		k.btn("wk:step:"+p.ID+":"+s.ID, k.R(wkX0, y, wkX1, y+84))
-		y += 84
-	}
-	if len(p.Steps) == 0 {
-		k.text(wkFont("regular", 20), 190, y+50, wkMuted, "No steps yet.")
-	}
-
-	// Hours against plan, and the latest time.
-	y = sc.Max.Y + 24
-	k.card(image.Rect(wkX0, y, 676, y+400))
-	k.cardHead(wkX0+28, y+44, "trending-up", "Burn-up", "· hours, plan vs actual")
-	k.burnUp(image.Rect(236, y+95, 634, y+257), p, entries, now)
-	ui.RoundRect(k.img, k.R(188, y+299, 204, y+315), 4, wkLime)
-	k.text(wkFont("regular", 20), 213, y+315, wkText2, "Actual")
-	ui.RoundRect(k.img, k.R(290, y+299, 306, y+315), 4, wkBlue)
-	k.text(wkFont("regular", 20), 316, y+315, wkText2, "Planned")
-	k.card(image.Rect(696, y, wkX1, y+400))
-	k.cardHead(724, y+44, "timer", "Recent time", "")
-	ui.Fill(k.img, k.R(698, y+76, wkX1-2, y+78), wkLine)
-	var mine []wkEntry
-	for i := len(entries) - 1; i >= 0 && len(mine) < 3; i-- {
-		if entries[i].ProjectID == p.ID {
-			mine = append(mine, entries[i])
-		}
-	}
-	ry := y + 78
-	for i, en := range mine {
-		cy := ry + 48
-		ui.RoundRect(k.img, k.R(724, cy-26, 776, cy+26), 12, blend(wkCard, wkBlue, 0.16))
-		lucideIcon(k.img, "timer", 750, k.Y(cy), 24, wkBlue)
-		note := en.Note
-		if note == "" {
-			note = p.Name
-		}
-		k.text(wkFont("semi", 22), 794, cy-4, wkFG, clip(wkFont("semi", 22), note, 270))
-		when := en.Start.In(displayZone).Format("Mon 2")
-		if dayStart(en.Start).Equal(dayStart(now)) {
-			when = "Today"
-		}
-		end := "now"
-		if !en.End.IsZero() {
-			end = en.End.In(displayZone).Format("15:04")
-		}
-		k.text(wkFont("regular", 19), 794, cy+24, wkFaint, fmt.Sprintf("%s · %s – %s", when, en.Start.In(displayZone).Format("15:04"), end))
-		dd := en.dur(now)
-		k.textR(wkFont("bold", 23), 1136, cy+8, wkFG, fmt.Sprintf("%d:%02d", int(dd.Hours()), int(dd.Minutes())%60))
-		ry += 96
-		if i < len(mine)-1 {
-			ui.Fill(k.img, k.R(698, ry, wkX1-2, ry+2), wkLine)
-		}
-	}
-	if len(mine) == 0 {
-		k.text(wkFont("regular", 20), 724, ry+54, wkMuted, "No time on it yet.")
-	}
-	return y + 400
 }
 
 // burnUp charts the hours logged on a project since it started against a straight plan to
@@ -647,7 +283,7 @@ func (k *wk) timePage() int {
 	if running {
 		k.boxBtn("wk:stop", 829, 546, 1130, 609, "square", "Stop", wkRed, rgb(0xffffff))
 	} else {
-		k.boxBtn("wk:go:projects", 829, 546, 1130, 609, "timer", "Start", wkLime, wkInk)
+		k.boxBtn("wk:go:projects", 829, 546, 1130, 609, "timer", "Start", wkLime, wkOnLime)
 	}
 
 	// The week's figures, against the same days last week.
@@ -719,7 +355,7 @@ func (k *wk) timePage() int {
 	}
 	if todayCol >= 0 {
 		cx := cols[todayCol]
-		ui.Fill(k.img, k.R(cx-56, 948, cx+38, ts.Max.Y-2), rgb(0x191b17))
+		ui.Fill(k.img, k.R(cx-56, 948, cx+38, ts.Max.Y-2), blend(wkCard, wkLime, 0.04))
 	}
 	hf := wkFont("semi", 17)
 	k.text(hf, 187, 983, wkFaint, "PROJECT")
@@ -845,7 +481,7 @@ func (k *wk) planner() int {
 		if d.Equal(today) {
 			ui.Fill(k.img, k.R(x0+i*colW+1, 452, x0+(i+1)*colW, 1284), rgb(0x14151a))
 			ui.Circle(k.img, cx, k.Y(382), 28, wkLime)
-			apTextCenter(k.img, wkFont("bold", 25), cx, k.Y(382), wkInk, d.Format("2"))
+			apTextCenter(k.img, wkFont("bold", 25), cx, k.Y(382), wkOnLime, d.Format("2"))
 		} else {
 			k.textC(wkFont("bold", 25), cx, 391, wkFG, d.Format("2"))
 		}

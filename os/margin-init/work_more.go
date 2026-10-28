@@ -195,7 +195,7 @@ func (k *wk) worklog() int {
 	} else {
 		k.text(wkFont("semi", 22), 188, 553, wkFG, "Not clocked in")
 		k.text(wkFont("regular", 19), 188, 584, wkFaint, "Type the client you're working for and start the shift.")
-		k.boxBtn("so:type:clockin", 900, 526, 1136, 586, "timer", "Clock in", wkLime, wkInk)
+		k.boxBtn("so:type:clockin", 900, 526, 1136, 586, "timer", "Clock in", wkLime, wkOnLime)
 	}
 
 	// The shifts, and the clients.
@@ -1043,7 +1043,7 @@ func (k *wk) settingsPage() int {
 	k.card(sc)
 	k.text(wkFont("semi", 21), 188, y+50, wkFG, "Soma relay")
 	k.text(wkFont("regular", 18), 188, y+80, wkFaint, clip(wkFont("regular", 18), soma.status(), 600))
-	k.boxBtn("so:sync", 900, y+24, 1136, y+84, "repeat", "Sync now", wkLime, wkInk)
+	k.boxBtn("so:sync", 900, y+24, 1136, y+84, "repeat", "Sync now", wkLime, wkOnLime)
 	k.text(wkFont("regular", 17), 188, y+140, wkFaint, "Linked with your recovery code; it never leaves the tablet.")
 	return sc.Max.Y
 }

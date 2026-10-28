@@ -178,6 +178,10 @@ func newConsole(s *Screen) (*console, error) {
 		}
 	}, func(visible bool) {
 		if !visible { // its hide key: stop typing
+			if c.somaUI.typing && c.somaUI.sheetBack != "" { // back to the sheet it was typed from
+				c.somaUI.sheet, c.somaUI.sheetBack = c.somaUI.sheetBack, ""
+			}
+			c.somaUI.prompt = ""
 			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing = false, false, false, false
 			c.showPage()
 		}
