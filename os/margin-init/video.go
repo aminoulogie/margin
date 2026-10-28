@@ -768,7 +768,7 @@ func (c *console) videoStart(t float64, keepPaused bool) {
 	} else {
 		v.state = "seeking"
 	}
-	v.drops, v.shown = 0, 0
+	v.drops, v.shown, v.keepSince = 0, 0, time.Time{}
 	go c.videoFrames(v, run)
 	go c.videoWait(v, run)
 }
