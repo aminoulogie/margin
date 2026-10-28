@@ -67,6 +67,7 @@ type console struct {
 	homeEdit         bool                     // Home's widgets are being rearranged (a long press)
 	lastMargin       mode                     // the Margin page last open (Home, Library, Store, Words)
 	tasks            taskState                // Settings > Task Manager (taskman.go)
+	apps             appsState                // Settings > Linux Apps (apps.go)
 	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
 	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
@@ -166,12 +167,14 @@ func newConsole(s *Screen) (*console, error) {
 			c.wordsKey(b)
 		} else if c.mode == modeSoma {
 			c.somaKey(b)
+		} else if c.mode == modeSettings {
+			c.appsKey(b)
 		} else {
 			c.storeKey(b)
 		}
 	}, func(visible bool) {
 		if !visible { // its hide key: stop typing
-			c.store.typing, c.wui.edit, c.somaUI.typing = false, false, false
+			c.store.typing, c.wui.edit, c.somaUI.typing, c.apps.typing = false, false, false, false
 			c.showPage()
 		}
 	})
@@ -245,6 +248,8 @@ func (c *console) touchLoop() {
 				case c.mode == modeStore && c.store.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeWords && c.wui.edit && c.skb.visible && p.Y >= c.skb.y0:
+					c.skb.touch(p)
+				case c.mode == modeSettings && c.apps.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)
 				case c.mode == modeSoma && c.somaUI.typing && c.skb.visible && p.Y >= c.skb.y0:
 					c.skb.touch(p)

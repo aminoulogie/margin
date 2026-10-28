@@ -104,7 +104,7 @@ func (c *console) showPage() {
 	if c.mode != modeReader { // the reader draws its own, under its overlays
 		c.drawToast()
 	}
-	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) {
+	if (c.mode == modeStore && c.store.typing) || (c.mode == modeWords && c.wui.edit) || (c.mode == modeSoma && c.somaUI.typing) || (c.mode == modeSettings && c.apps.typing) {
 		c.skb.draw()
 	}
 	c.s.Flush()
@@ -131,7 +131,7 @@ func (c *console) pageTap(x, y int) {
 	if id != c.confirm {
 		c.confirm = ""
 	}
-	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) {
+	if c.homeEditTap(id) || c.booksTap(id) || c.homeTap(id) || c.storeTap(id) || c.wordsTap(id) || c.readerTap(id) || c.somaTap(id) || c.wallTap(id) || c.appsTap(id) || c.appsSearchTap(id) {
 		return
 	}
 	switch {

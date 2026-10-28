@@ -61,3 +61,16 @@ func runInAlpine(args ...string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: alpineRoot}
 	return cmd.Run()
 }
+
+// outputInAlpine runs a command in Alpine and returns what it printed.
+func outputInAlpine(args ...string) ([]byte, error) {
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir = "/root"
+	proxy := "http://" + proxyAddr
+	cmd.Env = []string{"HOME=/root", "TERM=xterm", "USER=root",
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"http_proxy=" + proxy, "https_proxy=" + proxy, "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy,
+		"no_proxy=localhost,127.0.0.1"}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: alpineRoot}
+	return cmd.CombinedOutput()
+}
