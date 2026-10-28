@@ -383,3 +383,155 @@ func days(date string, n int) []string {
 	}
 	return out
 }
+
+// --- goals and projects (life-goals.ts, projects.ts) ----------------------------------------
+
+// somaPeriod is Soma's periodOf: "2026", "2026-10", "2026-W44" (ISO week).
+func somaPeriod(horizon string, t time.Time) string {
+	t = t.In(displayZone)
+	switch horizon {
+	case "year":
+		return strconv.Itoa(t.Year())
+	case "month":
+		return t.Format("2006-01")
+	}
+	y, w := t.ISOWeek()
+	return fmt.Sprintf("%d-W%02d", y, w)
+}
+
+type somaGoal struct {
+	ID, Title, Horizon, Unit, Color string
+	Target, Progress                float64
+	Done                            bool
+}
+
+// somaGoalsNow is this week's, month's and year's goals, in Soma's order.
+func somaGoalsNow(horizon string) []somaGoal {
+	period := somaPeriod(horizon, time.Now())
+	var out []somaGoal
+	for _, o := range somaList("goals") {
+		if str(o["horizon"]) != horizon || str(o["period"]) != period {
+			continue
+		}
+		g := somaGoal{ID: str(o["id"]), Title: str(o["title"]), Horizon: horizon, Unit: str(o["unit"]),
+			Color: str(o["color"]), Target: num(o["target"]), Progress: num(o["progress"])}
+		g.Done, _ = o["done"].(bool)
+		out = append(out, g)
+	}
+	return out
+}
+
+// somaGoalTap ticks a plain goal, or logs delta towards a counted one (logProgress).
+func somaGoalTap(id string, delta float64) {
+	o := somaObj("goals#" + id)
+	if o == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	if t := num(o["target"]); t > 0 {
+		p := max(0, num(o["progress"])+delta)
+		was, _ := o["done"].(bool)
+		done := p >= t
+		o["progress"], o["done"] = p, done
+		if done && !was {
+			o["doneAt"] = now
+		} else if !done {
+			delete(o, "doneAt")
+		}
+	} else {
+		d, _ := o["done"].(bool)
+		o["done"] = !d
+		if !d {
+			o["doneAt"] = now
+		} else {
+			delete(o, "doneAt")
+		}
+	}
+	somaPut("goals#"+id, o)
+}
+
+type somaStep struct {
+	ID, Label string
+	Done      bool
+}
+
+type somaProject struct {
+	ID, Name, Client, Due, Color, Priority string
+	Steps                                  []somaStep
+}
+
+func (p somaProject) done() int {
+	n := 0
+	for _, s := range p.Steps {
+		if s.Done {
+			n++
+		}
+	}
+	return n
+}
+
+// somaProjects is the active projects: deadlines first, nearest first.
+func somaProjects() []somaProject {
+	var out []somaProject
+	for _, o := range somaList("projects") {
+		if st := str(o["status"]); st != "" && st != "active" {
+			continue
+		}
+		p := somaProject{ID: str(o["id"]), Name: str(o["name"]), Client: str(o["client"]), Due: str(o["due"]),
+			Color: str(o["color"]), Priority: str(o["priority"])}
+		steps, _ := o["steps"].([]any)
+		for _, s := range steps {
+			if so, ok := s.(obj); ok {
+				d, _ := so["done"].(bool)
+				p.Steps = append(p.Steps, somaStep{ID: str(so["id"]), Label: str(so["label"]), Done: d})
+			}
+		}
+		out = append(out, p)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i].Due, out[j].Due
+		if (a == "") != (b == "") {
+			return a != ""
+		}
+		return a < b
+	})
+	return out
+}
+
+// somaStepTap ticks a project step (setStep).
+func somaStepTap(projectID, stepID string) {
+	o := somaObj("projects#" + projectID)
+	if o == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	steps, _ := o["steps"].([]any)
+	for _, s := range steps {
+		if so, ok := s.(obj); ok && str(so["id"]) == stepID {
+			d, _ := so["done"].(bool)
+			so["done"] = !d
+			if !d {
+				so["at"] = now
+			} else {
+				delete(so, "at")
+			}
+		}
+	}
+	o["touchedAt"] = now
+	somaPut("projects#"+projectID, o)
+}
+
+// somaAddStep adds a step to a project (addStep).
+func somaAddStep(projectID, label string) {
+	label = strings.TrimSpace(label)
+	o := somaObj("projects#" + projectID)
+	if o == nil || label == "" {
+		return
+	}
+	now := time.Now().UnixMilli()
+	steps, _ := o["steps"].([]any)
+	id := "ps-" + somaNewID()
+	o["steps"] = append(steps, obj{"id": id, "label": label, "done": false})
+	o["touchedAt"] = now
+	somaPut("projects#"+projectID, o)
+}

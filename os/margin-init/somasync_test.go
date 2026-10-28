@@ -356,3 +356,49 @@ func TestSomaLinkFromThePhone(t *testing.T) {
 		t.Fatal("the page should say Soma is linked, and never show the code")
 	}
 }
+
+// Goals and projects from the PC show on the tablet, and what's ticked there reaches the PC.
+func TestSomaGoalsAndProjects(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	now, at := time.Now(), time.Now().UnixMilli()
+	week, month := somaPeriod("week", now), somaPeriod("month", now)
+	relay.pcPut(t, k, "goals#g1", obj{"id": "g1", "title": "Run 20 km", "horizon": "week", "period": week, "target": 20, "progress": 18, "unit": "km", "done": false, "color": "#30d158", "createdAt": at}, at)
+	relay.pcPut(t, k, "goals#g2", obj{"id": "g2", "title": "Read two books", "horizon": "month", "period": month, "done": false, "color": "#0a84ff", "createdAt": at}, at)
+	relay.pcPut(t, k, "goals#g3", obj{"id": "g3", "title": "Old week", "horizon": "week", "period": "2020-W01", "done": false, "color": "#0a84ff", "createdAt": at}, at)
+	relay.pcPut(t, k, "projects#p1", obj{"id": "p1", "name": "Client site", "client": "Acme", "status": "active", "due": "2099-01-01", "color": "#ff9f0a", "createdAt": at,
+		"steps": []any{obj{"id": "s1", "label": "Mockups", "done": true}, obj{"id": "s2", "label": "Build", "done": false}}}, at)
+	relay.pcPut(t, k, "projects#p2", obj{"id": "p2", "name": "Paused", "status": "paused", "color": "#ff9f0a", "createdAt": at, "steps": []any{}}, at)
+	soma.sync()
+
+	if g := somaGoalsNow("week"); len(g) != 1 || g[0].Title != "Run 20 km" || g[0].Target != 20 {
+		t.Fatalf("week goals %+v", g)
+	}
+	if p := somaProjects(); len(p) != 1 || p[0].Name != "Client site" || p[0].done() != 1 {
+		t.Fatalf("projects %+v", p)
+	}
+
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:view:goals")
+	shot(t, c, "soma-goals")
+	c.somaTap("so:goal:g1:1")
+	c.somaTap("so:goal:g1:1") // 20 of 20: done
+	c.somaTap("so:goal:g2:0") // plain: ticked
+	c.somaTap("so:step:p1:s2")
+	c.somaTap("so:type:step:p1")
+	c.somaKey([]byte("Launch\r"))
+	drawMu.Unlock()
+	soma.sync()
+
+	if g1, _ := relay.pcGet(t, k, "goals#g1"); g1["progress"] != float64(20) || g1["done"] != true || g1["doneAt"] == nil {
+		t.Fatalf("the PC sees g1 as %v", g1)
+	}
+	if g2, _ := relay.pcGet(t, k, "goals#g2"); g2["done"] != true {
+		t.Fatalf("the PC sees g2 as %v", g2)
+	}
+	p1, _ := relay.pcGet(t, k, "projects#p1")
+	steps := p1["steps"].([]any)
+	if len(steps) != 3 || steps[1].(obj)["done"] != true || steps[2].(obj)["label"] != "Launch" || p1["touchedAt"] == nil {
+		t.Fatalf("the PC sees p1 as %v", p1)
+	}
+}
