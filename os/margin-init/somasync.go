@@ -334,9 +334,9 @@ func (s *somaStore) saveTo(dir string) {
 // scans, money, pantry...) isn't kept on the tablet. somaFieldsVersion changes with the list,
 // which makes the tablet pull everything again to pick up the kinds it didn't keep.
 var somaFields = map[string]bool{"habits": true, "todos": true, "dayPlans": true, "reading": true, "history": true, "nutrition": true,
-	"goals": true, "projects": true}
+	"goals": true, "projects": true, "notes": true}
 
-const somaFieldsVersion = 2
+const somaFieldsVersion = 3
 
 // somaField is the part of Soma's state a record belongs to (records.ts, fieldOf).
 func somaField(key string) string {

@@ -535,3 +535,112 @@ func somaAddStep(projectID, label string) {
 	o["touchedAt"] = now
 	somaPut("projects#"+projectID, o)
 }
+
+// --- notes (notes.ts): the Obsidian vault, mirrored by the PC --------------------------------
+
+type somaNote struct {
+	ID, Text string
+	Mtime    int64
+}
+
+func (n somaNote) title() string {
+	return strings.TrimSuffix(n.ID[strings.LastIndex(n.ID, "/")+1:], ".md")
+}
+
+func (n somaNote) folder() string {
+	if i := strings.LastIndex(n.ID, "/"); i > 0 {
+		return n.ID[:i]
+	}
+	return ""
+}
+
+// somaNotes is every note, the most recently changed first.
+func somaNotes() []somaNote {
+	var out []somaNote
+	for _, o := range somaList("notes") {
+		out = append(out, somaNote{ID: str(o["id"]), Text: str(o["text"]), Mtime: int64(num(o["mtime"]))})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Mtime > out[j].Mtime })
+	return out
+}
+
+func somaNoteByID(id string) *somaNote {
+	o := somaObj("notes#" + id)
+	if o == nil {
+		return nil
+	}
+	return &somaNote{ID: id, Text: str(o["text"]), Mtime: int64(num(o["mtime"]))}
+}
+
+func somaPutNote(id, text string) {
+	somaPut("notes#"+id, obj{"id": id, "text": text, "mtime": time.Now().UnixMilli()})
+}
+
+// somaNoteToggle ticks or unticks the checkbox on line i ("- [ ]" / "- [x]").
+func somaNoteToggle(id string, i int) {
+	n := somaNoteByID(id)
+	if n == nil {
+		return
+	}
+	lines := strings.Split(n.Text, "\n")
+	if i < 0 || i >= len(lines) {
+		return
+	}
+	l := lines[i]
+	switch {
+	case strings.Contains(l, "[ ] "):
+		l = strings.Replace(l, "[ ] ", "[x] ", 1)
+	case strings.Contains(l, "[x] "):
+		l = strings.Replace(l, "[x] ", "[ ] ", 1)
+	case strings.Contains(l, "[X] "):
+		l = strings.Replace(l, "[X] ", "[ ] ", 1)
+	default:
+		return
+	}
+	lines[i] = l
+	somaPutNote(id, strings.Join(lines, "\n"))
+}
+
+// somaNoteAppend adds a line at the end of a note (above nothing: SOMA's block is rewritten anyway).
+func somaNoteAppend(id, line string) {
+	line = strings.TrimRight(line, " ")
+	n := somaNoteByID(id)
+	if n == nil || strings.TrimSpace(line) == "" {
+		return
+	}
+	text := strings.TrimRight(n.Text, "\n")
+	somaPutNote(id, text+"\n"+line+"\n")
+}
+
+// somaNewNote makes a note in the Inbox folder, named after its first line.
+func somaNewNote(title string) string {
+	title = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`\/:*?"<>|#^[]`, r) {
+			return ' '
+		}
+		return r
+	}, strings.TrimSpace(title))
+	if title == "" {
+		return ""
+	}
+	id := "Inbox/" + title + ".md"
+	if somaNoteByID(id) == nil {
+		somaPutNote(id, "# "+title+"\n\n")
+	}
+	return id
+}
+
+// noteTask reads a checkbox line: whether it's one, ticked, and its text without the block id.
+func noteTask(l string) (task, done bool, text string) {
+	t := strings.TrimLeft(l, " \t")
+	for _, p := range []string{"- [ ] ", "* [ ] ", "- [x] ", "- [X] ", "* [x] "} {
+		if strings.HasPrefix(t, p) {
+			text = t[len(p):]
+			if i := strings.LastIndex(text, " ^s-"); i >= 0 {
+				text = text[:i]
+			}
+			return true, p[3] != ' ', text
+		}
+	}
+	return false, false, ""
+}

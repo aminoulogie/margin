@@ -402,3 +402,43 @@ func TestSomaGoalsAndProjects(t *testing.T) {
 		t.Fatalf("the PC sees p1 as %v", p1)
 	}
 }
+
+// The vault's notes from the PC: listed, opened, a task ticked, a line and a note added.
+func TestSomaNotes(t *testing.T) {
+	c, relay, k := somaTestLink(t)
+	at := time.Now().UnixMilli()
+	relay.pcPut(t, k, "notes#Projects/Site.md", obj{"id": "Projects/Site.md", "mtime": at - 5000,
+		"text": "# Site\n\nThe plan, **in bold**.\n\n## Steps\n- [ ] Mockups ^s-t9\n- [x] Brief\n- a bullet\n\n<!-- soma -->\n- [ ] generated\n<!-- /soma -->\n"}, at)
+	relay.pcPut(t, k, "notes#Daily/2026-10-28.md", obj{"id": "Daily/2026-10-28.md", "mtime": at, "text": "# 2026-10-28\n"}, at)
+	soma.sync()
+	if ns := somaNotes(); len(ns) != 2 || ns[0].title() != "2026-10-28" || ns[1].folder() != "Projects" {
+		t.Fatalf("notes %+v", ns)
+	}
+
+	drawMu.Lock()
+	c.setMode(modeSoma)
+	c.somaTap("so:view:notes")
+	shot(t, c, "soma-notes")
+	c.somaTap("so:note:Projects/Site.md")
+	shot(t, c, "soma-note")
+	c.somaTap("so:tick:5") // Mockups
+	c.somaTap("so:type:notetask")
+	c.somaKey([]byte("Send invoice\r"))
+	c.somaTap("so:notes")
+	c.somaTap("so:type:newnote")
+	c.somaKey([]byte("Ideas\r"))
+	drawMu.Unlock()
+	soma.sync()
+
+	site, _ := relay.pcGet(t, k, "notes#Projects/Site.md")
+	text := site["text"].(string)
+	if !strings.Contains(text, "- [x] Mockups ^s-t9\n") || !strings.HasSuffix(text, "<!-- /soma -->\n- [ ] Send invoice\n") || site["mtime"].(float64) <= float64(at) {
+		t.Fatalf("the PC sees the note as %q (%v)", text, site["mtime"])
+	}
+	if idea, _ := relay.pcGet(t, k, "notes#Inbox/Ideas.md"); idea["text"] != "# Ideas\n\n" {
+		t.Fatalf("new note %v", idea)
+	}
+	if c.somaUI.note != "Inbox/Ideas.md" {
+		t.Fatalf("the new note isn't open: %q", c.somaUI.note)
+	}
+}
