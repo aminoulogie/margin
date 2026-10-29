@@ -95,7 +95,7 @@ func TestBooksIsTheSystem(t *testing.T) {
 		t.Fatalf("confirm = %q", c.confirm)
 	}
 	shot(t, c, "system-settings-power")
-	tapButton(t, c, "home")
+	tapButton(t, c, "tab:margin") // the tab bar stays on top in Settings
 	if c.mode != modeBooksHome || c.confirm != "" {
 		t.Fatalf("back to Books: mode %v confirm %q", c.mode, c.confirm)
 	}

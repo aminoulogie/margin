@@ -175,6 +175,9 @@ func (c *console) pageTouch(p TouchPoint) {
 		sc.longGen++
 		sc.longFired = false
 		gen, lx, ly := sc.longGen, p.X, p.Y
+		if c.page.header > 0 && p.Y-c.barH < c.page.header {
+			c.pressShow(p.X, p.Y) // the tab bar doesn't scroll: shown at once
+		}
 		time.AfterFunc(pressDelay, func() {
 			drawMu.Lock()
 			defer drawMu.Unlock()

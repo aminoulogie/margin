@@ -311,21 +311,31 @@ func ring(img *image.RGBA, cx, cy, rad, width int, frac float64, track, c color.
 // --- the Books app's tab bar --------------------------------------------------------------
 
 // booksTabs is the floating tab bar of Apple Books on iPad, with the reading goal ring.
-// pillHit is where a small pill under the tab bar takes a tap: taller and a little wider
-// than it looks (a fingertip is bigger than 42 pixels), up to the gaps beside it.
-func pillHit(r image.Rectangle) image.Rectangle {
-	return image.Rect(r.Min.X-6, r.Min.Y-8, r.Max.X+6, r.Max.Y+14)
+// The tab bar, on every screen but a book: the main tabs in a floating capsule (Margin,
+// Soma, Playbox, Browser, Settings, Terminal) and, under Margin and Playbox, their own pages
+// as pills, with room between the two rows. The selected tab sits on a lighter pill; a
+// finger on another tab slides that pill over to it at once (tabPress), before the page
+// behind is drawn, so a tap always shows where it's going.
+
+const (
+	tabBarTop, tabBarBot = 18, 94   // the capsule
+	subTop, subBot       = 114, 160 // the pills under it
+)
+
+type tabItem struct {
+	id, label string
+	r         image.Rectangle
+	icon      bool // the search pill
 }
 
-func (c *console) booksTabs(p *page, on string) {
+// tabLayout places the tabs for a page whose selected tab is on: the main row, the row under
+// it (none for most tabs), and which of each is selected (-1: none).
+func (c *console) tabLayout(on string) (main, sub []tabItem, mainOn, subOn int) {
 	f := apple()
-	img := p.img
-	// The main tabs: Margin (the books: Home, Library, Store, Words), Soma, Playbox (films),
-	// Browser, Settings, Terminal.
 	margin := on == "tab:home" || on == "tab:library" || on == "tab:store" || on == "tab:words"
 	playbox := strings.HasPrefix(on, "pbt:")
-	tabs := []struct{ id, label string }{{"tab:margin", "Margin"}, {"tab:soma", "Soma"}, {"tab:playbox", "Playbox"},
-		{"tab:browser", "Browser"}, {"tab:settings", "Settings"}, {"tab:terminal", "Terminal"}}
+	tabs := []tabItem{{id: "tab:margin", label: "Margin"}, {id: "tab:soma", label: "Soma"}, {id: "tab:playbox", label: "Playbox"},
+		{id: "tab:browser", label: "Browser"}, {id: "tab:settings", label: "Settings"}, {id: "tab:terminal", label: "Terminal"}}
 	widths := make([]int, len(tabs))
 	total := 0
 	for pad := 56; pad >= 24; pad -= 4 { // as roomy as fits beside the reading goal
@@ -339,64 +349,134 @@ func (c *console) booksTabs(p *page, on string) {
 		}
 	}
 	x := (c.s.W - total) / 2
-	bar := image.Rect(x-10, 26, x+total+10, 106)
-	shadow(img, bar, 40, 0.10)
-	ui.RoundRect(img, bar, 40, apTabBG)
-	for i, t := range tabs {
-		r := image.Rect(x, bar.Min.Y+8, x+widths[i], bar.Max.Y-8)
-		if t.id == on || t.id == "tab:margin" && margin || t.id == "tab:playbox" && playbox {
-			ui.RoundRect(img, r, 32, apTabOn)
+	mainOn, subOn = -1, -1
+	for i := range tabs {
+		tabs[i].r = image.Rect(x, tabBarTop+8, x+widths[i], tabBarBot-8)
+		if id := tabs[i].id; id == on || id == "tab:margin" && margin || id == "tab:playbox" && playbox {
+			mainOn = i
 		}
-		apTextCenter(img, f.callout, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
-		p.buttons = append(p.buttons, button{t.id, r})
 		x += widths[i]
 	}
-	// Margin's own pages, under it: Home, Library, Store, Words, and search.
-	if margin {
-		p.header = marginTabsH
-		sx := 48
-		for _, t := range []struct{ id, label string }{{"tab:home", "Home"}, {"tab:library", "Library"}, {"tab:store", "Store"}, {"tab:words", "Words"}} {
-			w := ui.TextWidth(f.caption, t.label) + 44
-			r := image.Rect(sx, 114, sx+w, 156)
-			if t.id == on {
-				ui.RoundRect(img, r, 21, apTabOn)
-			} else {
-				ui.RoundRect(img, r, 21, apTabBG)
-			}
-			apTextCenter(img, f.caption, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
-			p.buttons = append(p.buttons, button{t.id, pillHit(r)})
-			sx += w + 12
-		}
-		sr := image.Rect(sx, 114, sx+64, 156)
-		ui.RoundRect(img, sr, 21, apTabBG)
-		iconMagnifier(img, sr.Min.X+32, 135, apLabel)
-		p.buttons = append(p.buttons, button{"tab:search", pillHit(sr)})
+	var names []tabItem
+	search := ""
+	switch {
+	case margin:
+		names = []tabItem{{id: "tab:home", label: "Home"}, {id: "tab:library", label: "Library"}, {id: "tab:store", label: "Store"}, {id: "tab:words", label: "Words"}}
+		search = "tab:search"
+	case playbox:
+		names = []tabItem{{id: "pbt:discover", label: "Discover"}, {id: "pbt:library", label: "Library"}, {id: "pbt:addons", label: "Add-ons"}, {id: "pbt:settings", label: "Settings"}}
+		search = "pb:search"
 	}
-	// Playbox's own tabs, under it: Discover, Library, Add-ons, Settings, and search.
-	if playbox {
-		p.header = marginTabsH
-		sx := 48
-		for _, t := range []struct{ id, label string }{{"pbt:discover", "Discover"}, {"pbt:library", "Library"}, {"pbt:addons", "Add-ons"}, {"pbt:settings", "Settings"}} {
-			w := ui.TextWidth(f.caption, t.label) + 44
-			r := image.Rect(sx, 114, sx+w, 156)
-			bg := apTabBG
-			if t.id == on {
-				bg = apTabOn
-			}
-			ui.RoundRect(img, r, 21, bg)
-			apTextCenter(img, f.caption, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
-			p.buttons = append(p.buttons, button{t.id, pillHit(r)})
-			sx += w + 12
+	sx := 48
+	for _, t := range names {
+		w := ui.TextWidth(f.caption, t.label) + 48
+		t.r = image.Rect(sx, subTop, sx+w, subBot)
+		if t.id == on {
+			subOn = len(sub)
 		}
-		sr := image.Rect(sx, 114, sx+64, 156)
-		ui.RoundRect(img, sr, 21, apTabBG)
-		iconMagnifier(img, sr.Min.X+32, 135, apLabel)
-		p.buttons = append(p.buttons, button{"pb:search", sr})
+		sub = append(sub, t)
+		sx += w + 12
 	}
+	if search != "" {
+		sub = append(sub, tabItem{id: search, r: image.Rect(sx, subTop, sx+66, subBot), icon: true})
+	}
+	return tabs, sub, mainOn, subOn
+}
 
+// pillHit is where a pill takes a tap: a little bigger than it looks (a fingertip is bigger
+// than 46 pixels), up to the gaps beside it.
+func pillHit(r image.Rectangle) image.Rectangle {
+	return image.Rect(r.Min.X-6, r.Min.Y-10, r.Max.X+6, r.Max.Y+10)
+}
+
+// drawTabs draws the tab bar on img: the selected pills at mainPill and subPill (nil: none),
+// which tabPress moves while a finger is on a tab.
+func drawTabs(img *image.RGBA, main, sub []tabItem, mainPill, subPill *image.Rectangle, bold map[string]bool) {
+	f := apple()
+	if len(main) > 0 {
+		bar := image.Rect(main[0].r.Min.X-10, tabBarTop, main[len(main)-1].r.Max.X+10, tabBarBot)
+		shadow(img, bar, 40, 0.10)
+		ui.RoundRect(img, bar, (tabBarBot-tabBarTop)/2, apTabBG)
+	}
+	if mainPill != nil {
+		ui.RoundRect(img, *mainPill, mainPill.Dy()/2, apTabOn)
+	}
+	for _, t := range main {
+		face := f.callout
+		if bold[t.id] {
+			face = textFace("inter-semibold", fonts.InterSemiBold, true, 30*textScale)
+		}
+		apTextCenter(img, face, (t.r.Min.X+t.r.Max.X)/2, (t.r.Min.Y+t.r.Max.Y)/2, apLabel, t.label)
+	}
+	for _, t := range sub {
+		ui.RoundRect(img, t.r, t.r.Dy()/2, apTabBG)
+	}
+	if subPill != nil {
+		ui.RoundRect(img, *subPill, subPill.Dy()/2, apTabOn)
+	}
+	for _, t := range sub {
+		if t.icon {
+			iconMagnifier(img, (t.r.Min.X+t.r.Max.X)/2, (t.r.Min.Y+t.r.Max.Y)/2, apLabel)
+			continue
+		}
+		face := f.caption
+		if bold[t.id] {
+			face = f.captionBold
+		}
+		apTextCenter(img, face, (t.r.Min.X+t.r.Max.X)/2, (t.r.Min.Y+t.r.Max.Y)/2, apLabel, t.label)
+	}
+}
+
+var tabCanvas *image.RGBA // withTabBar's picture, reused like pageCanvas
+
+// withTabBar puts the tab bar over a page drawn without one (Settings): the page moves down
+// under a band with the bar, its buttons with it. Caller holds drawMu.
+func (c *console) withTabBar(p *page, on string) *page {
+	src := p.img
+	const top = tabBarBot + 10 // the page's own top is empty: it tucks up under the bar
+	w, h := src.Rect.Dx(), src.Rect.Dy()+top
+	if tabCanvas == nil || tabCanvas.Rect.Dx() != w || tabCanvas.Rect.Dy() != h {
+		tabCanvas = image.NewRGBA(image.Rect(0, 0, w, h))
+	}
+	img := tabCanvas
+	ui.Fill(img, image.Rect(0, 0, w, top), src.RGBAAt(w-2, 2))
+	copy(img.Pix[top*img.Stride:], src.Pix)
+	np := &page{img: img, header: top}
+	for _, b := range p.buttons {
+		np.buttons = append(np.buttons, button{b.id, b.r.Add(image.Pt(0, top))})
+	}
+	c.booksTabs(np, on)
+	return np
+}
+
+func (c *console) booksTabs(p *page, on string) {
+	f := apple()
+	img := p.img
+	main, sub, mi, si := c.tabLayout(on)
+	var mp, sp *image.Rectangle
+	bold := map[string]bool{}
+	if mi >= 0 {
+		mp = &main[mi].r
+		bold[main[mi].id] = true
+	}
+	if si >= 0 {
+		sp = &sub[si].r
+		bold[sub[si].id] = true
+	}
+	drawTabs(img, main, sub, mp, sp, bold)
+	for _, t := range main {
+		p.buttons = append(p.buttons, button{t.id, image.Rect(t.r.Min.X, tabBarTop, t.r.Max.X, tabBarBot+6)})
+	}
+	for _, t := range sub {
+		p.buttons = append(p.buttons, button{t.id, pillHit(t.r)})
+	}
+	if len(sub) > 0 {
+		p.header = marginTabsH
+	}
+	c.tabsOn = on
 	// The reading goal, top right: minutes today in a ring, the goal under it.
 	mins, goal := c.lib.readingToday(), c.lib.Prefs.GoalMinutes
-	cx, cy := c.s.W-70, 66
+	cx, cy := c.s.W-70, (tabBarTop+tabBarBot)/2
 	ring(img, cx, cy, 30, 7, float64(mins)/float64(max(goal, 1)), apRingTrack, apRingBlue)
 	apTextCenter(img, f.captionBold, cx, cy-4, apRingBlue, fmt.Sprint(mins))
 	apTextCenter(img, textFace("inter", fonts.InterRegular, false, 15), cx, cy+16, apSecondary, fmt.Sprint(goal))

@@ -25,7 +25,8 @@ const (
 	durSheet = 300 * time.Millisecond
 	durGlide = 110 * time.Millisecond
 	durOpen  = 420 * time.Millisecond
-	openDim  = 0.4 // how dark the screen behind a book opening gets
+	durTab   = 140 * time.Millisecond // the selected tab's pill sliding to the one touched
+	openDim  = 0.4                    // how dark the screen behind a book opening gets
 )
 
 var turnDuration = map[string]time.Duration{"slide": 300 * time.Millisecond, "curl": 380 * time.Millisecond}

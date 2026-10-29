@@ -231,7 +231,7 @@ func (c *console) booksHomePage() *page {
 
 const (
 	tabsH       = 130 // the tab bar's band at the top of the books pages: it stays put
-	marginTabsH = 176 // ...with Margin's own row under it (Home, Library, Store, Words)
+	marginTabsH = 174 // ...with Margin's own row under it (Home, Library, Store, Words)
 	homeRowH    = 460 // a row's title and covers
 	rowCW       = 150 // cover size in rows
 	rowCH       = 225

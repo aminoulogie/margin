@@ -78,6 +78,8 @@ type console struct {
 	edge             edgeState                // a swipe in from the left edge, going back (edgeback.go)
 	tapFrom          image.Rectangle          // the button being tapped, on the screen (a book opens out of it)
 	wifi             wifiUI                   // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
+	tabsOn           string                   // the selected tab of the page on screen ("" if it has no tab bar)
+	termBar          *page                    // the tab bar over the terminal, as a page (its taps)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top
 	screenOn         bool
@@ -168,7 +170,7 @@ func newConsole(s *Screen) (*console, error) {
 	c.rf = c.readerFontsNow()
 	c.words = loadWords()
 	cols, rows := (s.W-2*consolePad)/c.cw, c.rowsFor(s.H-kbHeight-accH)
-	c.offX, c.offY = (s.W-cols*c.cw)/2, c.barH+consolePad/2
+	c.offX, c.offY = (s.W-cols*c.cw)/2, c.barH+tabsH+consolePad/2
 	c.t = vt.New(cols, rows)
 	c.t.Reply = c.input
 	if c.kb, err = newKeyboard(s, c.input, c.keyboardShown); err != nil {
@@ -214,7 +216,7 @@ func newConsole(s *Screen) (*console, error) {
 const consolePad = 16
 
 // rowsFor is how many text rows fit in a console area h pixels tall.
-func (c *console) rowsFor(h int) int { return (h - c.barH - consolePad) / c.ch }
+func (c *console) rowsFor(h int) int { return (h - c.barH - tabsH - consolePad) / c.ch }
 
 // keyboardShown resizes the console around the on-screen keyboard (shown or hidden): the
 // grid, the shell's window size (programs get SIGWINCH), and a full redraw.
@@ -296,6 +298,8 @@ func (c *console) touchLoop() {
 					}
 				}
 				switch {
+				case c.mode == modeTerminal && (p.Down && p.Y < c.barH+tabsH || !p.Down && c.sc.drag && c.page == c.termBar):
+					c.pageTouch(p) // the tab bar above the shell
 				case c.mode == modeTerminal && c.kb.visible && p.Y >= c.kb.y0:
 					c.kb.touch(p)
 				case c.mode == modeTerminal:

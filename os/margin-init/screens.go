@@ -73,6 +73,7 @@ func (c *console) showPage() {
 	}
 	c.endGPUScroll()
 	c.sc.cpuOn, c.sc.motion, c.press.on = false, nil, false // whatever moved or was pressed, drawn again
+	c.tabsOn = ""                                           // booksTabs says which, if the page has tabs
 	c.pageGen++
 	covers.mu.Lock()
 	covers.loaded = func(url string) { // whichever screen shows it now

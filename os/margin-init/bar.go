@@ -57,10 +57,6 @@ func (c *console) drawBar() {
 	cy := c.barH/2 + 9
 	t := now.Format("15:04")
 	x0 := 30
-	if c.mode == modeTerminal { // the way back to the Books app (a tap on the bar's left)
-		ui.DrawText(img, f.captionBold, x0, cy, rgb(0x0a84ff), "‹ Books")
-		x0 += ui.TextWidth(f.captionBold, "‹ Books") + 30
-	}
 	ui.DrawText(img, f.captionBold, x0, cy, fg, t)
 	ui.DrawText(img, f.caption, x0+ui.TextWidth(f.captionBold, t)+14, cy, fg, now.Format("Mon 2 Jan"))
 
@@ -125,6 +121,7 @@ func (c *console) redrawAll() {
 		return
 	}
 	if c.mode == modeTerminal {
+		c.drawTermTabs()
 		if c.tu.back > 0 || c.tu.selOn {
 			c.renderView()
 		} else {

@@ -55,7 +55,7 @@ func groupRows(img *image.RGBA, x, y, w, n, rh int) []image.Rectangle {
 
 func (c *console) settingsPage() *page {
 	f := apple()
-	w, h := c.s.W, c.s.H-c.barH
+	w, h := c.s.W, c.s.H-c.barH-tabBarBot-10 // the tab bar goes on top (withTabBar)
 	switch c.setPane {
 	case "display":
 		h = max(h, 2300) // taller than the screen: it scrolls
@@ -78,9 +78,6 @@ func (c *console) settingsPage() *page {
 	// The sidebar.
 	const sw = 500
 	ui.Fill(img, image.Rect(sw, 0, sw+1, h), apSeparator)
-	iconBack(img, 32, 64, apBlue)
-	apText(img, f.body, 60, 76, apBlue, "Books")
-	p.buttons = append(p.buttons, button{"home", image.Rect(0, 10, 220, 120)})
 	apText(img, f.largeTitle, 32, 200, apLabel, "Settings")
 	// The device card, like the Apple Account row.
 	dc := image.Rect(24, 240, sw-24, 360)
@@ -323,5 +320,5 @@ func (c *console) settingsPage() *page {
 		y += len(items) * rh
 		footer("Restart into Android turns Margin's autostart off. To come back, run margin takeover auto on from the PC.")
 	}
-	return p
+	return c.withTabBar(p, "tab:settings")
 }

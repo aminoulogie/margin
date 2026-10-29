@@ -76,6 +76,9 @@ func (c *console) pressShow(x, y int) {
 	if id == "" {
 		return
 	}
+	if c.tabPress(id) {
+		return
+	}
 	scr, src := c.onScreen(r, y)
 	if scr.Empty() || scr.Dx()*scr.Dy() > c.s.W*c.viewH()/3 {
 		return // nothing to show, or a whole area rather than a button
