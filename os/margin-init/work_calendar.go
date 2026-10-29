@@ -324,6 +324,14 @@ func (k *wk) dayCard(date string, y int) int {
 	if sl := sleepHours(date); sl > 0 {
 		rows = append(rows, row{"moon", "Sleep", fmt.Sprintf("%.1f h", sl), "wk:go:health"})
 	}
+	// The plans' steps due that day, in their project's colour: the box ticks the step.
+	if steps := wkStepsDue(wkProjects(), date, date, false); len(steps) > 0 {
+		sc := image.Rect(wkX0, y, wkX1, y+76+83*len(steps))
+		k.card(sc)
+		k.cardHead(wkX0+28, y+46, "flag", "Plan steps", "")
+		k.datedStepRows(steps, y+76, time.Now().In(displayZone), false)
+		y = sc.Max.Y + 20
+	}
 	rc := image.Rect(wkX0, y, wkX1, y+80+76*len(rows))
 	k.card(rc)
 	k.cardHead(wkX0+28, y+46, "calendar", "The rest of the day", "")

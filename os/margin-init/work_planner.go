@@ -35,6 +35,9 @@ func (c *console) setPlanDay(t time.Time) {
 
 // todoCol is a to-do's colour on the calendar: red when it matters, else one of the palette.
 func todoCol(t somaTodo) color.RGBA {
+	if t.col.A != 0 { // a plan's step: its project's colour
+		return t.col
+	}
 	if t.Priority == "high" {
 		return rgb(0xf06a8a)
 	}
@@ -278,7 +281,8 @@ func (k *wk) dayList(day time.Time, todos []somaTodo, now time.Time, y int) int 
 	case day.Equal(today.AddDate(0, 0, 1)):
 		title = "Tomorrow"
 	}
-	tc := image.Rect(wkX0, y, wkX1, y+96+83*max(len(list), 1)+20)
+	steps := wkStepsDue(wkProjects(), ds, ds, false)
+	tc := image.Rect(wkX0, y, wkX1, y+96+83*max(len(list)+len(steps), 1)+20)
 	k.card(tc)
 	e := k.cardHead(wkX0+28, y+54, icon, title, "")
 	note := fmt.Sprintf("%d of %d done", done, len(list))
@@ -292,7 +296,8 @@ func (k *wk) dayList(day time.Time, todos []somaTodo, now time.Time, y int) int 
 	}
 	k.outline("wk:type-open:newtask:"+ds, "plus", "Add", right, y+23, 50)
 	k.todoRows(list, y+94, ds)
-	if len(list) == 0 {
+	k.datedStepRows(steps, y+94+83*len(list), now, false)
+	if len(list)+len(steps) == 0 {
 		k.emptyNote(190, y+94+50, "Nothing planned. Add a to-do, or tap a time on the calendar.")
 	}
 	return tc.Max.Y
@@ -464,6 +469,9 @@ func (k *wk) planMonth(pd time.Time, todos []somaTodo, now time.Time) int {
 				by[d], seen[d] = append(by[d], t), true
 			}
 		}
+	}
+	for _, d := range wkStepsDue(wkProjects(), start.Format("2006-01-02"), start.AddDate(0, 0, 7*weeks).Format("2006-01-02"), false) {
+		by[d.s.Due] = append(by[d.s.Due], somaTodo{ID: "step:" + d.s.ID, Text: d.s.Label, Date: d.s.Due, col: wkColour(d.p, d.p.order)})
 	}
 	today := dayStart(now)
 	for w := range weeks {

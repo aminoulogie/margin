@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,9 +19,20 @@ type wkStep struct {
 	Done      bool
 	At        time.Time // ticked
 	WorkMs    int64     // worked on it with ▶ (step-work.ts)
+	// For deadline-driven plans (all optional; ProjectStep in Soma's projects.ts):
+	Due       string // "YYYY-MM-DD"
+	Milestone bool   // a fixed-date event (an exam, an appointment), not work
+	Phase     string // steps are grouped by phase, in order of first appearance
+	WaitingOn string // blocked on someone else: "Waiting", never my overdue
+}
+
+// overdue: still to do, work of mine (not a milestone, not waiting on someone), past its date.
+func (s wkStep) overdue(today string) bool {
+	return !s.Done && !s.Milestone && s.WaitingOn == "" && s.Due != "" && s.Due < today
 }
 
 type wkProject struct {
+	Kind                                                 string // "plan", or "" for client work (absent = "client")
 	ID, Name, Client, Color, Status, Due, Priority, Note string
 	Rate                                                 float64
 	Created, Touched                                     time.Time
@@ -52,12 +64,132 @@ func (p wkProject) progress() float64 {
 	return float64(p.done()) / float64(len(p.Steps))
 }
 
-// daysLeft is the days to its deadline (negative: late), and whether it has one.
+// plan: a deadline-driven personal plan, not client work (no client, rate or money).
+func (p wkProject) plan() bool { return p.Kind == "plan" }
+
+// effDue is the project's effective deadline: the earliest of its own date and its steps'
+// still to do (a step waiting on someone else doesn't set mine). "" for none.
+func (p wkProject) effDue() string {
+	d := p.Due
+	for _, s := range p.Steps {
+		if !s.Done && s.WaitingOn == "" && s.Due != "" && (d == "" || s.Due < d) {
+			d = s.Due
+		}
+	}
+	return d
+}
+
+// datedSteps: some step has a date (pace then reads overdue steps).
+func (p wkProject) datedSteps() bool {
+	for _, s := range p.Steps {
+		if s.Due != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// overdueSteps counts the steps that are mine, still to do, and past their date.
+func (p wkProject) overdueSteps(now time.Time) int {
+	today, n := somaDate(now), 0
+	for _, s := range p.Steps {
+		if s.overdue(today) {
+			n++
+		}
+	}
+	return n
+}
+
+// overdue: its own deadline has passed with it unfinished, or one of its steps is overdue.
+// (A milestone or a waiting step past its date isn't my overdue.)
+func (p wkProject) overdue(now time.Time) bool {
+	if p.Status == "done" || p.Status == "archived" {
+		return false
+	}
+	return p.Due != "" && p.Due < somaDate(now) || p.overdueSteps(now) > 0
+}
+
+// nextDated is the first dated step still to do (by date), or milestone only.
+func (p wkProject) nextDated(milestone bool) (wkStep, bool) {
+	var best wkStep
+	ok := false
+	for _, s := range p.Steps {
+		if !s.Done && s.Due != "" && (!milestone || s.Milestone) && (!ok || s.Due < best.Due) {
+			best, ok = s, true
+		}
+	}
+	return best, ok
+}
+
+// wkCountdown is "TCF exam in 11 days" (today, tomorrow, 3 days ago).
+func wkCountdown(label, due string, now time.Time) string {
+	d, err := time.ParseInLocation("2006-01-02", due, displayZone)
+	if err != nil {
+		return label
+	}
+	n := int(math.Round(d.Sub(dayStart(now)).Hours() / 24))
+	switch {
+	case n == 0:
+		return label + " today"
+	case n == 1:
+		return label + " tomorrow"
+	case n == -1:
+		return label + " yesterday"
+	case n < 0:
+		return fmt.Sprintf("%s %d days ago", label, -n)
+	}
+	return fmt.Sprintf("%s in %d days", label, n)
+}
+
+// wkPace is projects.ts pace()'s verdict: "no-steps", "done", "no-deadline", "overdue",
+// "ahead" or "behind". With dated steps, it's "behind" while any step is overdue (else today's
+// rule); nothing typed as a percentage, only ticks and dates.
+func wkPace(p wkProject, now time.Time) string {
+	left := 0
+	for _, s := range p.Steps {
+		if !s.Done {
+			left++
+		}
+	}
+	switch {
+	case len(p.Steps) == 0:
+		return "no-steps"
+	case left == 0:
+		return "done"
+	case p.datedSteps() && p.overdueSteps(now) > 0:
+		return "behind"
+	}
+	days, ok := p.daysLeft(now)
+	if !ok {
+		return "no-deadline"
+	}
+	if days < 0 {
+		return "overdue"
+	}
+	age := now.Sub(p.Created).Hours() / 24
+	window := max(1, min(14, int(age)))
+	if p.Created.IsZero() {
+		window = 1
+	}
+	ticks := 0
+	for _, s := range p.Steps {
+		if s.Done && !s.At.IsZero() && now.Sub(s.At) <= time.Duration(window)*24*time.Hour {
+			ticks++
+		}
+	}
+	if float64(ticks)/float64(window) >= float64(left)/float64(max(1, days)) {
+		return "ahead"
+	}
+	return "behind"
+}
+
+// daysLeft is the days to its effective deadline (effDue; negative: late), and whether it has one.
 func (p wkProject) daysLeft(now time.Time) (int, bool) {
-	if p.Due == "" {
+	due := p.effDue()
+	if due == "" {
 		return 0, false
 	}
-	d, err := time.ParseInLocation("2006-01-02", p.Due, displayZone)
+	d, err := time.ParseInLocation("2006-01-02", due, displayZone)
 	if err != nil {
 		return 0, false
 	}
@@ -81,6 +213,8 @@ func msTime(v any) time.Time {
 	return time.Time{}
 }
 
+var wkDateRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
 // wkProjects is every project, active first, then by deadline.
 func wkProjects() []wkProject {
 	var out []wkProject
@@ -92,14 +226,22 @@ func wkProjects() []wkProject {
 		if p.Status == "" {
 			p.Status = "active"
 		}
+		if str(o["kind"]) == "plan" {
+			p.Kind = "plan"
+		}
 		steps, _ := o["steps"].([]any)
 		for _, s := range steps {
 			so, ok := s.(obj)
 			if !ok {
 				continue
 			}
-			st := wkStep{ID: str(so["id"]), Label: str(so["label"]), At: msTime(so["at"])}
+			st := wkStep{ID: str(so["id"]), Label: str(so["label"]), At: msTime(so["at"]),
+				Phase: strings.TrimSpace(str(so["phase"])), WaitingOn: strings.TrimSpace(str(so["waitingOn"]))}
 			st.Done, _ = so["done"].(bool)
+			st.Milestone, _ = so["milestone"].(bool)
+			if d := str(so["due"]); wkDateRE.MatchString(d) {
+				st.Due = d
+			}
 			work, _ := so["work"].([]any)
 			for _, w := range work {
 				if wo, ok := w.(obj); ok {

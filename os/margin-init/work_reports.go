@@ -103,9 +103,9 @@ func buildReport(tab int, client, projectID string, per, back int) report {
 				moved[p.ID] = true
 			}
 		}
-		if d, ok := p.daysLeft(now); ok && p.Status == "active" {
+		if _, ok := p.daysLeft(now); ok && p.Status == "active" {
 			r.items++
-			if d < 0 {
+			if p.overdue(now) {
 				r.late++
 			}
 		}

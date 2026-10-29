@@ -711,6 +711,29 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       longer adds the scroll on a page that doesn't scroll; donuts and rings skip pixels off the ring before any square root or angle; card rims are
       painted as edges, not a second fill (ui.RoundRectRim). Tests: work_sheet_test.go
       (TestSheetsOverKeptPage). **Not yet verified on the tablet.**
+- [x] **Plans: projects for deadline-driven personal work** (2026-10-29, work_plans.go, workdata.go;
+      user: a Campus France application next to client projects). Tablet only (the user: "change
+      only the Soma in the tablet"); Soma's TS is untouched. All new fields optional, on Soma's own
+      records: Project.kind "plan" (absent = client, unchanged), ProjectStep.due ("YYYY-MM-DD"),
+      .milestone (a fixed-date event, not work), .phase (grouped in order of first appearance),
+      .waitingOn (shown "Waiting", never my overdue). The Go side edits records in place, so every
+      field (and any unknown one) survives (TestPlanFieldsSurviveEdits); Soma's sync applies records
+      raw and its step edits spread `...s`, so the phone/PC keep them too — only a Soma backup
+      restore (cleanProject) drops them. Logic: wkStep.overdue = undone, not milestone, not waiting,
+      past due; p.effDue = earliest of p.Due and undone non-waiting step dates (daysLeft, sorting,
+      Due shown); p.overdue = own date past or an overdue step (statusOf, Overdue counts, reports,
+      timeline); wkPace mirrors projects.ts pace() with "behind" while any step is overdue. UI: card
+      = next dated item + next milestone countdown ("TCF exam in 11 days"), overdue/waiting counts
+      instead of hours; plan page = planHero (status, Plan, pace, Next/Overdue/Waiting/Deadline,
+      Paste plan) + planSteps by phase (or week): overdue red, waiting amber hourglass, milestone
+      flag; step sheet: Date, Milestone, Phase, Waiting on; project sheet: Kind Client work/Plan (a
+      plan hides client and rate); Projects: New plan. Planner day lists and month cells, and the
+      Calendar's day, show undone dated steps in the project's colour (derived, not copied into
+      to-dos; the box ticks the step); Overview: "Due this week" from plans. Paste plan: one step a
+      line, `date | phase | step | flags` (milestone, waiting:<who>), " // " splits lines in the
+      one-line field. `margin-init soma-plan "Name" YYYY-MM-DD < plan` (Clipboard "Soma: add the
+      Campus France plan") queues it in /data/condor/soma/plan-inbox; Margin takes it in at its
+      next sync (wkImportPlans). Tests: work_plans_test.go. **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

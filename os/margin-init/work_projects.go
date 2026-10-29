@@ -113,6 +113,7 @@ func (k *wk) projects() int {
 	k.header([]string{wkUser() + " · Freelance", "Projects"}, "Projects",
 		fmt.Sprintf("%d projects · %d clients · %.0f h this quarter", len(all), len(clients), qh.Hours()), color.RGBA{})
 	x := k.primary("wk:newproject", "plus", "New project", wkX1)
+	x = k.outline("wk:newplan", "calendar-clock", "New plan", x-13, 103, 63)
 	x = k.square("wk:psearch", "search", x-13)
 	x = k.square("wk:sheet-open:sort", "arrow-up-down", x-13)
 	if f.query != "" { // what's searched, beside the search; × clears it
@@ -310,21 +311,32 @@ func (k *wk) projectCard(p wkProject, y int, entries []wkEntry, timing bool, now
 	e := k.text(f, 217, y+48, wkFG, name)
 	k.badge(e+14+ui.TextWidth(wkFont("semi", 18), st)+28, y+40, st, scol)
 	sub := fmt.Sprintf("%d of %d steps", p.done(), len(p.Steps))
-	if p.Client != "" {
+	if p.plan() {
+		sub = "Plan · " + sub
+	} else if p.Client != "" {
 		sub = p.Client + " · " + sub
 	}
-	k.text(wkFont("regular", 20), 217, y+83, wkFaint, clip(wkFont("regular", 20), sub, 520))
+	// The next dated thing and its countdown ("TCF exam in 11 days").
+	if s, ok := p.nextDated(false); ok {
+		sub = wkCountdown(s.Label, s.Due, now) + " · " + sub
+		if m, ok := p.nextDated(true); ok && m.ID != s.ID {
+			sub = wkCountdown(m.Label, m.Due, now) + " · " + sub
+		}
+	}
+	k.text(wkFont("regular", 20), 217, y+83, wkFaint, clip(wkFont("regular", 20), sub, 680))
 	k.hBar(k.R(217, y+113, 490, y+121), p.progress(), col)
 	k.text(wkFont("bold", 21), 505, y+122, wkFG, fmt.Sprintf("%.0f%%", p.progress()*100))
 	k.textR(wkFont("regular", 18), 916, y+55, wkFaint, "Due")
 	if d, ok := p.daysLeft(now); ok {
-		due, _ := time.Parse("2006-01-02", p.Due)
+		due, _ := time.Parse("2006-01-02", p.effDue())
 		dc, sc, note := wkFG, wkFaint, fmt.Sprintf("%d days", d)
 		switch {
 		case p.Status == "done":
 			note = "finished"
-		case d < 0:
+		case d < 0 && p.overdue(now):
 			dc, sc, note = wkRed, wkRed, fmt.Sprintf("%d days late", -d)
+		case d < 0:
+			dc, sc, note = wkAmber, wkAmber, fmt.Sprintf("%d days ago", -d)
 		case d == 0:
 			dc, sc, note = wkAmber, wkAmber, "today"
 		case d <= 3:
@@ -335,10 +347,25 @@ func (k *wk) projectCard(p wkProject, y int, entries []wkEntry, timing bool, now
 	} else {
 		k.textR(wkFont("semi", 22), 916, y+92, wkFG, "No date")
 	}
-	k.spark(k.R(958, y+30, 1086, y+66), weeklyHours(entries, p.ID, 8, now), col)
-	h := projectHours(entries, p.ID, now)
-	k.textR(wkFont("regular", 20), 1086, y+108, wkFaint, "h")
-	k.textR(wkFont("bold", 22), 1066, y+108, wkFG, fmt.Sprintf("%.1f", h.Hours()))
+	if p.plan() { // no hours: what's late and what waits on others
+		if n := p.overdueSteps(now); n > 0 {
+			k.textR(wkFont("semi", 20), 1086, y+60, wkRed, fmt.Sprintf("%d overdue", n))
+		}
+		wait := 0
+		for _, s := range p.Steps {
+			if !s.Done && s.WaitingOn != "" {
+				wait++
+			}
+		}
+		if wait > 0 {
+			k.textR(wkFont("semi", 20), 1086, y+108, wkAmber, fmt.Sprintf("%d waiting", wait))
+		}
+	} else {
+		k.spark(k.R(958, y+30, 1086, y+66), weeklyHours(entries, p.ID, 8, now), col)
+		h := projectHours(entries, p.ID, now)
+		k.textR(wkFont("regular", 20), 1086, y+108, wkFaint, "h")
+		k.textR(wkFont("bold", 22), 1066, y+108, wkFG, fmt.Sprintf("%.1f", h.Hours()))
+	}
 	k.icon("chevron-right", 1122, y+72, 22, wkMuted)
 	k.btn("wk:proj:"+p.ID, k.R(wkX0, y, wkX1, y+153))
 }
@@ -387,7 +414,7 @@ func (k *wk) projectBoard(list []wkProject, now time.Time) int {
 			k.hBar(k.R(t.Min.X+20, y+100, t.Min.X+110, y+106), p.progress(), pc)
 			k.text(wkFont("semi", 17), t.Min.X+122, y+108, wkText2, fmt.Sprintf("%d/%d", p.done(), len(p.Steps)))
 			if d, ok := p.daysLeft(now); ok {
-				due, _ := time.Parse("2006-01-02", p.Due)
+				due, _ := time.Parse("2006-01-02", p.effDue())
 				dc := wkText2
 				if d < 0 && p.Status != "done" {
 					dc = wkRed
@@ -531,7 +558,7 @@ func (k *wk) projectTimeline(list []wkProject, entries []wkEntry, now time.Time)
 				t := float64(x-(br.Max.X-40)) / 40
 				blendRect(k.img, image.Rect(x, br.Min.Y, x+1, br.Max.Y), wkCard, t*0.9)
 			}
-		} else if d, ok := p.daysLeft(now); ok && d < 0 && p.Status == "active" {
+		} else if p.Status == "active" && p.overdue(now) {
 			ui.Fill(k.img, image.Rect(br.Max.X-4, br.Min.Y, br.Max.X, br.Max.Y), wkRed)
 		}
 		lbl := fmt.Sprintf("%.0f%%", p.progress()*100)
@@ -617,6 +644,9 @@ func (k *wk) project() int {
 	if sub == "" {
 		sub = "No client"
 	}
+	if p.plan() {
+		sub = "Plan"
+	}
 	if p.Note != "" {
 		sub += " · " + strings.Join(strings.Fields(p.Note), " ")
 	}
@@ -633,6 +663,15 @@ func (k *wk) project() int {
 	tab := k.sel("tab", 0)
 	k.tabs("wk:tab", []string{"Overview", "Steps", "Time", "Notes", "Findings"},
 		[]string{"", fmt.Sprint(len(p.Steps)), "", fmt.Sprint(len(p.Log)), fmt.Sprint(len(pf))}, tab)
+	if p.plan() { // dated steps first; no money
+		switch tab {
+		case 0:
+			k.planHero(p, now)
+			return k.planSteps(p, 674, now)
+		case 1:
+			return k.planSteps(p, 312, now)
+		}
+	}
 	switch tab {
 	case 1:
 		return k.stepList(p, 312, true, now)
@@ -694,7 +733,7 @@ func (k *wk) project() int {
 		ln = "Started " + p.Created.In(displayZone).Format("2 Jan")
 	}
 	if has {
-		due, _ := time.Parse("2006-01-02", p.Due)
+		due, _ := time.Parse("2006-01-02", p.effDue())
 		ln += " · " + due.Format("Mon 2 Jan") + " deadline"
 		if !p.Created.IsZero() && p.progress() > 0 && p.progress() < 1 {
 			finish := p.Created.Add(time.Duration(float64(now.Sub(p.Created)) / p.progress()))
@@ -1152,6 +1191,18 @@ func init() {
 		}
 		sh.rows = append(sh.rows,
 			wkRow{id: "wk:type-open:prename:" + id, label: "Name", icon: "pencil", detail: p.Name},
+			wkRow{kind: "seg", label: "Kind", opts: []wkOpt{{id: "wk:pkind:" + id + ":client", label: "Client work", sel: !p.plan()}, {id: "wk:pkind:" + id + ":plan", label: "Plan", sel: p.plan()}}})
+		if p.plan() {
+			sh.rows = append(sh.rows,
+				wkRow{kind: "seg", label: "Status", opts: st},
+				wkRow{id: "wk:pdue:" + id, label: "Deadline", icon: "calendar-clock", detail: due},
+				wkRow{id: "wk:type-open:pplan:" + id, label: "Paste plan", icon: "file-text", detail: "date | phase | step | flags"},
+				wkRow{id: "wk:type-open:pbrief:" + id, label: "Brief", icon: "file-text", detail: clip(wkFont("regular", 21), p.Note, 280)},
+				wkRow{kind: "swatches", opts: sw},
+				wkRow{id: "wk:pdelete:" + id, label: "Delete project", icon: "trash-2", danger: true})
+			return sh
+		}
+		sh.rows = append(sh.rows,
 			wkRow{id: "wk:sheet-open:pclientof:" + id, label: "Client", icon: "building-2", detail: client},
 			wkRow{kind: "seg", label: "Status", opts: st},
 			wkRow{kind: "seg", label: "Priority", opts: pr},
@@ -1263,7 +1314,21 @@ func init() {
 			if s.Done {
 				tick = wkRow{id: "wk:step:" + pid + ":" + sid, label: "Mark as not done", icon: "rotate-ccw"}
 			}
-			sh.rows = append(sh.rows, tick, wkRow{id: "wk:type-open:steprename:" + arg, label: "Rename", icon: "pencil"})
+			date, phase, wait := "No date", "None", "No one"
+			if s.Due != "" {
+				date = wkDate(s.Due)
+			}
+			if s.Phase != "" {
+				phase = s.Phase
+			}
+			if s.WaitingOn != "" {
+				wait = s.WaitingOn
+			}
+			sh.rows = append(sh.rows, tick, wkRow{id: "wk:type-open:steprename:" + arg, label: "Rename", icon: "pencil"},
+				wkRow{id: "wk:sdue:" + arg, label: "Date", icon: "calendar", detail: date},
+				wkRow{id: "wk:smile:" + arg, label: "Milestone (a fixed date, not work)", icon: "flag", sel: s.Milestone},
+				wkRow{id: "wk:type-open:sphase:" + arg, label: "Phase", icon: "list-checks", detail: phase},
+				wkRow{id: "wk:type-open:swait:" + arg, label: "Waiting on", icon: "hourglass", detail: wait})
 			if open, isOpen := wkOpenStepWork(pid); isOpen && open == sid {
 				sh.rows = append(sh.rows, wkRow{id: "wk:stepwork:" + arg, label: "Stop working on it", icon: "square", col: wkRed})
 			} else if !s.Done {
