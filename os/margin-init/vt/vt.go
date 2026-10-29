@@ -5,7 +5,9 @@
 package vt
 
 import (
+	"encoding/base64"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -59,6 +61,9 @@ type Term struct {
 
 	// Reply, if set, receives answers to queries such as "where is the cursor" (DSR).
 	Reply func([]byte)
+	// Clipboard, if set, receives text the program copied (OSC 52), called with the lock held.
+	Clipboard func(string)
+	oscBuf    []byte
 }
 
 // New returns a cleared cols x rows terminal.
@@ -164,6 +169,9 @@ func (t *Term) feed(b byte) {
 	case osc:
 		if b == 0x07 || b == '\\' { // BEL, or the end of ESC \
 			t.state = ground
+			t.oscEnd()
+		} else if b != 0x1b && len(t.oscBuf) < 1<<20 {
+			t.oscBuf = append(t.oscBuf, b)
 		}
 		return
 	case charset:
@@ -287,7 +295,7 @@ func (t *Term) escape(b byte) {
 	case '[':
 		t.state, t.params, t.cur, t.hasCur, t.private = csi, t.params[:0], 0, false, false
 	case ']':
-		t.state = osc
+		t.state, t.oscBuf = osc, t.oscBuf[:0]
 	case '(', ')':
 		t.state = charset
 	case '7':
@@ -602,4 +610,23 @@ func nearest16(c [3]int) (uint8, bool) {
 		}
 	}
 	return uint8(best), true
+}
+
+// oscEnd acts on a finished OSC sequence: 52 (copy to the clipboard) is the only one used;
+// titles and the rest are ignored.
+func (t *Term) oscEnd() {
+	s := string(t.oscBuf)
+	t.oscBuf = t.oscBuf[:0]
+	if !strings.HasPrefix(s, "52;") || t.Clipboard == nil {
+		return
+	}
+	_, data, ok := strings.Cut(s[3:], ";")
+	if !ok || data == "?" {
+		return
+	}
+	b, err := base64.StdEncoding.DecodeString(data)
+	if err != nil || !utf8.Valid(b) || len(b) == 0 {
+		return
+	}
+	t.Clipboard(string(b))
 }

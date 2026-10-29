@@ -106,6 +106,9 @@ func startClaude(cols, rows int) (*os.File, func(), error) {
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"http_proxy=http://" + proxyAddr, "https_proxy=http://" + proxyAddr,
 		"HTTP_PROXY=http://" + proxyAddr, "HTTPS_PROXY=http://" + proxyAddr, "no_proxy=localhost,127.0.0.1"}
+	if claudeReopened.Swap(false) {
+		cmd.Env = append(cmd.Env, "MARGIN_CLAUDE_REOPENED=1")
+	}
 	attr := &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if alpineInstalled() {
 		configureAlpine()

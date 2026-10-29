@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"margin-init/ui"
@@ -28,6 +29,7 @@ type termSession struct {
 	t      *vt.Term
 	master *os.File // its pty, nil while its program isn't running
 	tu     termUI   // its scrollback position and selection, while another tab is on show
+	copied string   // text its program just copied (OSC 52), for output to hand to Paste (c.mu)
 }
 
 var termTabIDs = [2]string{"tt:shell", "tt:claude"}
@@ -40,6 +42,11 @@ func (c *console) newTermSessions(cols, rows int) {
 	for i, id := range []string{"shell", "claude"} {
 		s := &termSession{id: id, t: vt.New(cols, rows)}
 		s.t.Reply = func(p []byte) { c.inputTo(s, p) }
+		s.t.Clipboard = func(text string) { // under the terminal's lock: only noted here
+			c.mu.Lock()
+			s.copied = text
+			c.mu.Unlock()
+		}
 		c.terms[i] = s
 	}
 	c.cur = termShell
@@ -86,10 +93,26 @@ func (c *console) switchTerm(i int) {
 }
 
 // output shows a tab's program output (on the screen if that tab is on show) and copies the
-// Shell's to connected PCs.
+// Shell's to connected PCs. Text a program copied (OSC 52: Claude Code's "c to copy") goes to
+// that tab's Paste.
 func (c *console) output(s *termSession, p []byte) {
 	s.t.Write(p)
+	if s.id == "claude" {
+		claudeLogin.feed(p, s.t.Cols)
+	}
+	c.mu.Lock()
+	clip := s.copied
+	s.copied = ""
+	c.mu.Unlock()
 	drawMu.Lock()
+	if clip != "" {
+		if c.terms[c.cur] == s {
+			c.tu.clip = clip
+		} else {
+			s.tu.clip = clip
+		}
+		c.toastMsg("Copied: tap Paste to type it")
+	}
 	if c.terms[c.cur] == s {
 		c.render()
 	}
@@ -174,11 +197,16 @@ func (c *console) setMaster(s *termSession, m *os.File) {
 // opens the Claude tab again, where the conversation carries on.
 const claudeReopen = marginHome + "/claude-reopen"
 
+// claudeReopened tells the Claude tab's program, the first time it starts, that Margin was
+// restarted by it (Claude Code is then told to carry on: claude_code.go).
+var claudeReopened atomic.Bool
+
 // reopenClaude opens the Claude tab at start if Claude restarted Margin. Caller holds drawMu.
 func (c *console) reopenClaude() {
 	if st, err := os.Stat(claudeReopen); err == nil {
 		os.Remove(claudeReopen)
 		if time.Since(st.ModTime()) < 10*time.Minute && !c.locked {
+			claudeReopened.Store(true)
 			c.switchTerm(termClaude)
 		}
 	}

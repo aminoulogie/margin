@@ -51,11 +51,13 @@ const claudeDefaultModel = "claude-sonnet-5-5"
 const marginSrc = "/root/margin-src"
 
 type claudeConfig struct {
-	Key         string `json:"key,omitempty"`
-	Model       string `json:"model,omitempty"`
-	GitHubToken string `json:"github_token,omitempty"`
-	Repo        string `json:"repo,omitempty"`   // owner/name, default aminoulogie/margin
-	Branch      string `json:"branch,omitempty"` // default main
+	Mode        string            `json:"mode,omitempty"` // "account" (Claude Code, claude_code.go), "api", "" = not chosen
+	Key         string            `json:"key,omitempty"`
+	Model       string            `json:"model,omitempty"`
+	GitHubToken string            `json:"github_token,omitempty"`
+	Repo        string            `json:"repo,omitempty"`   // owner/name, default aminoulogie/margin
+	Branch      string            `json:"branch,omitempty"` // default main
+	Connectors  []claudeConnector `json:"connectors,omitempty"`
 }
 
 type claudeSession struct {
@@ -75,6 +77,8 @@ type agent struct {
 	hist    []string
 	exitArm bool // Ctrl-C once on an empty prompt: once more leaves
 	lastIn  int  // tokens the last request used, for /status
+
+	rawOn, rawOff func() // the terminal raw (keys one at a time) and back (Claude Code sets its own)
 }
 
 // runClaude is "margin-init claude".
@@ -86,10 +90,27 @@ func runClaude() int {
 		fmt.Println("claude needs a terminal:", err)
 		return 1
 	}
-	defer restore()
+	defer func() { a.rawOff() }()
+	a.rawOff = restore
+	a.rawOn = func() {
+		if r, err := ttyRaw(os.Stdin.Fd()); err == nil {
+			a.rawOff = r
+		}
+	}
 	os.MkdirAll(a.home, 0o700)
 	a.loadConfig()
 	a.loadSession()
+	if a.cfg.Mode == "" && a.cfg.Key == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
+		a.banner()
+		if !a.chooseMode() {
+			return 0
+		}
+	}
+	if a.cfg.Mode == "account" && !a.runAccount() {
+		return 0
+	}
+	// From here on keys are read in the background (Esc stops Claude mid-answer). Nothing
+	// else may read the terminal after this: Claude Code starts in a new run of this tab.
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -120,6 +141,7 @@ func runClaude() int {
 			a.out.write("\r\n")
 			return 0
 		}
+		a.loadConfig()
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -138,17 +160,46 @@ func runClaude() int {
 
 // --- settings and the conversation, on disk ------------------------------------------------
 
+// loadConfig reads the settings (again: the phone can add a key or a connector meanwhile,
+// claude_login.go).
 func (a *agent) loadConfig() {
 	b, _ := os.ReadFile(filepath.Join(a.home, "config.json"))
+	a.cfg = claudeConfig{}
 	json.Unmarshal(b, &a.cfg)
 	if a.cfg.Model == "" {
 		a.cfg.Model = claudeDefaultModel
+	}
+	if a.cfg.Key == "" {
+		a.cfg.Key = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 	}
 }
 
 func (a *agent) saveConfig() {
 	b, _ := json.MarshalIndent(a.cfg, "", "  ")
 	writeFileAtomic(filepath.Join(a.home, "config.json"), b, 0o600)
+}
+
+// chooseMode asks, the first time, how Claude signs in. false: the terminal closed.
+func (a *agent) chooseMode() bool {
+	a.out.write(cBold + "  How should Claude sign in?" + cReset + "\r\n\r\n" +
+		"  " + cAccent + "1" + cReset + "  Your Claude account (Pro, Max, Team)\r\n" +
+		a.para("     Runs Claude Code here. Sign in from your phone: the Send to Books page shows the link.", cDim) +
+		"  " + cAccent + "2" + cReset + "  An Anthropic API key\r\n" +
+		a.para("     Margin's own Claude, billed per use from console.anthropic.com.", cDim) + "\r\n")
+	for {
+		switch a.keySync() {
+		case '1':
+			a.cfg.Mode = "account"
+		case '2':
+			a.cfg.Mode = "api"
+		case 3, 4:
+			return false
+		default:
+			continue
+		}
+		a.saveConfig()
+		return true
+	}
 }
 
 func (a *agent) loadSession() {
@@ -295,8 +346,8 @@ func (a *agent) turn(ctx context.Context) {
 				switch {
 				case b.Type == "text" && strings.TrimSpace(b.Text) != "":
 					keep = append(keep, cBlock{Type: "text", Text: b.Text})
-				case b.Type == "tool_use" && err == nil:
-					keep = append(keep, b)
+				case (b.Type == "tool_use" || b.Type == "mcp_tool_use" || b.Type == "mcp_tool_result") && err == nil:
+					keep = append(keep, b) // a connector's call and result stay in the conversation
 				}
 			}
 			if len(keep) > 0 {
@@ -320,6 +371,9 @@ func (a *agent) turn(ctx context.Context) {
 			}
 		}
 		if len(calls) == 0 {
+			if rep.StopReason == "pause_turn" { // a long connector call: ask again to let it go on
+				continue
+			}
 			if rep.StopReason == "max_tokens" {
 				a.out.write(cDim + "  (the answer hit its length limit: say \"go on\" to continue)" + cReset + "\r\n")
 			}
@@ -347,8 +401,9 @@ func (a *agent) turn(ctx context.Context) {
 // ask sends the conversation and streams the answer onto the screen, retrying a busy or
 // unreachable API a few times (as long as nothing has been shown yet).
 func (a *agent) ask(ctx context.Context) (*cReply, error) {
-	req := cRequest{Model: a.cfg.Model, MaxTokens: 16000, Tools: claudeTools,
+	req := cRequest{Model: a.cfg.Model, MaxTokens: 16000, Tools: append([]cTool(nil), claudeTools...),
 		System: []cBlock{{Type: "text", Text: a.systemPrompt(), CacheControl: &cacheCtl{"ephemeral"}}}}
+	req.withConnectors(a.cfg.Connectors)
 	req.Messages = make([]cMsg, len(a.sess.Msgs))
 	copy(req.Messages, a.sess.Msgs)
 	if n := len(req.Messages); n > 0 { // cache the conversation so far: the next request starts from it
@@ -363,6 +418,16 @@ func (a *agent) ask(ctx context.Context) (*cReply, error) {
 		rep, err := a.net.stream(ctx, a.cfg.Key, req, md.text, func(name string) {
 			md.flush()
 			a.out.startSpin(toolVerb(name))
+		}, func(b cBlock) {
+			md.flush()
+			a.out.stopSpin()
+			a.showConnectorBlock(b)
+			md.shown = true
+			if b.Type == "mcp_tool_use" {
+				a.out.startSpin("Waiting for " + b.ServerName)
+			} else {
+				a.out.startSpin("Thinking")
+			}
 		})
 		md.flush()
 		a.out.stopSpin()
@@ -383,6 +448,45 @@ func (a *agent) ask(ctx context.Context) (*cReply, error) {
 			return nil, ctx.Err()
 		case <-time.After(wait):
 		}
+	}
+}
+
+// showConnectorBlock shows a call Anthropic's servers made to a connector, Claude Code's way:
+// "● server · tool(args)", then its result under it.
+func (a *agent) showConnectorBlock(b cBlock) {
+	cols := a.cols()
+	switch b.Type {
+	case "mcp_tool_use":
+		label := b.ServerName + " · " + b.Name
+		args := oneLine(string(b.Input), cols-visibleLen(label)-6)
+		if args == "{}" {
+			args = ""
+		}
+		a.out.write(cGreenB + "● " + cReset + cBold + label + cReset + "(" + args + ")\r\n")
+	case "mcp_tool_result":
+		text, isErr := mcpResult(b.Raw)
+		lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+		style := cDim
+		if isErr {
+			style = cRed
+		}
+		var sb strings.Builder
+		for i, l := range lines {
+			if i == 3 {
+				sb.WriteString("     " + cDim + fmt.Sprintf("… %d more lines", len(lines)-3) + cReset + "\r\n")
+				break
+			}
+			p := "     "
+			if i == 0 {
+				p = "  " + cDim + "└" + cReset + "  "
+			}
+			sb.WriteString(p + style + oneLineKeep(expandTabs(l), cols-7) + cReset + "\r\n")
+		}
+		if strings.TrimSpace(text) == "" {
+			sb.Reset()
+			sb.WriteString("  " + cDim + "└  (No output)" + cReset + "\r\n")
+		}
+		a.out.write(sb.String() + "\r\n")
 	}
 }
 
@@ -571,6 +675,9 @@ func (a *agent) command(line string) bool {
 			"  /clear          start a new conversation\r\n" +
 			"  /model [name]   opus, sonnet or haiku (now " + a.cfg.Model + ")\r\n" +
 			"  /key            change the Anthropic API key\r\n" +
+			"  /login          use your Claude account instead (Claude Code)\r\n" +
+			"  /connect <url> [token]  add a connector (MCP server)\r\n" +
+			"  /connectors     list them · /disconnect <name>\r\n" +
 			"  /github         set a GitHub token, so fixes can be published\r\n" +
 			"  /cd <folder>    work somewhere else\r\n" +
 			"  /status         what's set up\r\n" +
@@ -596,6 +703,48 @@ func (a *agent) command(line string) bool {
 		say("model set to " + cBold + m + cReset)
 	case "/key":
 		a.askKey()
+	case "/login", "/account":
+		a.cfg.Mode = "account"
+		a.saveConfig()
+		say("switching to your Claude account: Claude Code starts in a moment")
+		return true // this tab starts again, in account mode
+	case "/connect":
+		f := strings.Fields(arg)
+		if len(f) == 0 {
+			say("/connect <https address> [token] · or paste it on the Send to Books page")
+			break
+		}
+		tok := ""
+		if len(f) > 1 {
+			tok = f[1]
+		}
+		name, err := a.cfg.addConnector("", f[0], tok)
+		if err != nil {
+			say(cRed + err.Error() + cReset)
+			break
+		}
+		a.saveConfig()
+		say("connector " + cBold + name + cReset + " added: Claude can use its tools from the next message")
+	case "/connectors", "/mcp":
+		if len(a.cfg.Connectors) == 0 {
+			say("no connectors · /connect <url> [token], or paste one on the Send to Books page")
+			break
+		}
+		for _, c := range a.cfg.Connectors {
+			tok := ""
+			if c.Token != "" {
+				tok = cDim + " · token set" + cReset
+			}
+			a.out.write("  " + cBold + c.Name + cReset + "  " + cDim + oneLine(c.URL, a.cols()-len(c.Name)-20) + cReset + tok + "\r\n")
+		}
+		a.out.write("\r\n")
+	case "/disconnect":
+		if a.cfg.removeConnector(arg) {
+			a.saveConfig()
+			say("connector " + arg + " removed")
+		} else {
+			say(cRed + "no connector named " + arg + cReset + cDim + " (/connectors lists them)" + cReset)
+		}
 	case "/github":
 		a.askGitHub()
 	case "/cd":
@@ -619,8 +768,16 @@ func (a *agent) command(line string) bool {
 		if a.cfg.Key != "" {
 			key = "…" + a.cfg.Key[max(len(a.cfg.Key)-4, 0):]
 		}
-		a.out.write(fmt.Sprintf("  model    %s\r\n  folder   %s\r\n  API key  %s\r\n  GitHub   %s\r\n  context  %d messages, %d tokens last time\r\n\r\n",
-			a.cfg.Model, a.sess.Cwd, key, gh, len(a.sess.Msgs), a.lastIn))
+		conns := "none (/connect)"
+		if n := len(a.cfg.Connectors); n > 0 {
+			var names []string
+			for _, c := range a.cfg.Connectors {
+				names = append(names, c.Name)
+			}
+			conns = strings.Join(names, ", ")
+		}
+		a.out.write(fmt.Sprintf("  model    %s\r\n  folder   %s\r\n  API key  %s\r\n  GitHub   %s\r\n  connect  %s\r\n  context  %d messages, %d tokens last time\r\n\r\n",
+			a.cfg.Model, a.sess.Cwd, key, gh, oneLine(conns, a.cols()-12), len(a.sess.Msgs), a.lastIn))
 	case "/exit", "/quit":
 		return true
 	default:
@@ -630,12 +787,25 @@ func (a *agent) command(line string) bool {
 }
 
 func (a *agent) askKey() bool {
-	a.out.write(a.para("Paste your Anthropic API key (console.anthropic.com > API Keys). It stays on this tablet.", ""))
+	a.out.write(a.para("Paste your Anthropic API key (console.anthropic.com > API Keys), or paste it on the Send to Books page "+
+		"from your phone and press return here. It stays on this tablet. (/login uses your Claude account instead.)", ""))
 	k, ok := a.readLine("key", true)
 	k = strings.TrimSpace(k)
+	if k == "/login" || k == "/account" {
+		a.cfg.Mode = "account"
+		a.saveConfig()
+		return false // this tab starts again, in account mode
+	}
 	if !ok || k == "" {
+		if ok {
+			a.loadConfig() // pasted on the phone meanwhile?
+		}
+		if a.cfg.Key != "" {
+			a.out.write("  " + cGreenB + "✓" + cReset + " key set\r\n\r\n")
+			return true
+		}
 		a.out.write(cDim + "  no key set" + cReset + "\r\n\r\n")
-		return ok && a.cfg.Key != ""
+		return false
 	}
 	a.cfg.Key = k
 	a.saveConfig()
@@ -1089,6 +1259,15 @@ func (a *agent) systemPrompt() string {
 		src = marginSrc + " doesn't exist yet: Margin's code gets there when the user runs `update` once in the Shell tab " +
 			"(it downloads github.com/aminoulogie/margin and builds it). Say so if a task needs the code."
 	}
+	conn := ""
+	if len(a.cfg.Connectors) > 0 {
+		var names []string
+		for _, c := range a.cfg.Connectors {
+			names = append(names, c.Name)
+		}
+		conn = "\nThe user connected these connectors (MCP servers; Anthropic's servers call their tools for you): " +
+			strings.Join(names, ", ") + ". Use their tools when a task needs what they reach.\n"
+	}
 	gh := "No GitHub token is set, so publish_to_github can't work until the user types /github."
 	if a.cfg.GitHubToken != "" {
 		gh = "A GitHub token is set for " + a.repo() + " (branch " + a.branch() + ")."
@@ -1113,7 +1292,7 @@ How to fix Margin:
    build doesn't start, the old one comes back by itself.
 4. Plain ` + "`update`" + ` (without --local) downloads GitHub's code over ` + marginSrc + `; it refuses while there are
    fixes not on GitHub. When a fix works, ask the user whether to publish it, then use publish_to_github.
-` + gh + `
+` + gh + conn + `
 
 Rules: never write to block devices (/dev/block, mmcblk), never change /system, never flash or wipe anything, never
 delete the user's books or data. Don't run programs that wait for keyboard input (editors, pagers, interactive

@@ -38,30 +38,106 @@ type cBlock struct {
 	Text         string          `json:"text,omitempty"`
 	ID           string          `json:"id,omitempty"`
 	Name         string          `json:"name,omitempty"`
+	ServerName   string          `json:"server_name,omitempty"` // mcp_tool_use: which connector
 	Input        json.RawMessage `json:"input,omitempty"`
 	ToolUseID    string          `json:"tool_use_id,omitempty"`
 	Content      string          `json:"content,omitempty"`
 	IsError      bool            `json:"is_error,omitempty"`
 	CacheControl *cacheCtl       `json:"cache_control,omitempty"`
+
+	Raw json.RawMessage `json:"-"` // a block kept whole, as the API sent it (mcp_tool_result)
+}
+
+// A connector's result (mcp_tool_result) has a list as its content: it's kept as it came and
+// sent back the same in the next requests.
+func (b *cBlock) UnmarshalJSON(d []byte) error {
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(d, &head); err != nil {
+		return err
+	}
+	if head.Type == "mcp_tool_result" {
+		*b = cBlock{Type: head.Type, Raw: append(json.RawMessage(nil), d...)}
+		return nil
+	}
+	type plain cBlock
+	return json.Unmarshal(d, (*plain)(b))
+}
+
+func (b cBlock) MarshalJSON() ([]byte, error) {
+	if b.Raw != nil {
+		return b.Raw, nil
+	}
+	type plain cBlock
+	return json.Marshal(plain(b))
+}
+
+// mcpResult is a connector result's text and whether it's an error.
+func mcpResult(raw json.RawMessage) (string, bool) {
+	var r struct {
+		IsError bool            `json:"is_error"`
+		Content json.RawMessage `json:"content"`
+	}
+	json.Unmarshal(raw, &r)
+	var parts []struct {
+		Type, Text string
+	}
+	if json.Unmarshal(r.Content, &parts) != nil {
+		var s string
+		json.Unmarshal(r.Content, &s)
+		return s, r.IsError
+	}
+	var sb strings.Builder
+	for _, p := range parts {
+		if p.Type == "text" {
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String(), r.IsError
 }
 
 type cacheCtl struct {
 	Type string `json:"type"`
 }
 
+// cTool is a tool Claude may call: one of Margin's (name, description, schema) or a
+// connector's whole tool set (type mcp_toolset).
 type cTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Schema      json.RawMessage `json:"input_schema"`
+	Type          string          `json:"type,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	Description   string          `json:"description,omitempty"`
+	Schema        json.RawMessage `json:"input_schema,omitempty"`
+	MCPServerName string          `json:"mcp_server_name,omitempty"`
+}
+
+// cMCPServer is a connector Anthropic's servers connect to for Claude (the MCP connector).
+type cMCPServer struct {
+	Type  string `json:"type"` // "url"
+	URL   string `json:"url"`
+	Name  string `json:"name"`
+	Token string `json:"authorization_token,omitempty"`
 }
 
 type cRequest struct {
-	Model     string   `json:"model"`
-	MaxTokens int      `json:"max_tokens"`
-	System    []cBlock `json:"system"`
-	Messages  []cMsg   `json:"messages"`
-	Tools     []cTool  `json:"tools"`
-	Stream    bool     `json:"stream"`
+	Model      string       `json:"model"`
+	MaxTokens  int          `json:"max_tokens"`
+	System     []cBlock     `json:"system"`
+	Messages   []cMsg       `json:"messages"`
+	Tools      []cTool      `json:"tools"`
+	MCPServers []cMCPServer `json:"mcp_servers,omitempty"`
+	Stream     bool         `json:"stream"`
+}
+
+// mcpBeta is the beta the MCP connector (mcp_servers) needs.
+const mcpBeta = "mcp-client-2025-11-20"
+
+// withConnectors adds the connectors to a request: each server, and its tool set.
+func (r *cRequest) withConnectors(cs []claudeConnector) {
+	for _, c := range cs {
+		r.MCPServers = append(r.MCPServers, cMCPServer{Type: "url", URL: c.URL, Name: c.Name, Token: c.Token})
+		r.Tools = append(r.Tools, cTool{Type: "mcp_toolset", MCPServerName: c.Name})
+	}
 }
 
 // cReply is what one streamed answer came to.
@@ -142,7 +218,7 @@ func (n *claudeNet) do(req func() (*http.Request, error)) (*http.Response, error
 
 // stream sends one request and streams the answer: onText gets text as it arrives, onTool
 // the name of each tool call as it starts (so the screen can say what's coming).
-func (n *claudeNet) stream(ctx context.Context, key string, body cRequest, onText func(string), onTool func(string)) (*cReply, error) {
+func (n *claudeNet) stream(ctx context.Context, key string, body cRequest, onText func(string), onTool func(string), onDone func(cBlock)) (*cReply, error) {
 	body.Stream = true
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -156,6 +232,9 @@ func (n *claudeNet) stream(ctx context.Context, key string, body cRequest, onTex
 		r.Header.Set("content-type", "application/json")
 		r.Header.Set("x-api-key", key)
 		r.Header.Set("anthropic-version", "2023-06-01")
+		if len(body.MCPServers) > 0 {
+			r.Header.Set("anthropic-beta", mcpBeta)
+		}
 		return r, nil
 	})
 	if err != nil {
@@ -173,13 +252,16 @@ func (n *claudeNet) stream(ctx context.Context, key string, body cRequest, onTex
 		}
 		return nil, &apiError{resp.StatusCode, e.Error.Type, e.Error.Message}
 	}
-	return readStream(resp.Body, onText, onTool)
+	return readStream(resp.Body, onText, onTool, onDone)
 }
 
-// readStream turns the server-sent events of a streamed answer into its blocks.
-func readStream(r io.Reader, onText func(string), onTool func(string)) (*cReply, error) {
+// readStream turns the server-sent events of a streamed answer into its blocks. onTool gets
+// the name of each tool call as it starts; onDone each connector call (mcp_tool_use) and
+// result (mcp_tool_result) once whole, to be shown (Anthropic's servers make those calls).
+func readStream(r io.Reader, onText func(string), onTool func(string), onDone func(cBlock)) (*cReply, error) {
 	rep := &cReply{}
 	var partial []strings.Builder // tool inputs as their JSON arrives, by block index
+	var startIn []json.RawMessage // a tool input given whole at the start
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 16<<20)
 	for sc.Scan() {
@@ -220,12 +302,16 @@ func readStream(r io.Reader, onText func(string), onTool func(string)) (*cReply,
 			for len(rep.Blocks) <= ev.Index {
 				rep.Blocks = append(rep.Blocks, cBlock{})
 				partial = append(partial, strings.Builder{})
+				startIn = append(startIn, nil)
 			}
 			b := ev.ContentBlock
-			b.Input = nil
+			startIn[ev.Index], b.Input = b.Input, nil
 			rep.Blocks[ev.Index] = b
-			if b.Type == "tool_use" && onTool != nil {
+			if (b.Type == "tool_use" || b.Type == "mcp_tool_use") && onTool != nil {
 				onTool(b.Name)
+			}
+			if b.Type == "mcp_tool_result" && onDone != nil {
+				onDone(b)
 			}
 			if b.Type == "text" && b.Text != "" && onText != nil {
 				onText(b.Text)
@@ -244,12 +330,18 @@ func readStream(r io.Reader, onText func(string), onTool func(string)) (*cReply,
 				partial[ev.Index].WriteString(ev.Delta.PartialJSON)
 			}
 		case "content_block_stop":
-			if ev.Index < len(rep.Blocks) && rep.Blocks[ev.Index].Type == "tool_use" {
+			if ev.Index < len(rep.Blocks) && (rep.Blocks[ev.Index].Type == "tool_use" || rep.Blocks[ev.Index].Type == "mcp_tool_use") {
 				in := strings.TrimSpace(partial[ev.Index].String())
+				if in == "" {
+					in = strings.TrimSpace(string(startIn[ev.Index]))
+				}
 				if in == "" {
 					in = "{}"
 				}
 				rep.Blocks[ev.Index].Input = json.RawMessage(in)
+				if rep.Blocks[ev.Index].Type == "mcp_tool_use" && onDone != nil {
+					onDone(rep.Blocks[ev.Index])
+				}
 			}
 		case "message_delta":
 			if ev.Delta.StopReason != "" {

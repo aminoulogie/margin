@@ -44,6 +44,7 @@ func (c *console) serveBooks() {
 	mux.HandleFunc("/upload", c.sendUpload)
 	mux.HandleFunc("/soma-link", c.somaLinkPost)
 	mux.HandleFunc("/github-link", c.githubLinkPost)
+	mux.HandleFunc("/claude", c.claudePost)
 	srv := &http.Server{Handler: localOnly(mux)}
 	for _, port := range []int{80, 8080} {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -312,6 +313,29 @@ input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-
 <button id="glink">Link GitHub</button>
 <div id="gmsg"></div>
 </div>
+<div class="card" id="claude"><h2>Claude on the tablet</h2>
+<p class="sub" style="margin-bottom:12px">For Terminal &rsaquo; Claude. <span id="cstate">…</span></p>
+<div id="csign" style="display:none">
+<p style="margin:0 0 10px"><b>1.</b> Sign in with your Claude account:</p>
+<a id="clink" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;border-radius:14px;padding:15px;background:var(--blue);color:#fff;font-weight:600;text-decoration:none">Open the sign-in page</a>
+<p style="margin:16px 0 0"><b>2.</b> Copy the code it shows, paste it here:</p>
+<input id="ccode" type="password" placeholder="Code" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+<button id="csend">Send the code to the tablet</button>
+<div id="cmsg"></div>
+<hr style="border:0;border-top:1px solid var(--sep);margin:20px 0">
+</div>
+<p class="sub" id="cnone" style="margin:0 0 12px;display:none">To sign in with your Claude account: on the tablet open Terminal &rsaquo; Claude and pick 1 (or type /login). The sign-in link then appears here.</p>
+<p style="margin:0 0 4px"><b>Connectors</b> <span class="sub" id="clist" style="color:var(--second)"></span></p>
+<p class="sub" style="margin:0 0 4px;font-size:15px">An MCP server's address (a custom connector), and its token if it needs one. Connectors you added on claude.ai come with your Claude account by themselves.</p>
+<input id="curl" type="url" placeholder="https://… (connector address)" autocapitalize="off" autocorrect="off" spellcheck="false">
+<input id="ctoken" type="password" placeholder="Token (if it needs one)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+<button id="cconn">Add connector</button>
+<div id="ccmsg"></div>
+<p style="margin:20px 0 4px"><b>API key</b> <span class="sub" style="color:var(--second);font-size:15px">(only for Claude without an account)</span></p>
+<input id="ckey" type="password" placeholder="sk-ant-…" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+<button id="ckeyb">Save the key</button>
+<div id="ckmsg"></div>
+</div>
 <script>
 var f=document.getElementById('f'),go=document.getElementById('go'),msg=document.getElementById('msg'),
 bar=document.querySelector('.bar'),fill=document.querySelector('.bar i'),files=document.getElementById('files');
@@ -354,4 +378,39 @@ gl.onclick=function(){
     else{gm.textContent=r.error||'Linking failed.';gm.className='err'}};
   x.onerror=function(){gl.disabled=false;gm.textContent='Is the phone on the same Wi-Fi as the tablet?';gm.className='err'};
   x.send('token='+encodeURIComponent(t)+'&repo='+encodeURIComponent(rp))};
+function $(i){return document.getElementById(i)}
+function cpost(body,btn,out,ok){
+  var x=new XMLHttpRequest();x.open('POST','/claude');
+  x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+  btn.disabled=true;out.textContent='…';out.className='';
+  x.onload=function(){var r={};try{r=JSON.parse(x.responseText)}catch(e){}
+    btn.disabled=false;
+    if(r.ok){out.textContent=ok(r);out.className='ok';cpoll()}else{out.textContent=r.error||'That didn\'t work.';out.className='err'}};
+  x.onerror=function(){btn.disabled=false;out.textContent='Is the phone on the same Wi-Fi as the tablet?';out.className='err'};
+  x.send(body)}
+var clast='';
+function cpoll(){
+  var x=new XMLHttpRequest();x.open('GET','/claude');
+  x.onload=function(){var r={};try{r=JSON.parse(x.responseText)}catch(e){return}
+    var st=r.mode==='account'?(r.signed_in?'Signed in with your Claude account (Claude Code).':'Uses your Claude account (Claude Code): not signed in yet.'):
+      r.mode==='api'?(r.has_key?'Uses an API key.':'Uses an API key: none saved yet.'):'Not set up yet: open Terminal › Claude on the tablet.';
+    if(r.login==='error')st+=' The last code didn\'t work: on the tablet press return to get a new link.';
+    $('cstate').textContent=st;
+    $('clist').textContent=(r.connectors&&r.connectors.length)?'· '+r.connectors.join(', '):'· none yet';
+    var u=r.login_url||'';
+    $('csign').style.display=u?'block':'none';
+    $('cnone').style.display=(!u&&!(r.mode==='account'&&r.signed_in))?'block':'none';
+    if(u&&u!==clast){$('clink').href=u;clast=u;$('cmsg').textContent=''}};
+  x.send()}
+cpoll();setInterval(cpoll,3000);
+$('csend').onclick=function(){var k=$('ccode').value.trim();
+  if(!k){$('cmsg').textContent='Paste the code from the sign-in page.';$('cmsg').className='err';return}
+  cpost('what=code&code='+encodeURIComponent(k),$('csend'),$('cmsg'),function(){$('ccode').value='';return 'Sent: the tablet is signing in.'})};
+$('cconn').onclick=function(){var u=$('curl').value.trim();
+  if(!u){$('ccmsg').textContent='Paste the connector\'s address.';$('ccmsg').className='err';return}
+  cpost('what=connect&url='+encodeURIComponent(u)+'&token='+encodeURIComponent($('ctoken').value.trim()),$('cconn'),$('ccmsg'),
+    function(r){$('curl').value='';$('ctoken').value='';return 'Added as "'+r.name+'": Claude can use it from its next message (Claude Code: when it starts again).'})};
+$('ckeyb').onclick=function(){var k=$('ckey').value.trim();
+  if(!k){$('ckmsg').textContent='Paste the key.';$('ckmsg').className='err';return}
+  cpost('what=key&key='+encodeURIComponent(k),$('ckeyb'),$('ckmsg'),function(){$('ckey').value='';return 'Saved.'})};
 </script></body></html>`

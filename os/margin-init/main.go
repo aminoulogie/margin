@@ -73,6 +73,8 @@ func main() {
 			os.Exit(runSomaPlan(os.Args[2:]))
 		case "claude": // the Terminal's Claude tab (claude.go); also /usr/local/bin/claude in Alpine
 			os.Exit(runClaude())
+		case "publish": // margin-init publish "message": margin-publish in Alpine, for Claude Code (claude_code.go)
+			os.Exit(runPublish(os.Args[2:]))
 		case "cbsend": // margin-init cbsend <base>: cbrun sends a Clipboard command's output (github_link.go)
 			if len(os.Args) != 3 {
 				fmt.Fprintln(os.Stderr, "usage: margin-init cbsend <base>")

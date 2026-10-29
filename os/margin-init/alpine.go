@@ -68,6 +68,10 @@ exec /proc/1/root` + marginHome + `/condor-init cbsend "$b"
 
 const claudeWrapper = "#!/bin/sh\nexec /proc/1/root" + marginHome + "/condor-init claude \"$@\"\n"
 
+// publishWrapper is margin-publish: Claude Code (the Claude tab with an account) publishes
+// fixes with it, as the API-key Claude does with its publish_to_github tool.
+const publishWrapper = "#!/bin/sh\nexec /proc/1/root" + marginHome + "/condor-init publish \"$@\"\n"
+
 // configureAlpine writes alpineConfig and points apk at plain-http mirrors (packages are
 // signed, so http is safe, and a plain proxy request is simpler than a CONNECT tunnel).
 func configureAlpine() {
@@ -88,6 +92,8 @@ func configureAlpine() {
 	os.Chmod(alpineRoot+"/usr/local/bin/claude", 0o755)
 	os.WriteFile(alpineRoot+"/usr/local/bin/cbrun", []byte(cbrunScript), 0o755)
 	os.Chmod(alpineRoot+"/usr/local/bin/cbrun", 0o755)
+	os.WriteFile(alpineRoot+"/usr/local/bin/margin-publish", []byte(publishWrapper), 0o755)
+	os.Chmod(alpineRoot+"/usr/local/bin/margin-publish", 0o755)
 	repos := alpineRoot + "/etc/apk/repositories"
 	if b, err := os.ReadFile(repos); err == nil {
 		os.WriteFile(repos, []byte(strings.ReplaceAll(string(b), "https://", "http://")), 0o644)
