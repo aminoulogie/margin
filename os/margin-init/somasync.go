@@ -336,9 +336,9 @@ func (s *somaStore) saveTo(dir string) {
 var somaFields = map[string]bool{"habits": true, "todos": true, "dayPlans": true, "reading": true, "history": true, "nutrition": true,
 	"goals": true, "projects": true, "notes": true, "settings": true,
 	"ledger": true, "shifts": true, "screenTime": true, "timeEntries": true, "findings": true,
-	"dayRoutines": true, "logOverrides": true, "restDays": true}
+	"dayRoutines": true, "logOverrides": true, "restDays": true, "mind": true, "hunger": true, "customFoods": true}
 
-const somaFieldsVersion = 8
+const somaFieldsVersion = 9
 
 // somaField is the part of Soma's state a record belongs to (records.ts, fieldOf).
 func somaField(key string) string {

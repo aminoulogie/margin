@@ -1129,7 +1129,13 @@ func init() {
 		if text == "" {
 			return
 		}
-		somaPut("history/"+date, obj{"timestamp": nowMs(), "split": text, "durationFormatted": "0:00", "caloriesBurned": 0,
+		at := nowMs()
+		if date != somaToday() { // a day logged after the fact: midday on it
+			if d, err := time.ParseInLocation("2006-01-02", date, displayZone); err == nil {
+				at = float64(d.Add(12 * time.Hour).UnixMilli())
+			}
+		}
+		somaPut("history/"+date, obj{"timestamp": at, "split": text, "durationFormatted": "0:00", "caloriesBurned": 0,
 			"totalVol": 0, "totalSets": 0, "axialVol": 0, "exercises": []any{}, "muscles": obj{}})
 		c.wkGo("training", "sess:"+date)
 		c.wkType("addex:"+date, "An exercise, e.g. Incline Bench Press", "")

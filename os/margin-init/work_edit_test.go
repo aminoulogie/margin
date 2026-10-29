@@ -752,22 +752,14 @@ func TestOtherPagesUsable(t *testing.T) {
 	tapBtn(t, c, "wk:tab:1")
 	shot(t, c, "findings-by-project")
 
-	// Nutrition: food on the log, changed.
+	// Nutrition: a quick add waits in the plan.
 	go2("nutrition")
-	tapBtn(t, c, "wk:tab:1")
-	tapBtn(t, c, "wk:type-open:food:"+somaToday())
-	typeIn(t, c, "Greek yoghurt 180 18")
-	items, _ := somaObj("nutrition/" + somaToday())["items"].([]any)
-	last := len(items) - 1
-	tapBtn(t, c, "wk:sheet-open:food:"+somaToday()+":"+string(rune('0'+last)))
-	tapBtn(t, c, "wk:foodset:"+somaToday()+":"+string(rune('0'+last))+":cals:25")
-	items, _ = somaObj("nutrition/" + somaToday())["items"].([]any)
-	if f := items[last].(obj); num(f["cals"]) != 205 {
-		t.Fatalf("food %v", f)
+	tapBtn(t, c, "wk:sheet-open:addfood:")
+	tapBtn(t, c, "wk:type-open:fquick:")
+	typeIn(t, c, "Wrap 450 35 40 12")
+	if len(foodList(foodDay(somaToday()), "planned")) == 0 {
+		t.Fatal("quick add")
 	}
-	tapBtn(t, c, "wk:sheet:close")
-	tapBtn(t, c, "wk:tab:2")
-	shot(t, c, "nutrition-week")
 
 	// Mind: a note with a task, ticked.
 	go2("mind")
@@ -801,4 +793,35 @@ func TestOtherPagesUsable(t *testing.T) {
 	shot(t, c, "settings-accent")
 	go2("overview")
 	shot(t, c, "overview-violet")
+}
+
+func TestCalendarUsable(t *testing.T) {
+	c := workAt(t, "calendar")
+	shot(t, c, "calendar")
+	today := somaToday()
+	yday := wkAddDays(today, -1) // the fixture trains on even days back: yesterday is free
+	tapBtn(t, c, "wk:calday:"+yday)
+	if c.somaUI.calDay != yday {
+		t.Fatal("pick a day")
+	}
+	tapBtn(t, c, "wk:restday:"+yday)
+	if !isRestDay(yday) {
+		t.Fatal("rest day")
+	}
+	shot(t, c, "calendar-day")
+	tapBtn(t, c, "wk:restday:"+yday)
+	tapBtn(t, c, "wk:logon:"+yday)
+	typeIn(t, c, "Legs")
+	c.somaUI.typing, c.skb.visible = false, false
+	o := somaObj("history/" + yday)
+	if str(o["split"]) != "Legs" || somaDate(msTime(o["timestamp"])) != yday {
+		t.Fatalf("session logged on the day %v", o)
+	}
+	tapBtn(t, c, "wk:go:calendar")
+	month := c.somaUI.calOff
+	swipeAcross(t, c, "calm:", -1)
+	if c.somaUI.calOff != month-1 {
+		t.Fatal("swipe to last month")
+	}
+	tapBtn(t, c, "wk:calnavm:0")
 }

@@ -21,51 +21,59 @@ import (
 // the rest is shown.
 
 type somaUI struct {
-	view       string    // "today", "calendar", "goals", "notes", "reports"
-	note       string    // the note open in "notes" ("" for the list)
-	month      time.Time // the calendar's month
-	sel        string    // the calendar's day
-	calWeek    bool      // the calendar shows a week, not the month
-	moving     string    // a timed to-do being moved: the next time tapped is its new time
-	repRange   string    // the reports' range: "week", "month", "year"
-	plan       int       // the spending plan shown in Money
-	delShift   string    // a shift being deleted (asked twice)
-	delStep    int
-	need       map[string]int // the height each view last needed
-	todoMenu   string         // the to-do held for its actions
-	todoWeek   bool           // Home's To do shows this week, not today
-	sleepDraft string         // hours typed in Log the gap, not logged yet
-	typing     bool
-	field      string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
-	editing    string
-	url        string            // the sync address, typed before the code
-	msg        string            // the last thing that went wrong
-	slotY      int               // page y under the to-do being typed on the timeline
-	work       string            // the Work tab's page: "overview", "projects", "project"... (work.go)
-	workProj   string            // the project open there
-	workSel    map[string]string // the tab, chip or segment chosen on each of its pages
-	workGroup  string            // the rail's group: "" (Workspace) or "personal"
-	workSub    string            // a page within a page: "movement:<key>", "session:<date>", "habit:<id>"
-	sheet      string            // the sheet open over the page: "<name>:<arg>" (work_ui.go)
-	sheetPage  int               // which part of a long sheet is shown
-	sheetBack  string            // the sheet a field is being typed from
-	sheetStack []string          // the sheets the open one was opened from
-	keep       bool              // the tap being handled keeps the sheet open
-	prompt     string            // what the field being typed is for, shown until something is typed
-	undo       *wkUndo           // the last thing deleted, for a few seconds
-	calMonth   time.Time         // the date sheet's month
-	dateWhat   string            // what the date sheet sets: "<setter>:<arg>"
-	dateCur    string            // and the date it has now
-	dateTitle  string
-	toTop      bool            // the tap being handled opened another page: scroll to its top
-	pf         wkProjFilter    // how Projects are sorted and filtered
-	reportProj string          // the project a report is about
-	reportBack int             // how many periods back the report is
-	reportOff  map[string]bool // the report's sections switched off
-	breakProj  string          // the project the timer ran on before a break
-	nutDate    string          // the day Nutrition's log shows ("" today)
-	noteQuery  string          // what the notes are searched for
-	planDate   string          // the Planner's day (its week, its month); "" today
+	view        string    // "today", "calendar", "goals", "notes", "reports"
+	note        string    // the note open in "notes" ("" for the list)
+	month       time.Time // the calendar's month
+	sel         string    // the calendar's day
+	calWeek     bool      // the calendar shows a week, not the month
+	moving      string    // a timed to-do being moved: the next time tapped is its new time
+	repRange    string    // the reports' range: "week", "month", "year"
+	plan        int       // the spending plan shown in Money
+	delShift    string    // a shift being deleted (asked twice)
+	delStep     int
+	need        map[string]int // the height each view last needed
+	todoMenu    string         // the to-do held for its actions
+	todoWeek    bool           // Home's To do shows this week, not today
+	sleepDraft  string         // hours typed in Log the gap, not logged yet
+	typing      bool
+	field       string // what's being typed: "todo", "week", "day" (a to-do), "url", "code"
+	editing     string
+	url         string            // the sync address, typed before the code
+	msg         string            // the last thing that went wrong
+	slotY       int               // page y under the to-do being typed on the timeline
+	work        string            // the Work tab's page: "overview", "projects", "project"... (work.go)
+	workProj    string            // the project open there
+	workSel     map[string]string // the tab, chip or segment chosen on each of its pages
+	workGroup   string            // the rail's group: "" (Workspace) or "personal"
+	workSub     string            // a page within a page: "movement:<key>", "session:<date>", "habit:<id>"
+	sheet       string            // the sheet open over the page: "<name>:<arg>" (work_ui.go)
+	sheetPage   int               // which part of a long sheet is shown
+	sheetBack   string            // the sheet a field is being typed from
+	sheetStack  []string          // the sheets the open one was opened from
+	keep        bool              // the tap being handled keeps the sheet open
+	prompt      string            // what the field being typed is for, shown until something is typed
+	undo        *wkUndo           // the last thing deleted, for a few seconds
+	calMonth    time.Time         // the date sheet's month
+	dateWhat    string            // what the date sheet sets: "<setter>:<arg>"
+	dateCur     string            // and the date it has now
+	dateTitle   string
+	toTop       bool            // the tap being handled opened another page: scroll to its top
+	pf          wkProjFilter    // how Projects are sorted and filtered
+	reportProj  string          // the project a report is about
+	reportBack  int             // how many periods back the report is
+	reportOff   map[string]bool // the report's sections switched off
+	breakProj   string          // the project the timer ran on before a break
+	nutDate     string          // the day Nutrition's log shows ("" today)
+	noteQuery   string          // what the notes are searched for
+	calDay      string          // the Calendar's chosen day ("" today)
+	calOff      int             // and its month, from this one
+	planDate    string          // the Planner's day (its week, its month); "" today
+	foodMeal    string          // the meal food is being added to
+	foodQuery   string          // what the food library was searched for
+	portion     obj             // the food whose portion is being set
+	portionAmt  float64         // its amount (grams, ml or servings)
+	portionMeal string          // and meal
+	portionMode string          // "add" or "edit:<list>:<i>"
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
