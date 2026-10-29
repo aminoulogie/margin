@@ -209,11 +209,18 @@ func wkStepsDue(projects []wkProject, from, to string, overdue bool) []wkDatedSt
 }
 
 // stepState is how a dated step stands: its words and colour.
-func stepState(s wkStep, now time.Time) (string, color.RGBA) {
+func stepState(p wkProject, s wkStep, now time.Time) (string, color.RGBA) {
 	today := somaDate(now)
 	switch {
 	case s.Done:
 		return "done", wkFaint
+	case s.blocked:
+		for _, b := range p.Steps {
+			if b.ID == s.After {
+				return "After: " + b.Label, wkMuted
+			}
+		}
+		return "Blocked", wkMuted
 	case s.WaitingOn != "":
 		return "Waiting · " + s.WaitingOn, wkAmber
 	case s.overdue(today):
@@ -243,7 +250,7 @@ func (k *wk) datedStepRows(list []wkDatedStep, ry int, now time.Time, showDate b
 		}
 		k.struck(273, cy-2, d.s.Label, d.s.Done, 560)
 		k.text(wkFont("regular", 17), 273, cy+24, wkFaint, clip(wkFont("regular", 17), d.p.Name+phaseNote(d.s), 560))
-		st, sc := stepState(d.s, now)
+		st, sc := stepState(d.p, d.s, now)
 		if showDate {
 			st = strings.TrimPrefix(wkDate(d.s.Due)+" · "+st, " · ")
 			st = strings.TrimSuffix(st, " · ")
@@ -361,12 +368,19 @@ func (k *wk) planSteps(p wkProject, y int, now time.Time) int {
 				k.icon("hourglass", 252, cy, 22, wkAmber)
 				lx = 274
 			}
-			k.struck(lx, cy+8, s.Label, s.Done, 560)
+			if s.blocked { // greyed until what it comes after is done
+				k.text(wkFont("semi", 22), lx, cy+8, wkFaint, clip(wkFont("semi", 22), s.Label, 560))
+			} else {
+				k.struck(lx, cy+8, s.Label, s.Done, 560)
+			}
 			when := ""
 			if s.Due != "" {
 				when = wkDate(s.Due)
 			}
-			st, stc := stepState(s, now)
+			if d, n := s.itemsDone(); n > 0 {
+				when = strings.TrimPrefix(when+fmt.Sprintf(" · %d/%d", d, n), " · ")
+			}
+			st, stc := stepState(p, s, now)
 			if st != "" && st != "done" {
 				k.textR(wkFont("regular", 17), 1093, cy+24, stc, clip(wkFont("regular", 17), st, 300))
 				k.textR(wkFont("semi", 19), 1093, cy-2, map[bool]color.RGBA{true: wkRed, false: wkText2}[stc == wkRed], when)
@@ -552,4 +566,138 @@ func init() {
 		}
 		c.somaUI.workSel["projectswk:pk"] = "1" // back on Projects: the plans
 	}
+}
+
+// --- what a step comes after, its checklist ------------------------------------------------------
+
+// wkItemsTick ticks a checklist line; all ticked ticks the step, one unticked unticks it.
+func wkItemsTick(pid, sid, iid string) {
+	wkProjectSteps(pid, true, func(steps []any) []any {
+		i := stepIndex(steps, sid)
+		if i < 0 {
+			return steps
+		}
+		so := steps[i].(obj)
+		items, _ := so["items"].([]any)
+		all := len(items) > 0
+		for _, it := range items {
+			io, _ := it.(obj)
+			if io == nil {
+				continue
+			}
+			if str(io["id"]) == iid {
+				d, _ := io["done"].(bool)
+				io["done"] = !d
+			}
+			if d, _ := io["done"].(bool); !d {
+				all = false
+			}
+		}
+		done, _ := so["done"].(bool)
+		switch {
+		case all && !done:
+			so["done"], so["at"] = true, nowMs()
+		case !all && done:
+			so["done"] = false
+			delete(so, "at")
+		}
+		return steps
+	})
+}
+
+func init() {
+	wkSheets["safter"] = func(k *wk, arg string) *wkSheet {
+		pid, sid, _ := strings.Cut(arg, ":")
+		s, p, ok := wkStepOf(pid, sid)
+		if !ok {
+			return nil
+		}
+		sh := &wkSheet{title: "Comes after", sub: s.Label + " is blocked until this one is done"}
+		sh.rows = append(sh.rows, wkRow{id: "wk:safterset:" + arg + ":", label: "Nothing", icon: "x", sel: s.After == ""})
+		for _, b := range p.Steps {
+			if b.ID != sid && b.After != sid { // (not one that comes after it)
+				sh.rows = append(sh.rows, wkRow{id: "wk:safterset:" + arg + ":" + b.ID, label: b.Label, icon: map[bool]string{true: "circle-check", false: "circle"}[b.Done], sel: s.After == b.ID})
+			}
+		}
+		return sh
+	}
+	wkActions["safterset"] = func(c *console, arg string) { // <pid>:<sid>:<after>
+		parts := strings.SplitN(arg, ":", 3)
+		if len(parts) == 3 {
+			wkSetStepField(parts[0], parts[1], "after", parts[2])
+		}
+	}
+	wkActions["sitem"] = func(c *console, arg string) { // <pid>:<sid>:<item>
+		parts := strings.SplitN(arg, ":", 3)
+		if len(parts) == 3 {
+			wkItemsTick(parts[0], parts[1], parts[2])
+			c.somaUI.keep = true
+		}
+	}
+	wkPrompts["sitemadd"] = func(string) (string, string) { return "A line of the checklist, e.g. Passport", "" }
+	wkTypers["sitemadd"] = func(c *console, arg, text string) {
+		if text = strings.TrimSpace(text); text == "" {
+			return
+		}
+		pid, sid, _ := strings.Cut(arg, ":")
+		wkProjectSteps(pid, false, func(steps []any) []any {
+			if i := stepIndex(steps, sid); i >= 0 {
+				so := steps[i].(obj)
+				items, _ := so["items"].([]any)
+				so["items"] = append(items, obj{"id": "it-" + somaNewID(), "text": text, "done": false})
+				if d, _ := so["done"].(bool); d { // a new line to do: not finished any more
+					so["done"] = false
+					delete(so, "at")
+				}
+			}
+			return steps
+		})
+	}
+	wkActions["sitemclear"] = func(c *console, arg string) {
+		pid, sid, _ := strings.Cut(arg, ":")
+		wkProjectSteps(pid, false, func(steps []any) []any {
+			if i := stepIndex(steps, sid); i >= 0 {
+				so := steps[i].(obj)
+				items, _ := so["items"].([]any)
+				var keep []any
+				for _, it := range items {
+					if io, _ := it.(obj); io != nil {
+						if d, _ := io["done"].(bool); !d {
+							keep = append(keep, it)
+						}
+					}
+				}
+				so["items"] = keep
+			}
+			return steps
+		})
+		c.somaUI.keep = true
+	}
+}
+
+// wkMilestoneSoon is the nearest undone milestone in the 7 days after date: "TCF exam", days.
+func wkMilestoneSoon(projects []wkProject, date string) (string, int, color.RGBA, bool) {
+	d, err := time.ParseInLocation("2006-01-02", date, displayZone)
+	if err != nil {
+		return "", 0, color.RGBA{}, false
+	}
+	best, bestN, bc, ok := "", 99, color.RGBA{}, false
+	for _, p := range projects {
+		if p.Status != "active" {
+			continue
+		}
+		for _, s := range p.Steps {
+			if !s.Milestone || s.Done || s.Due == "" {
+				continue
+			}
+			m, err := time.ParseInLocation("2006-01-02", s.Due, displayZone)
+			if err != nil {
+				continue
+			}
+			if n := int(m.Sub(d).Hours()/24 + 0.5); n >= 1 && n <= 7 && n < bestN {
+				best, bestN, bc, ok = s.Label, n, wkColour(p, p.order), true
+			}
+		}
+	}
+	return best, bestN, bc, ok
 }

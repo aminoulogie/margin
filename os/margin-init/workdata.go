@@ -24,11 +24,31 @@ type wkStep struct {
 	Milestone bool   // a fixed-date event (an exam, an appointment), not work
 	Phase     string // steps are grouped by phase, in order of first appearance
 	WaitingOn string // blocked on someone else: "Waiting", never my overdue
+	After     string   // a step that has to be done first (tablet only): blocked until it is
+	Items     []wkItem // a checklist inside the step (tablet only); all ticked ticks the step
+	blocked   bool     // (worked out on reading: After isn't done yet)
+}
+
+// wkItem is one line of a step's checklist.
+type wkItem struct {
+	ID, Text string
+	Done     bool
 }
 
 // overdue: still to do, work of mine (not a milestone, not waiting on someone), past its date.
 func (s wkStep) overdue(today string) bool {
-	return !s.Done && !s.Milestone && s.WaitingOn == "" && s.Due != "" && s.Due < today
+	return !s.Done && !s.Milestone && s.WaitingOn == "" && !s.blocked && s.Due != "" && s.Due < today
+}
+
+// itemsDone is the checklist's ticked count, and its length.
+func (s wkStep) itemsDone() (int, int) {
+	n := 0
+	for _, it := range s.Items {
+		if it.Done {
+			n++
+		}
+	}
+	return n, len(s.Items)
 }
 
 type wkProject struct {
@@ -244,6 +264,14 @@ func wkProjects() []wkProject {
 			if d := str(so["due"]); wkDateRE.MatchString(d) {
 				st.Due = d
 			}
+			st.After = str(so["after"])
+			items, _ := so["items"].([]any)
+			for _, it := range items {
+				if io, _ := it.(obj); io != nil && str(io["id"]) != "" {
+					d, _ := io["done"].(bool)
+					st.Items = append(st.Items, wkItem{ID: str(io["id"]), Text: str(io["text"]), Done: d})
+				}
+			}
 			work, _ := so["work"].([]any)
 			for _, w := range work {
 				if wo, ok := w.(obj); ok {
@@ -255,6 +283,13 @@ func wkProjects() []wkProject {
 				}
 			}
 			p.Steps = append(p.Steps, st)
+		}
+		for i, s := range p.Steps { // blocked: what it comes after isn't done yet
+			for _, b := range p.Steps {
+				if s.After != "" && b.ID == s.After && !b.Done && !s.Done {
+					p.Steps[i].blocked = true
+				}
+			}
 		}
 		log, _ := o["log"].([]any)
 		for _, n := range log {

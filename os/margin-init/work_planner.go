@@ -483,6 +483,16 @@ func (k *wk) planMonth(pd time.Time, todos []somaTodo, now time.Time) int {
 	for _, d := range wkStepsDue(wkProjects(), start.Format("2006-01-02"), start.AddDate(0, 0, 7*weeks).Format("2006-01-02"), false) {
 		by[d.s.Due] = append(by[d.s.Due], somaTodo{ID: "step:" + d.s.ID, Text: d.s.Label, Date: d.s.Due, col: wkColour(d.p, d.p.order)})
 	}
+	// From 7 days before a milestone, its countdown on each day (first in the cell).
+	for i := range 7 * weeks {
+		ds := somaDate(start.AddDate(0, 0, i))
+		if ds < somaToday() {
+			continue
+		}
+		if label, n, col, ok := wkMilestoneSoon(wkProjects(), ds); ok {
+			by[ds] = append([]somaTodo{{ID: "countdown", Text: fmt.Sprintf("%s in %d d", label, n), Date: ds, Priority: "high", col: col}}, by[ds]...)
+		}
+	}
 	today := dayStart(now)
 	for w := range weeks {
 		for i := range 7 {
