@@ -630,11 +630,17 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Soma view is redrawn only if one of those changed or the 5-minute clock moved; other tabs
       after a minute; disk views once after a restart. A sync that brings nothing the screen read
       no longer redraws it (soma.changed → viewNeedsDraw); push no longer bumps somaGen (and keeps
-      Dirty if the record changed while sending). main sets debug.SetMemoryLimit(400 MB); a panic
+      Dirty if the record changed while sending). Soma views are also made ready in the background
+      (merged from a parallel session; viewPrepLoop every 2 s, viewPrepTick): a kept Soma view
+      whose READ records changed (viewPrepStale; not the 5-minute clock, which is drawn on opening)
+      is drawn again off screen once the tablet is left alone 1.5 s, one at a time, the 10 most
+      recently shown (state from the entry's somaUI copy; only when linked, as the unlinked page
+      draws into the shared canvas). main sets debug.SetMemoryLimit(400 MB); a panic
       in a touch is logged (init.log "touch: panic") instead of killing Margin. Live heap after
       going through every Soma page: 139 MB (was ~540). Tests: views_test.go, views_mem_test.go,
-      tabs_speed_test.go (MARGIN_SPEED=1). testConsole turns views off (views.off) unless a test
-      turns them on. **Not yet verified on the tablet** ("Freeze: what Margin wrote" on the
+      tabs_speed_test.go (MARGIN_SPEED=1). Redrawn the same = nothing sent to the panel (Flush
+      compares rows). testConsole turns views off (views.off) and the background drawing
+      (views.noPrep) unless a test turns them on. **Not yet verified on the tablet** ("Freeze: what Margin wrote" on the
       Clipboard shows panics, memory and slow pages from init.log).
 - [x] **Yesterday's PC hours missing on the tablet** (2026-10-29, somadata.go, work_pages.go,
       work.go, somacheck.go): cause not confirmed yet (no tablet data). Soma's PC format matches

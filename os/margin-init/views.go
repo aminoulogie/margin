@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"image"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,7 +35,10 @@ import (
 // been left alone for a moment: for Soma's pages, when a kind of record the page read has
 // changed since (somasync.go notes what each drawing reads), or the five-minute clock has
 // moved; for the other tabs, a minute after they were drawn. A view read from the tablet is
-// drawn fresh once after a restart. Anything done on a view is drawn at once as before.
+// drawn fresh once after a restart. Soma's views are also made ready in the background: one
+// kept whose records changed (an edit, a sync from the phone) is drawn again off screen while
+// the tablet is left alone, one at a time, so opening it is already up to date. Anything done
+// on a view is drawn at once as before.
 //
 // Memory is kept small on purpose. The tablet has 2 GB and margin-init is a 32-bit program:
 // keeping every tab's page and screen in memory (320 MB of them, plus copies) grew the
@@ -60,8 +64,10 @@ type viewEntry struct {
 	soma    bool     // a Soma page: fresh while its records and the clock haven't moved
 	at      time.Time
 	used    time.Time
-	disk    bool // read from the tablet: drawn fresh at the first moment alone
-	saved   bool // what's on the tablet is this drawing (or no newer one needs writing)
+	disk    bool    // read from the tablet: drawn fresh at the first moment alone
+	saved   bool    // what's on the tablet is this drawing (or no newer one needs writing)
+	su      *somaUI // a Soma view: its choices, to draw it again in the background
+	failed  bool    // drawing it again in the background didn't give the same view
 }
 
 func (e *viewEntry) size() int { return cap(e.p.img.Pix) }
@@ -75,7 +81,11 @@ var views struct {
 	writes sync.WaitGroup
 	async  bool
 	off    bool // tests that count drawings switch it off
+	noPrep bool // tests: no background drawing (they call viewPrepTick themselves)
+	c      *console
 }
+
+var viewPrepOnce sync.Once
 
 func init() { views.async = true }
 
@@ -96,6 +106,11 @@ func (c *console) viewKey() string {
 	if views.off || c.locked || c.alarm != "" || c.pinMode != "" || c.xapp != nil {
 		return ""
 	}
+	return c.viewKeyOf()
+}
+
+// viewKeyOf is viewKey without what's over the screen (the lock screen, an alarm).
+func (c *console) viewKeyOf() string {
 	var k string
 	switch c.mode {
 	case modeBooksHome:
@@ -221,7 +236,16 @@ func (c *console) viewKeep(key string, fields []string) {
 	if key == "" || c.page == nil || c.page.img == nil {
 		return
 	}
-	p := *c.page
+	e := c.viewEntryOf(key, c.page, c.scrollY(), fields)
+	c.page = e.p // what's on screen is the kept one: taps, scrolling and repaints use it
+	c.viewPut(e)
+	viewPrepOnce.Do(func() { go viewPrepLoop() })
+}
+
+// viewEntryOf is page pg kept as view key, in a picture of its own (a shared canvas is taken
+// over, not copied). Caller holds drawMu.
+func (c *console) viewEntryOf(key string, pg *page, scrollY int, fields []string) *viewEntry {
+	p := *pg
 	switch {
 	case p.owned: // drawn in its own picture (the workstation): kept as it is
 	case sameBacking(p.img, pageCanvas):
@@ -235,17 +259,29 @@ func (c *console) viewKeep(key string, fields []string) {
 		p.owned = true
 	}
 	now := time.Now()
-	e := &viewEntry{key: key, p: &p, tabsOn: c.tabsOn, scrollY: c.scrollY(), gen: somaGen.Load(), fields: fields,
+	e := &viewEntry{key: key, p: &p, tabsOn: c.tabsOn, scrollY: scrollY, gen: somaGen.Load(), fields: fields,
 		clock: viewClock(now), soma: c.mode == modeSoma, at: now, used: now}
-	c.page = e.p // what's on screen is the kept one: taps, scrolling and repaints use it
+	if c.mode == modeSoma {
+		su := c.somaUI
+		su.workSel = maps.Clone(su.workSel)
+		su.sheetStack, su.undo = nil, nil
+		e.su = &su
+	}
+	return e
+}
+
+// viewPut keeps entry e, dropping the least recently shown past the memory allowed, and has
+// it written to the tablet. Caller holds drawMu.
+func (c *console) viewPut(e *viewEntry) {
 	views.Lock()
+	views.c = c
 	if views.m == nil {
 		views.m = map[string]*viewEntry{}
 	}
-	if old := views.m[key]; old != nil {
+	if old := views.m[e.key]; old != nil {
 		views.bytes -= old.size()
 	}
-	views.m[key] = e
+	views.m[e.key] = e
 	views.bytes += e.size()
 	for views.bytes > viewMemBytes && len(views.m) > 1 { // the least recently shown go
 		var oldest *viewEntry
@@ -313,6 +349,110 @@ func (c *console) viewRefreshLater(key string) {
 		})
 	}
 	try()
+}
+
+// --- made ready in the background ---------------------------------------------------------------
+
+const (
+	viewPrepEvery = 2 * time.Second
+	viewPrepIdle  = 1500 * time.Millisecond // untouched this long before drawing in the background
+	viewPrepMost  = 10                      // the Soma views most recently shown are kept ready
+)
+
+func viewPrepLoop() {
+	for {
+		time.Sleep(viewPrepEvery)
+		views.Lock()
+		c, skip := views.c, views.off || views.noPrep
+		views.Unlock()
+		if c == nil || skip || !drawMu.TryLock() {
+			continue
+		}
+		c.viewPrepTick()
+		drawMu.Unlock()
+	}
+}
+
+// viewPrepStale: kept view e is worth drawing again in the background, as a record its
+// drawing read has changed. (The five-minute clock alone isn't: that is drawn when the view is
+// opened, a moment after it shows; drawing every kept view again every five minutes held the
+// tablet for seconds.)
+func viewPrepStale(e *viewEntry) bool {
+	if e.failed || e.disk {
+		return false
+	}
+	if len(e.fields) == 0 {
+		return e.gen != somaGen.Load()
+	}
+	return soma.changedSince(e.fields, e.gen)
+}
+
+// viewPrepTick draws again one kept Soma view whose records have moved on, if the tablet is
+// being left alone. True if it drew one. Caller holds drawMu.
+func (c *console) viewPrepTick() bool {
+	if time.Since(c.lastInput) < viewPrepIdle || c.sc.drag || c.sc.cpuOn || c.sc.motion != nil || c.press.on || c.drag.on {
+		return false
+	}
+	if c.mode == modeVideo || c.mode == modeSoma && (c.viewOn == "" || c.viewKey() != c.viewOn) {
+		return false // a film, or a Soma page on screen that isn't a kept copy (typing, a sheet)
+	}
+	if !soma.linked() {
+		return false // Soma's own pages draw into the shared canvas, which may be on screen
+	}
+	views.Lock()
+	var kept []*viewEntry
+	for _, e := range views.m {
+		if e.su != nil {
+			kept = append(kept, e)
+		}
+	}
+	views.Unlock()
+	sort.Slice(kept, func(i, j int) bool { return kept[i].used.After(kept[j].used) })
+	for i, e := range kept {
+		if i >= viewPrepMost {
+			break
+		}
+		if !viewPrepStale(e) || c.mode == modeSoma && e.key == c.viewOn {
+			continue // the one on screen redraws itself when its records change
+		}
+		c.viewPrepare(e)
+		return true
+	}
+	return false
+}
+
+// viewPrepare draws Soma view e again as it would be opened now, off the screen, and keeps it.
+// What's on screen is left as it was. Caller holds drawMu.
+func (c *console) viewPrepare(e *viewEntry) {
+	saved, mode, tabs, pg := c.somaUI, c.mode, c.tabsOn, c.page
+	c.scrollY()
+	sy, had := c.sc.y[modeSoma]
+	defer func() {
+		c.somaUI, c.mode, c.tabsOn, c.page = saved, mode, tabs, pg
+		if had {
+			c.sc.y[modeSoma] = sy
+		} else {
+			delete(c.sc.y, modeSoma)
+		}
+	}()
+	su := *e.su
+	su.workSel = maps.Clone(su.workSel)
+	c.somaUI, c.mode = su, modeSoma
+	c.sc.y[modeSoma] = e.scrollY
+	soma.track()
+	p := c.somaPage()
+	fields := soma.tracked()
+	if c.viewKeyOf() != e.key || p == nil || p.img == nil {
+		e.failed = true
+		return
+	}
+	scroll := 0
+	if p.img.Rect.Dy() > c.viewH() {
+		scroll = min(max(e.scrollY, 0), p.img.Rect.Dy()-c.viewH())
+	}
+	ne := c.viewEntryOf(e.key, p, scroll, fields)
+	ne.used = e.used
+	c.viewPut(ne)
 }
 
 // --- on the tablet ----------------------------------------------------------------------------
