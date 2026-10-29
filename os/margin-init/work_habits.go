@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"golang.org/x/image/font"
 	"image"
 	"image/color"
 	"math"
@@ -343,6 +344,9 @@ func (k *wk) habits() int {
 
 func (k *wk) habitToday(hs []somaHabit, today string) int {
 	y := 546
+	if len(hs) > 0 {
+		y = k.habitHeat(hs, today, y) + 24
+	}
 	groups := []struct{ when, title, icon string }{{"morning", "Morning", "sunrise"}, {"", "Any time", "sun"}, {"evening", "Evening", "moon"}}
 	if len(hs) == 0 {
 		cr := image.Rect(wkX0, y, wkX1, y+200)
@@ -365,8 +369,11 @@ func (k *wk) habitToday(hs []somaHabit, today string) int {
 		k.icon(g.icon, wkX0+14, y+16, 22, wkMuted)
 		k.text(wkFont("semi", 19), wkX0+36, y+24, wkMuted, strings.ToUpper(g.title))
 		y += 40
-		rowH := 112
-		cr := image.Rect(wkX0, y, wkX1, y+rowH*len(list)+8)
+		hh := 8
+		for _, h := range list {
+			hh += k.habitRowH(h)
+		}
+		cr := image.Rect(wkX0, y, wkX1, y+hh)
 		k.card(cr)
 		ry := y + 4
 		for i, h := range list {
@@ -374,7 +381,7 @@ func (k *wk) habitToday(hs []somaHabit, today string) int {
 				ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
 			}
 			k.habitRow(h, ry, today, mon)
-			ry += rowH
+			ry += k.habitRowH(h)
 		}
 		y = cr.Max.Y + 22
 	}
@@ -417,31 +424,28 @@ func (k *wk) habitRow(h somaHabit, ry int, today, mon string) {
 			ui.Circle(k.img, x, k.Y(cy), 4, rgb(0x2a2c35))
 		}
 	}
-	// Doing it today.
-	if steps := h.steps(); len(steps) > 0 {
-		x := 1136
-		for i := len(steps) - 1; i >= 0; i-- {
-			s := steps[i]
-			n := h.stepCount(today, s.ID)
-			f := wkFont("semi", 17)
-			l := clip(f, s.Name, 90)
-			if s.Target > 1 {
-				l += fmt.Sprintf(" %d/%d", n, s.Target)
+	// Doing it today: a checklist's steps, whole, on their own line(s), and Done for them all.
+	if len(h.steps()) > 0 {
+		for _, c := range k.stepChips(h, today) {
+			r := k.R(c.r.Min.X, ry+c.r.Min.Y, c.r.Max.X, ry+c.r.Max.Y)
+			switch {
+			case c.done && c.all:
+				ui.RoundRect(k.img, r, 24, col)
+				lucideIcon(k.img, "check", r.Min.X+26, (r.Min.Y+r.Max.Y)/2, 22, accentInk(col))
+				apText(k.img, c.f, r.Min.X+46, (r.Min.Y+r.Max.Y)/2+7, accentInk(col), c.label)
+			case c.all:
+				ui.RoundRect(k.img, r, 24, col)
+				ui.RoundRect(k.img, r.Inset(2), 22, wkCard)
+				lucideIcon(k.img, "check", r.Min.X+26, (r.Min.Y+r.Max.Y)/2, 22, col)
+				apText(k.img, c.f, r.Min.X+46, (r.Min.Y+r.Max.Y)/2+7, col, c.label)
+			case c.done:
+				ui.RoundRect(k.img, r, 24, blend(wkCard, col, 0.85))
+				apTextCenter(k.img, c.f, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, accentInk(col), c.label)
+			default:
+				ui.RoundRect(k.img, r, 24, rgb(0x262833))
+				apTextCenter(k.img, c.f, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, wkText2, c.label)
 			}
-			w := ui.TextWidth(f, l) + 28
-			r := k.R(x-w, cy-22, x, cy+22)
-			if n >= s.Target {
-				ui.RoundRect(k.img, r, 22, col)
-				apTextCenter(k.img, f, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, accentInk(col), l)
-			} else {
-				ui.RoundRect(k.img, r, 22, rgb(0x262833))
-				apTextCenter(k.img, f, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, wkText2, l)
-			}
-			k.btn("wk:hstep:"+h.ID+":"+s.ID, r.Inset(-4))
-			x -= w + 8
-			if x < 870 {
-				break
-			}
+			k.btn(c.id, r.Inset(-4))
 		}
 		return
 	}
@@ -1143,4 +1147,138 @@ func habitTile(img *image.RGBA, r image.Rectangle, h somaHabit) {
 	}
 	in := strings.ToUpper(string([]rune(strings.TrimSpace(h.Name) + "•")[:1]))
 	apTextCenter(img, wkFont("bold", float64(r.Dy())*0.42), cx, cy, fg, in)
+}
+
+// stepChip is a step of a habit's checklist as a chip under its name (rect from the row's top),
+// or the Done that ticks them all.
+type stepChip struct {
+	id, label string
+	r         image.Rectangle
+	f         font.Face
+	done, all bool
+}
+
+// stepChips lays a checklist's steps out in lines under the habit's name: each whole, its
+// count beside it, then Done.
+func (k *wk) stepChips(h somaHabit, today string) []stepChip {
+	f := wkFont("semi", 19)
+	x, y := 262, 104
+	right := 1140
+	var out []stepChip
+	add := func(c stepChip, w int) {
+		if x+w > right && x > 262 {
+			x, y = 262, y+58
+		}
+		c.r = image.Rect(x, y, x+w, y+48)
+		c.f = f
+		out = append(out, c)
+		x += w + 10
+	}
+	all := true
+	for _, st := range h.steps() {
+		n := h.stepCount(today, st.ID)
+		l := clip(f, st.Name, 420)
+		if st.Target > 1 {
+			l += fmt.Sprintf("  %d/%d", n, st.Target)
+		}
+		if n < st.Target {
+			all = false
+		}
+		add(stepChip{id: "wk:hstep:" + h.ID + ":" + st.ID, label: l, done: n >= st.Target}, ui.TextWidth(f, l)+40)
+	}
+	lbl := "Done"
+	if all {
+		lbl = "All done"
+	}
+	add(stepChip{id: "wk:htick:" + h.ID, label: lbl, done: all, all: true}, ui.TextWidth(f, lbl)+66)
+	return out
+}
+
+// habitRowH is the height of a habit's row: taller for a checklist's chips.
+func (k *wk) habitRowH(h somaHabit) int {
+	if len(h.steps()) == 0 {
+		return 112
+	}
+	cs := k.stepChips(h, somaToday())
+	return cs[len(cs)-1].r.Max.Y + 18
+}
+
+// habitHeat is the last five weeks as a heat map, Monday to Sunday, each day a square as
+// bright as its score, today ringed; beside it what those weeks add up to.
+func (k *wk) habitHeat(hs []somaHabit, today string, y int) int {
+	t, _ := time.ParseInLocation("2006-01-02", today, displayZone)
+	start := weekStart(t).AddDate(0, 0, -28)
+	const cell, gap = 66, 10
+	h := 106 + 5*(cell+gap) + 26
+	cr := image.Rect(wkX0, y, wkX1, y+h)
+	k.card(cr)
+	k.cardHead(wkX0+28, y+48, "calendar-days", "Last 5 weeks", "· each day's score")
+	x0 := wkX0 + 28
+	for i, d := range []string{"M", "T", "W", "T", "F", "S", "S"} {
+		k.textC(wkFont("semi", 16), x0+i*(cell+gap)+cell/2, y+96, wkFaint, d)
+	}
+	base := rgb(0x1e2027)
+	kept, scored, sum := 0, 0, 0
+	for w := range 5 {
+		for d := range 7 {
+			day := start.AddDate(0, 0, w*7+d)
+			ds := day.Format("2006-01-02")
+			r := k.R(x0+d*(cell+gap), y+110+w*(cell+gap), x0+d*(cell+gap)+cell, y+110+w*(cell+gap)+cell)
+			if ds > today {
+				ui.RoundRect(k.img, r, 16, rgb(0x17181e))
+				continue
+			}
+			sc := habitScore(hs, ds, today)
+			c, fg := base, wkMuted
+			if sc > 0 {
+				c = blend(base, wkLime, 0.18+0.82*float64(sc)/100)
+				fg = wkFG
+				if sc >= 60 {
+					fg = wkOnLime
+				}
+			}
+			if sc >= 0 {
+				scored++
+				sum += sc
+				if sc >= keepAt {
+					kept++
+				}
+			}
+			if ds == today {
+				ui.RoundRect(k.img, r.Inset(-4), 20, wkFG)
+				ui.RoundRect(k.img, r.Inset(-1), 17, wkCard)
+			}
+			ui.RoundRect(k.img, r, 16, c)
+			apTextCenter(k.img, wkFont("semi", 19), (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, fg, day.Format("2"))
+		}
+	}
+	// Those weeks in figures, and the key.
+	sx := x0 + 7*(cell+gap) + 40
+	avg := "–"
+	if scored > 0 {
+		avg = fmt.Sprintf("%d%%", sum/scored)
+	}
+	figs := []struct{ l, v, s string }{
+		{"Kept", fmt.Sprintf("%d of %d", kept, scored), fmt.Sprintf("days at %d%% or more", keepAt)},
+		{"Average", avg, "of each day's weight"},
+		{"Streak", fmt.Sprintf("%d days", habitStreak(hs, today)), "kept in a row"},
+	}
+	for i, f := range figs {
+		fy := y + 140 + i*104
+		k.text(wkFont("regular", 18), sx, fy, wkFaint, f.l)
+		k.text(wkFont("bold", 32), sx, fy+40, wkFG, f.v)
+		k.text(wkFont("regular", 17), sx, fy+66, wkFaint, f.s)
+	}
+	ky := cr.Max.Y - 40
+	k.text(wkFont("regular", 16), sx, ky+6, wkFaint, "Less")
+	for i := range 5 {
+		r := k.R(sx+48+i*30, ky-12, sx+48+i*30+22, ky+10)
+		c := base
+		if i > 0 {
+			c = blend(base, wkLime, 0.18+0.82*float64(i)/4)
+		}
+		ui.RoundRect(k.img, r, 6, c)
+	}
+	k.text(wkFont("regular", 16), sx+48+5*30+6, ky+6, wkFaint, "More")
+	return cr.Max.Y
 }

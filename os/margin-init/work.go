@@ -606,6 +606,9 @@ func (c *console) workPage() *page {
 		c.tabsOn = e.tabsOn
 		return e.p
 	}
+	// Not kept: the first time this start, the picture from the last time shows while it's drawn.
+	snapK := c.snapKey()
+	c.snapShow(snapK)
 	img := wkPageCache.canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
 	p := &page{img: img, header: tabsH}
@@ -689,6 +692,7 @@ func (c *console) workPage() *page {
 	k.undoPill(sy + c.viewH())
 	k.drawSheet(p)
 	wkPageCache.keep(key, p, c.tabsOn)
+	c.snapSave(snapK, p)
 	return p
 }
 

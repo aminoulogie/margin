@@ -587,6 +587,17 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       clipboard_test.go (also checks CLIPBOARD.md parses). ```send commands run through cbrun
       (alpine.go: writes /tmp/margin-cb/N.{sh,title}, output to N.out, exit code to N.code) and
       `margin-init cbsend` uploads them to the private results repo (github_link.go, contents API).
+- [x] **Pages remembered across restarts, habits heat map** (2026-10-29, work_snaps.go,
+      work_habits.go): each workstation view's first screen is kept as a raw RGBA picture in
+      /data/condor/soma/snaps/<sha1 of the view>.raw (snapKey: page, sub-page, project, tab/chip
+      choices, accent; not the records), written in the background at most once a minute a view,
+      40 kept. The first drawing of a view after a start blits its picture at once (snapShow), then
+      draws fresh over it; after that wkPageCache does the work, so a picture never covers a page
+      that was just changed. Habits Today: a 5-week heat map (Mon-Sun squares lit by each day's
+      score, today ringed, kept/average/streak, a Less-More key) above the lists; a checklist's steps
+      are whole chips on their own lines under the name, then Done (wk:htick ticks them all).
+      Tests: somaTestLink holds drawMu and waits for the pictures and state.json before its folder
+      goes (they raced the temp dir's removal).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
