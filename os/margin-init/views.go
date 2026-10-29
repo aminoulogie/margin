@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,9 +28,13 @@ import (
 //   - on the tablet (/data/condor/views): its first screen and its buttons, so after a restart
 //     even the first opening is instant.
 // A view shown from what was kept is drawn fresh once the tablet has been left alone for a
-// moment, if what it shows may have changed (Soma's records, or simply some time). Anything
-// done on a view (a tap that changes it) is drawn at once as before: only going to another
-// view uses what was kept.
+// moment, if what it shows may have changed (Soma's records, or simply some time); drawn the
+// same, nothing on the panel changes (Flush sends only rows that differ). Soma's views are also
+// made ready in the background: when its records change (an edit, or a sync from the phone)
+// or its clock moves on, the views kept are drawn again while the tablet is left alone, one at
+// a time, so the next time one is opened it is already up to date. Anything done on a view (a
+// tap that changes it) is drawn at once as before: only going to another view uses what was
+// kept.
 
 const (
 	viewMemBytes   = 320 << 20 // what the views kept in memory may take
@@ -47,7 +52,27 @@ type viewEntry struct {
 	gen     int64  // somaGen when it was drawn
 	at      time.Time
 	used    time.Time
-	disk    bool // read from the tablet: drawn fresh at the first moment alone
+	disk    bool    // read from the tablet: drawn fresh at the first moment alone
+	su      *somaUI // a Soma view: its choices, to draw it again in the background
+	bucket  string  // the 5-minute clock it was drawn at (Soma's pages show the time)
+	failed  bool    // drawing it again in the background didn't give the same view
+}
+
+// viewBucket is the 5-minute clock Soma's pages are drawn to (as workKey).
+func viewBucket(t time.Time) string {
+	t = t.In(displayZone)
+	return t.Format("2006-01-02 15:") + fmt.Sprint(t.Minute()/5)
+}
+
+// stale says whether what the view shows may have changed since it was drawn.
+func (e *viewEntry) stale() bool {
+	switch {
+	case e.disk:
+		return true
+	case e.su != nil:
+		return e.gen != somaGen.Load() || e.bucket != viewBucket(time.Now())
+	}
+	return time.Since(e.at) > viewFreshFor
 }
 
 func (e *viewEntry) size() int { return len(e.p.img.Pix) + len(e.screen) }
@@ -60,7 +85,12 @@ var views struct {
 	writes sync.WaitGroup
 	async  bool
 	off    bool // tests that count drawings switch it off
+	noPrep bool // tests: no background drawing (they call viewPrepTick themselves)
+	c      *console
+	back   []byte // the screen, kept while a view is drawn in the background
 }
+
+var viewPrepOnce sync.Once
 
 func init() { views.async = true }
 
@@ -74,6 +104,11 @@ func (c *console) viewKey() string {
 	if views.off || c.locked || c.alarm != "" || c.pinMode != "" || c.xapp != nil {
 		return ""
 	}
+	return c.viewKeyOf()
+}
+
+// viewKeyOf is viewKey without what's over the screen (the lock screen, an alarm).
+func (c *console) viewKeyOf() string {
 	var k string
 	switch c.mode {
 	case modeBooksHome:
@@ -166,7 +201,7 @@ func (c *console) viewShow(key string) bool {
 	} else {
 		c.blitPage()
 	}
-	if e.disk || e.gen != somaGen.Load() || time.Since(e.at) > viewFreshFor {
+	if e.stale() {
 		c.viewRefreshLater(key)
 	}
 	return true
@@ -178,21 +213,46 @@ func (c *console) viewKeep(key string) {
 	if key == "" || c.page == nil || c.page.img == nil {
 		return
 	}
-	p := *c.page
+	e := c.viewEntryOf(key, c.page, c.scrollY())
+	e.screen = append([]byte(nil), c.s.buf...)
+	c.page = e.p // what's on screen is the kept one: taps, scrolling and repaints use it
+	c.viewPut(e)
+	if e.scrollY == 0 {
+		c.viewSave(e)
+	}
+	viewPrepOnce.Do(func() { go viewPrepLoop() })
+}
+
+// viewEntryOf is a copy of page pg as view key (its own picture: the page canvases are drawn
+// into again).
+func (c *console) viewEntryOf(key string, pg *page, scrollY int) *viewEntry {
+	p := *pg
 	im := *p.img
 	im.Pix = append([]byte(nil), p.img.Pix[:len(p.img.Pix)]...)
 	p.img = &im
-	e := &viewEntry{key: key, p: &p, tabsOn: c.tabsOn, scrollY: c.scrollY(), gen: somaGen.Load(),
-		at: time.Now(), used: time.Now(), screen: append([]byte(nil), c.s.buf...)}
-	c.page = e.p // what's on screen is the kept one: taps, scrolling and repaints use it
+	now := time.Now()
+	e := &viewEntry{key: key, p: &p, tabsOn: c.tabsOn, scrollY: scrollY, gen: somaGen.Load(),
+		at: now, used: now, bucket: viewBucket(now)}
+	if c.mode == modeSoma {
+		su := c.somaUI
+		su.workSel = maps.Clone(su.workSel)
+		su.sheetStack, su.undo = nil, nil
+		e.su = &su
+	}
+	return e
+}
+
+// viewPut keeps entry e, dropping the least recently shown past the memory allowed.
+func (c *console) viewPut(e *viewEntry) {
 	views.Lock()
+	views.c = c
 	if views.m == nil {
 		views.m = map[string]*viewEntry{}
 	}
-	if old := views.m[key]; old != nil {
+	if old := views.m[e.key]; old != nil {
 		views.bytes -= old.size()
 	}
-	views.m[key] = e
+	views.m[e.key] = e
 	views.bytes += e.size()
 	for views.bytes > viewMemBytes && len(views.m) > 1 { // the least recently shown go
 		var oldest *viewEntry
@@ -208,8 +268,103 @@ func (c *console) viewKeep(key string) {
 		delete(views.m, oldest.key)
 	}
 	views.Unlock()
-	if e.scrollY == 0 {
-		c.viewSave(e)
+}
+
+// --- made ready in the background ---------------------------------------------------------------
+
+const (
+	viewPrepEvery = 2 * time.Second
+	viewPrepIdle  = 1500 * time.Millisecond // untouched this long before drawing in the background
+	viewPrepMost  = 10                      // the Soma views most recently shown are kept ready
+)
+
+func viewPrepLoop() {
+	for {
+		time.Sleep(viewPrepEvery)
+		views.Lock()
+		c, skip := views.c, views.off || views.noPrep
+		views.Unlock()
+		if c == nil || skip || !drawMu.TryLock() {
+			continue
+		}
+		c.viewPrepTick()
+		drawMu.Unlock()
+	}
+}
+
+// viewPrepTick draws again one kept Soma view whose records or clock have moved on, if the
+// tablet is being left alone. True if it drew one. Caller holds drawMu.
+func (c *console) viewPrepTick() bool {
+	if time.Since(c.lastInput) < viewPrepIdle || c.sc.drag || c.sc.cpuOn || c.sc.motion != nil || c.press.on || c.drag.on {
+		return false
+	}
+	if c.mode == modeVideo || c.mode == modeSoma && (c.viewOn == "" || c.viewKey() != c.viewOn) {
+		return false // a film, or a Soma page on screen that isn't a kept copy (typing, a sheet)
+	}
+	views.Lock()
+	var soma []*viewEntry
+	for _, e := range views.m {
+		if e.su != nil {
+			soma = append(soma, e)
+		}
+	}
+	views.Unlock()
+	sort.Slice(soma, func(i, j int) bool { return soma[i].used.After(soma[j].used) })
+	for i, e := range soma {
+		if i >= viewPrepMost {
+			break
+		}
+		if e.failed || !e.stale() || c.mode == modeSoma && e.key == c.viewOn {
+			continue // the one on screen redraws itself when its records change
+		}
+		c.viewPrepare(e)
+		return true
+	}
+	return false
+}
+
+// viewPrepare draws Soma view e again as it would be opened now, off the screen, and keeps it
+// (with its screen, so opening it is one copy). What's on screen is left as it was. Caller
+// holds drawMu.
+func (c *console) viewPrepare(e *viewEntry) {
+	saved, mode, tabs, pg := c.somaUI, c.mode, c.tabsOn, c.page
+	c.scrollY()
+	sy, had := c.sc.y[modeSoma]
+	defer func() {
+		c.somaUI, c.mode, c.tabsOn, c.page = saved, mode, tabs, pg
+		if had {
+			c.sc.y[modeSoma] = sy
+		} else {
+			delete(c.sc.y, modeSoma)
+		}
+	}()
+	su := *e.su
+	su.workSel = maps.Clone(su.workSel)
+	c.somaUI, c.mode = su, modeSoma
+	c.sc.y[modeSoma] = e.scrollY
+	p := c.somaPage()
+	if c.viewKeyOf() != e.key || p == nil || p.img == nil {
+		e.failed = true
+		return
+	}
+	scroll := 0
+	if p.img.Rect.Dy() > c.viewH() {
+		scroll = min(max(e.scrollY, 0), p.img.Rect.Dy()-c.viewH())
+	}
+	ne := c.viewEntryOf(e.key, p, scroll)
+	ne.used = e.used
+	// Its screen: drawn into the screen buffer, kept, and the screen put back as it was (no
+	// Flush between, so the panel never sees it).
+	s := c.s
+	views.back = append(views.back[:0], s.buf...)
+	lo, hi := s.dirtyLo, s.dirtyHi
+	c.blitWindow(p, scroll)
+	ne.screen = append([]byte(nil), s.buf...)
+	copy(s.buf, views.back)
+	s.dirtyLo, s.dirtyHi = lo, hi
+	c.viewPut(ne)
+	if scroll == 0 {
+		c.viewSave(ne)
 	}
 }
 

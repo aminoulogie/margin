@@ -149,17 +149,8 @@ func (c *console) blitPage() {
 	}
 	sy := min(max(c.scrollY(), 0), img.Rect.Dy()-vh)
 	c.sc.y[c.mode] = sy
-	hh, fh := c.page.header, c.page.footer
-	c.s.blitRGBA(img.SubImage(image.Rect(0, sy+hh, img.Rect.Dx(), sy+vh-fh)).(*image.RGBA), 0, c.barH+hh)
-	if fh > 0 {
-		c.s.blitRGBA(img.SubImage(image.Rect(0, img.Rect.Dy()-fh, img.Rect.Dx(), img.Rect.Dy())).(*image.RGBA), 0, c.barH+vh-fh)
-	}
-	if hh > 0 {
-		c.s.blitRGBA(img.SubImage(image.Rect(0, 0, img.Rect.Dx(), hh)).(*image.RGBA), 0, c.barH)
-	}
-	if l := c.page.left; l > 0 { // the rail, as at the page's top
-		c.s.blitRGBA(img.SubImage(image.Rect(0, hh, l, vh-fh)).(*image.RGBA), 0, c.barH+hh)
-	}
+	hh := c.page.header
+	c.blitWindow(c.page, sy)
 	c.keepShown(sy) // already turned: scrolling starts from it
 	// Where you are on the page: a thin bar on the right, while scrolling.
 	if c.sc.drag && c.sc.moved && c.sc.vert {
@@ -169,6 +160,28 @@ func (c *console) blitPage() {
 		bar := image.NewRGBA(image.Rect(0, 0, scrollbarWide, thumb))
 		ui.Fill(bar, bar.Rect, blend(apBG, apLabel, 0.45))
 		c.s.blitRGBA(bar, c.s.W-scrollbarWide-6, ty)
+	}
+}
+
+// blitWindow copies page p, scrolled to sy, to the screen: its window, fixed header, footer and
+// rail. Caller holds drawMu.
+func (c *console) blitWindow(p *page, sy int) {
+	img := p.img
+	vh := c.viewH()
+	if img.Rect.Dy() <= vh {
+		c.s.blitRGBA(img, 0, c.barH)
+		return
+	}
+	hh, fh := p.header, p.footer
+	c.s.blitRGBA(img.SubImage(image.Rect(0, sy+hh, img.Rect.Dx(), sy+vh-fh)).(*image.RGBA), 0, c.barH+hh)
+	if fh > 0 {
+		c.s.blitRGBA(img.SubImage(image.Rect(0, img.Rect.Dy()-fh, img.Rect.Dx(), img.Rect.Dy())).(*image.RGBA), 0, c.barH+vh-fh)
+	}
+	if hh > 0 {
+		c.s.blitRGBA(img.SubImage(image.Rect(0, 0, img.Rect.Dx(), hh)).(*image.RGBA), 0, c.barH)
+	}
+	if l := p.left; l > 0 { // the rail, as at the page's top
+		c.s.blitRGBA(img.SubImage(image.Rect(0, hh, l, vh-fh)).(*image.RGBA), 0, c.barH+hh)
 	}
 }
 
