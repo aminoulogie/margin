@@ -353,7 +353,7 @@ func (k *wk) habitToday(hs []somaHabit, today string) int {
 		k.card(cr)
 		k.text(wkFont("semi", 23), 188, y+70, wkFG, "No habits yet")
 		k.emptyNote(188, y+112, "Add one with + Habit. Habits sync with Soma on the phone and the PC.")
-		return k.habitPresets(cr.Max.Y + 24)
+		return k.habitPresets(k.tempHabits(cr.Max.Y + 24))
 	}
 	mon := mondayOf(today)
 	for _, g := range groups {
@@ -385,7 +385,7 @@ func (k *wk) habitToday(hs []somaHabit, today string) int {
 		}
 		y = cr.Max.Y + 22
 	}
-	return k.habitPresets(y)
+	return k.habitPresets(k.tempHabits(y))
 }
 
 // habitRow is a habit: its tile, name and streak, the week as dots, and its tick (or its

@@ -547,5 +547,9 @@ func init() {
 		wkSetProject(id, "kind", "plan")
 		c.wkGo("project", "")
 		c.somaUI.workProj = id
+		if c.somaUI.workSel == nil {
+			c.somaUI.workSel = map[string]string{}
+		}
+		c.somaUI.workSel["projectswk:pk"] = "1" // back on Projects: the plans
 	}
 }

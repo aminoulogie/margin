@@ -325,11 +325,14 @@ func (k *wk) dayCard(date string, y int) int {
 		rows = append(rows, row{"moon", "Sleep", fmt.Sprintf("%.1f h", sl), "wk:go:health"})
 	}
 	// The plans' steps due that day, in their project's colour: the box ticks the step.
-	if steps := wkStepsDue(wkProjects(), date, date, false); len(steps) > 0 {
-		sc := image.Rect(wkX0, y, wkX1, y+76+83*len(steps))
+	steps := wkStepsDue(wkProjects(), date, date, false)
+	prac := wkPracticesOn(wkProjects(), date)
+	if len(steps)+len(prac) > 0 {
+		sc := image.Rect(wkX0, y, wkX1, y+76+83*len(steps)+84*len(prac))
 		k.card(sc)
-		k.cardHead(wkX0+28, y+46, "flag", "Plan steps", "")
-		k.datedStepRows(steps, y+76, time.Now().In(displayZone), false)
+		k.cardHead(wkX0+28, y+46, "flag", "Plans and practice", "")
+		ry := k.datedStepRows(steps, y+76, time.Now().In(displayZone), false)
+		k.practiceRows(prac, date, ry, time.Now().In(displayZone), false)
 		y = sc.Max.Y + 20
 	}
 	rc := image.Rect(wkX0, y, wkX1, y+80+76*len(rows))

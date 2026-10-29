@@ -114,6 +114,7 @@ func (k *wk) projects() int {
 		fmt.Sprintf("%d projects · %d clients · %.0f h this quarter", len(all), len(clients), qh.Hours()), color.RGBA{})
 	x := k.primary("wk:newproject", "plus", "New project", wkX1)
 	x = k.outline("wk:newplan", "calendar-clock", "New plan", x-13, 103, 63)
+	x = k.kindSwitch(x - 13)
 	x = k.square("wk:psearch", "search", x-13)
 	x = k.square("wk:sheet-open:sort", "arrow-up-down", x-13)
 	if f.query != "" { // what's searched, beside the search; × clears it
@@ -137,7 +138,11 @@ func (k *wk) projects() int {
 
 	// The filters: status chips (the list), the client, what's typed.
 	var shown []wkProject
+	plans := k.sel("pk", 0) == 1
 	for _, p := range all {
+		if p.plan() != plans { // the switch: client work, or plans
+			continue
+		}
 		if f.client != "" && strings.TrimSpace(p.Client) != f.client {
 			continue
 		}
@@ -667,7 +672,7 @@ func (k *wk) project() int {
 		switch tab {
 		case 0:
 			k.planHero(p, now)
-			return k.planSteps(p, 674, now)
+			return k.practiceCard(p, k.planSteps(p, 674, now)+24, now)
 		case 1:
 			return k.planSteps(p, 312, now)
 		}
@@ -757,6 +762,9 @@ func (k *wk) project() int {
 	k.boxBtn("wk:sheet-open:proj:"+p.ID, 1066, 556, 1133, 618, "ellipsis", "", color.RGBA{}, wkFG)
 
 	y := k.stepList(p, 674, false, now)
+	if len(p.Practices) > 0 { // (a client project without any looks as it did)
+		y = k.practiceCard(p, y+24, now)
+	}
 
 	// Hours against plan, and the latest time.
 	y += 24
@@ -1197,6 +1205,7 @@ func init() {
 				wkRow{kind: "seg", label: "Status", opts: st},
 				wkRow{id: "wk:pdue:" + id, label: "Deadline", icon: "calendar-clock", detail: due},
 				wkRow{id: "wk:type-open:pplan:" + id, label: "Paste plan", icon: "file-text", detail: "date | phase | step | flags"},
+				wkRow{id: "wk:padd:" + id, label: "Add daily practice", icon: "repeat", detail: "every day until a date"},
 				wkRow{id: "wk:type-open:pbrief:" + id, label: "Brief", icon: "file-text", detail: clip(wkFont("regular", 21), p.Note, 280)},
 				wkRow{kind: "swatches", opts: sw},
 				wkRow{id: "wk:pdelete:" + id, label: "Delete project", icon: "trash-2", danger: true})
@@ -1210,6 +1219,7 @@ func init() {
 			wkRow{id: "wk:type-open:prate:" + id, label: "Rate per hour", icon: "circle-dollar-sign", detail: rate},
 			wkRow{id: "wk:type-open:pbrief:" + id, label: "Brief", icon: "file-text", detail: clip(wkFont("regular", 21), p.Note, 280)},
 			wkRow{kind: "swatches", opts: sw},
+			wkRow{id: "wk:padd:" + id, label: "Add daily practice", icon: "repeat", detail: "every day until a date"},
 			wkRow{id: "wk:pdelete:" + id, label: "Delete project", icon: "trash-2", danger: true},
 		)
 		return sh

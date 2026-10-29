@@ -37,8 +37,9 @@ type wkProject struct {
 	Rate                                                 float64
 	Created, Touched                                     time.Time
 	Steps                                                []wkStep
-	Log                                                  []wkNote // the project's running notes
-	order                                                int      // its place in Soma's list, for its colour and the charts' order
+	Practices                                            []wkPractice // daily practice until a date (work_practice.go)
+	Log                                                  []wkNote     // the project's running notes
+	order                                                int          // its place in Soma's list, for its colour and the charts' order
 }
 
 // wkNote is a note in a project's log (ProjectNote): typed in, or filed by the work log.
@@ -229,6 +230,7 @@ func wkProjects() []wkProject {
 		if str(o["kind"]) == "plan" {
 			p.Kind = "plan"
 		}
+		p.Practices = readPractices(o)
 		steps, _ := o["steps"].([]any)
 		for _, s := range steps {
 			so, ok := s.(obj)
