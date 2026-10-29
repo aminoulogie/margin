@@ -235,8 +235,44 @@ func parseFont(key string, data []byte) *opentype.Font {
 	return f
 }
 
+// textFaces are the faces made so far: one per font and size, so its glyphs are drawn from
+// the font once (a new face each time drew every letter of every label from the outlines).
+var textFaces struct {
+	sync.Mutex
+	m map[textFaceKey]font.Face
+}
+
+type textFaceKey struct {
+	key  string
+	bold bool
+	size float64
+}
+
 // textFace is a face of the font at size, falling back to DejaVu Sans (Arabic and more).
 func textFace(key string, data []byte, bold bool, size float64) font.Face {
+	fk := textFaceKey{key, bold, size}
+	textFaces.Lock()
+	f := textFaces.m[fk]
+	textFaces.Unlock()
+	if f != nil {
+		return f
+	}
+	f = newTextFace(key, data, bold, size)
+	textFaces.Lock()
+	defer textFaces.Unlock()
+	if textFaces.m == nil {
+		textFaces.m = map[textFaceKey]font.Face{}
+	}
+	if g := textFaces.m[fk]; g != nil {
+		return g
+	}
+	if len(textFaces.m) < 512 { // (sizes worked out from a box are few, but not counted)
+		textFaces.m[fk] = f
+	}
+	return f
+}
+
+func newTextFace(key string, data []byte, bold bool, size float64) font.Face {
 	primary := parseFont(key, data)
 	fbKey, fbData := "dejavusans", dejavusans.TTF
 	if bold {

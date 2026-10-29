@@ -46,6 +46,7 @@ const (
 type viewEntry struct {
 	key     string
 	p       *page
+	src     *page // the page p is a copy of
 	tabsOn  string
 	scrollY int
 	screen  []byte // the panel's buffer as it was sent, nil for a view read from the tablet
@@ -55,6 +56,7 @@ type viewEntry struct {
 	disk    bool    // read from the tablet: drawn fresh at the first moment alone
 	su      *somaUI // a Soma view: its choices, to draw it again in the background
 	bucket  string  // the 5-minute clock it was drawn at (Soma's pages show the time)
+	status  string  // how syncing went, on the pages that say (wkSyncShown)
 	failed  bool    // drawing it again in the background didn't give the same view
 }
 
@@ -70,7 +72,7 @@ func (e *viewEntry) stale() bool {
 	case e.disk:
 		return true
 	case e.su != nil:
-		return e.gen != somaGen.Load() || e.bucket != viewBucket(time.Now())
+		return e.gen != somaGen.Load() || e.bucket != viewBucket(time.Now()) || e.status != wkSyncShown(e.su)
 	}
 	return time.Since(e.at) > viewFreshFor
 }
@@ -213,6 +215,16 @@ func (c *console) viewKeep(key string) {
 	if key == "" || c.page == nil || c.page.img == nil {
 		return
 	}
+	// The very page kept already (a sheet closed over it, say), at the same place: kept as it is
+	// (copying a tall page again was tens of megabytes on every tap).
+	views.Lock()
+	if old := views.m[key]; old != nil && old.src == c.page && old.scrollY == c.scrollY() && old.screen != nil {
+		old.used = time.Now()
+		c.page = old.p
+		views.Unlock()
+		return
+	}
+	views.Unlock()
 	e := c.viewEntryOf(key, c.page, c.scrollY())
 	e.screen = append([]byte(nil), c.s.buf...)
 	c.page = e.p // what's on screen is the kept one: taps, scrolling and repaints use it
@@ -231,13 +243,13 @@ func (c *console) viewEntryOf(key string, pg *page, scrollY int) *viewEntry {
 	im.Pix = append([]byte(nil), p.img.Pix[:len(p.img.Pix)]...)
 	p.img = &im
 	now := time.Now()
-	e := &viewEntry{key: key, p: &p, tabsOn: c.tabsOn, scrollY: scrollY, gen: somaGen.Load(),
+	e := &viewEntry{key: key, p: &p, src: pg, tabsOn: c.tabsOn, scrollY: scrollY, gen: somaGen.Load(),
 		at: now, used: now, bucket: viewBucket(now)}
 	if c.mode == modeSoma {
 		su := c.somaUI
 		su.workSel = maps.Clone(su.workSel)
 		su.sheetStack, su.undo = nil, nil
-		e.su = &su
+		e.su, e.status = &su, wkSyncShown(&su)
 	}
 	return e
 }

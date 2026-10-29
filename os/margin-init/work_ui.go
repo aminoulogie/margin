@@ -157,9 +157,6 @@ func (r wkRow) height() int {
 func (k *wk) drawSheet(p *page) {
 	su := &k.c.somaUI
 	if su.sheet == "" {
-		if su.sheetBack == "" { // (typing from a sheet keeps its way back)
-			su.sheetStack = nil
-		}
 		return
 	}
 	name, arg, _ := strings.Cut(su.sheet, ":")
@@ -172,14 +169,9 @@ func (k *wk) drawSheet(p *page) {
 		su.sheet = ""
 		return
 	}
+	// p is the screen as it was, dimmed (wkFlat): the sheet goes over it.
 	img := p.img
-	w, vh, ih := k.c.s.W, k.c.viewH(), img.Rect.Dy()
-	sy := 0
-	if ih > vh {
-		sy = min(max(k.c.scrollY(), 0), ih-vh)
-	}
-	blendRect(img, image.Rect(0, 0, w, tabsH), rgb(0), 0.6)
-	blendRect(img, image.Rect(0, sy+tabsH, w, sy+vh), rgb(0), 0.6)
+	w, vh := k.c.s.W, k.c.viewH()
 	var btns []button
 	btn := func(id string, r image.Rectangle) {
 		if id != "" {
@@ -236,7 +228,7 @@ func (k *wk) drawSheet(p *page) {
 	if x0 < wkSideW+12 {
 		x0 = (wkSideW + w - sheetW) / 2
 	}
-	y0 := sy + tabsH + max((vh-tabsH-total)/2, 30)
+	y0 := tabsH + max((vh-tabsH-total)/2, 30)
 	card := image.Rect(x0, y0, x0+sheetW, y0+total)
 	shadow(img, card, 28, 0.35)
 	ui.RoundRect(img, card, 28, rgb(0x2a2c35))

@@ -47,12 +47,24 @@ func ringSet(img *image.RGBA, x, y, px int, rings []ringSpec, mute, big bool) {
 		geo[i] = ringGeo{r: r, f: f, rest: rest, laps: laps, ex: c0 + r*math.Cos(a), ey: c0 + r*math.Sin(a)}
 	}
 	cover := func(d float64) float64 { return min(max(d+0.5, 0), 1) } // distance inside an edge → coverage
+	// Nothing reaches a pixel nearer the middle than the innermost ring's inner edge, or
+	// farther than the outer ring's outer edge (the cheap test, before any square root).
+	inR, outR := c0, 0.0
+	for _, g := range geo {
+		if g.r > half {
+			inR, outR = min(inR, g.r-half-0.5), max(outR, g.r+half+0.5)
+		}
+	}
+	inR = max(inR, 0)
 	b := image.Rect(x, y, x+px, y+px).Intersect(img.Rect)
 	for py := b.Min.Y; py < b.Max.Y; py++ {
 		for qx := b.Min.X; qx < b.Max.X; qx++ {
 			lx, ly := float64(qx-x)+0.5, float64(py-y)+0.5
 			dx, dy := lx-c0, ly-c0
-			d := math.Hypot(dx, dy)
+			if d2 := dx*dx + dy*dy; d2 <= inR*inR || d2 >= outR*outR {
+				continue
+			}
+			d := math.Sqrt(dx*dx + dy*dy)
 			// Clockwise from the top, 0 to 1 (worked out only for a pixel on a ring).
 			t := -1.0
 			for i, g := range geo {

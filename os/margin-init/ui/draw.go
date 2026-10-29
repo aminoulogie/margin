@@ -142,6 +142,27 @@ func RoundRect(dst *image.RGBA, r image.Rectangle, rad int, c color.RGBA) {
 	}
 }
 
+// RoundRectRim paints what stays seen of RoundRect(r, rad, c) once RoundRect(r.Inset(w),
+// rad-w) is painted over it in an opaque colour (a card's rim): its edges, instead of the
+// whole area twice.
+func RoundRectRim(dst *image.RGBA, r image.Rectangle, rad, w int, c color.RGBA) {
+	band := rad + w
+	if r.Dy() <= 2*band || r.Dx() <= 2*w {
+		RoundRect(dst, r, rad, c)
+		return
+	}
+	for _, b := range [2]image.Rectangle{
+		image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+band),
+		image.Rect(r.Min.X, r.Max.Y-band, r.Max.X, r.Max.Y),
+	} {
+		if b = b.Intersect(dst.Rect); !b.Empty() {
+			RoundRect(dst.SubImage(b).(*image.RGBA), r, rad, c)
+		}
+	}
+	Fill(dst, image.Rect(r.Min.X, r.Min.Y+band, r.Min.X+w, r.Max.Y-band), c)
+	Fill(dst, image.Rect(r.Max.X-w, r.Min.Y+band, r.Max.X, r.Max.Y-band), c)
+}
+
 // cornerCover is how much of each pixel of a rounded corner of radius rad the shape covers,
 // row by row from the corner's outer edge: the same sums RoundRect did per pixel, done once
 // per radius (a page draws thousands of corners of a dozen sizes).

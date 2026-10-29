@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -98,7 +100,7 @@ func (k *wk) card(r image.Rectangle) {
 
 func (k *wk) cardIn(r image.Rectangle, fill color.RGBA) {
 	r = r.Sub(image.Pt(0, k.oy))
-	ui.RoundRect(k.img, r, 20, wkRim)
+	ui.RoundRectRim(k.img, r, 20, 2, wkRim)
 	in := r.Inset(2)
 	ui.RoundRect(k.img, in, 18, fill)
 	// The sheen: on a flat fill each row is one colour, so the row's middle is a fill and
@@ -394,7 +396,8 @@ func (k *wk) arc(cx, cy, rad, w int, frac float64, col, track color.RGBA) {
 	ring(k.img, cx, k.Y(cy), rad, w, min(max(frac, 0), 1), track, col)
 }
 
-// donut draws shares round a ring with small gaps, from the top.
+// donut draws shares round a ring with small gaps, from the top. One pass over the ring's
+// square; the angle is worked out only for pixels on the ring.
 func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 	tot := 0.0
 	for _, v := range parts {
@@ -405,34 +408,43 @@ func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 		return
 	}
 	cy = k.Y(cy)
-	a0 := 0.0
-	r0, r1 := float64(rad-w/2), float64(rad+w/2)
+	ends := make([]float64, len(parts)) // where each share ends, 0 to 1 from the top
+	a := 0.0
 	for i, v := range parts {
-		a1 := a0 + v/tot
-		gap := 0.006
-		for y := cy - rad - w; y <= cy+rad+w; y++ {
-			for x := cx - rad - w; x <= cx+rad+w; x++ {
-				dx, dy := float64(x)+0.5-float64(cx), float64(y)+0.5-float64(cy)
-				d := math.Hypot(dx, dy)
-				cov := min(d-r0+0.5, r1-d+0.5, 1)
-				if cov <= 0 || !(image.Point{x, y}.In(k.img.Rect)) {
-					continue
+		a += v / tot
+		ends[i] = a
+	}
+	const gap = 0.006
+	r0, r1 := float64(rad-w/2), float64(rad+w/2)
+	lo, hi := max(r0-0.5, 0), r1+0.5
+	for y := cy - rad - w; y <= cy+rad+w; y++ {
+		for x := cx - rad - w; x <= cx+rad+w; x++ {
+			dx, dy := float64(x)+0.5-float64(cx), float64(y)+0.5-float64(cy)
+			if d2 := dx*dx + dy*dy; d2 <= lo*lo || d2 >= hi*hi || !(image.Point{x, y}.In(k.img.Rect)) {
+				continue
+			}
+			d := math.Sqrt(dx*dx + dy*dy)
+			cov := min(d-r0+0.5, r1-d+0.5, 1)
+			if cov <= 0 {
+				continue
+			}
+			t := math.Atan2(dx, -dy) / (2 * math.Pi)
+			if t < 0 {
+				t++
+			}
+			a0 := 0.0
+			for i, a1 := range ends {
+				if t >= a0+gap && t <= a1-gap {
+					o := k.img.PixOffset(x, y)
+					c := cols[i%len(cols)]
+					k.img.Pix[o] = uint8(float64(k.img.Pix[o])*(1-cov) + float64(c.R)*cov)
+					k.img.Pix[o+1] = uint8(float64(k.img.Pix[o+1])*(1-cov) + float64(c.G)*cov)
+					k.img.Pix[o+2] = uint8(float64(k.img.Pix[o+2])*(1-cov) + float64(c.B)*cov)
+					break
 				}
-				t := math.Atan2(dx, -dy) / (2 * math.Pi)
-				if t < 0 {
-					t++
-				}
-				if t < a0+gap || t > a1-gap {
-					continue
-				}
-				o := k.img.PixOffset(x, y)
-				c := cols[i%len(cols)]
-				k.img.Pix[o] = uint8(float64(k.img.Pix[o])*(1-cov) + float64(c.R)*cov)
-				k.img.Pix[o+1] = uint8(float64(k.img.Pix[o+1])*(1-cov) + float64(c.G)*cov)
-				k.img.Pix[o+2] = uint8(float64(k.img.Pix[o+2])*(1-cov) + float64(c.B)*cov)
+				a0 = a1
 			}
 		}
-		a0 = a1
 	}
 }
 
@@ -596,15 +608,63 @@ func (c *console) workPage() *page {
 		su.need = map[string]int{}
 	}
 	wkApplyAccent()
+	if su.sheet == "" && su.sheetBack == "" { // (typing from a sheet keeps its way back)
+		su.sheetStack = nil
+	}
+	if su.sheet == "" && su.undo == nil {
+		return c.workBase(false)
+	}
+	// A sheet or the undo offer is laid over a copy of the page as it is without them, and
+	// that page is kept: opening a sheet, changing what it shows and closing it is a copy of
+	// the page, not the whole page drawn again (each took seconds on the tablet). Under a
+	// sheet, a page whose records have just changed is shown as it was a moment ago (it's
+	// dimmed behind the sheet), and drawn again once the tablet is left alone (wkRefreshLater).
+	sheet := su.sheet != ""
+	base := c.workBase(sheet)
+	var p *page
+	if sheet {
+		p = c.wkFlat(base) // a sheet is modal: what's on screen, still
+	} else {
+		p = wkOverlay(base) // the undo offer: the page, to scroll and tap as ever
+	}
+	k := &wk{c: c, p: p, img: p.img, oy: c.barH - (tabsH - 24)}
+	sy := 0
+	if p.img.Rect.Dy() > c.viewH() {
+		sy = min(max(c.scrollY(), 0), p.img.Rect.Dy()-c.viewH())
+	}
+	k.undoPill(sy + c.viewH())
+	k.drawSheet(p)
+	if sheet && su.sheet == "" { // what the sheet was about has gone (a sync took it): the page
+		return c.workPage()
+	}
+	return p
+}
+
+// workBase is the page on show without what's laid over it: kept from before when nothing it
+// shows has changed, else drawn. stale: under a sheet, the page as it was before its records
+// last changed will do (wkRefreshLater draws it again soon). Caller holds drawMu.
+func (c *console) workBase(stale bool) *page {
+	su := &c.somaUI
 	w := c.s.W
 	needKey := "work:" + su.work + "/" + su.workSub
 	h := max(c.viewH(), su.need[needKey])
 	// A page drawn before, with nothing it shows changed since: shown as it was (switching
 	// between the rail's pages, or back to one, is then a copy, not a drawing).
-	key := c.workKey()
+	view, content := c.workKey()
+	key := ""
+	if view != "" {
+		key = view + "\x00" + content
+	}
 	if e := wkPageCache.find(key); e != nil {
 		c.tabsOn = e.tabsOn
 		return e.p
+	}
+	if stale && !c.wkFresh {
+		if e := wkPageCache.ofView(view); e != nil {
+			c.tabsOn = e.tabsOn
+			c.wkRefreshLater()
+			return e.p
+		}
 	}
 	img := wkPageCache.canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
@@ -657,7 +717,7 @@ func (c *console) workPage() *page {
 			wkPageCache.spare = append(wkPageCache.spare, wkPageCache.next)
 			wkPageCache.next = nil
 		}
-		return c.workPage()
+		return c.workBase(stale)
 	}
 	if end < h && h > c.viewH() {
 		p.img = img.SubImage(image.Rect(0, 0, w, max(end, c.viewH()))).(*image.RGBA)
@@ -677,26 +737,144 @@ func (c *console) workPage() *page {
 		}
 	}
 	k.rail(p.img.Rect.Dy(), map[string]int{"planner": planned, "findings": open})
-	p.left = wkSideW // the rail stays put as the page scrolls
-	sy := 0
-	if p.img.Rect.Dy() > c.viewH() {
-		sy = min(max(c.scrollY(), 0), p.img.Rect.Dy()-c.viewH())
-	}
+	p.left = wkSideW          // the rail stays put as the page scrolls
 	if su.work != "reports" { // the report's buttons sit where it would
 		k.timerPill(p.img.Rect.Dy()) // in the fixed band at the bottom
 	}
 	c.booksTabs(p, "tab:soma")
-	k.undoPill(sy + c.viewH())
-	k.drawSheet(p)
-	wkPageCache.keep(key, p, c.tabsOn)
+	wkPageCache.keep(key, view, p, c.tabsOn)
 	return p
 }
+
+// wkOverlayPix is the picture a sheet or the undo offer is laid on (reused: a fresh one each
+// time kept the GC busy).
+var wkOverlayPix []byte
+
+func wkOverlayImg(w, h int) *image.RGBA {
+	n := 4 * w * h
+	if cap(wkOverlayPix) < n {
+		wkOverlayPix = make([]byte, n)
+	}
+	return &image.RGBA{Pix: wkOverlayPix[:n], Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
+}
+
+// wkOverlay is a copy of page base (its own picture and buttons) to lay the undo offer on.
+func wkOverlay(base *page) *page {
+	b := base.img
+	w, h := b.Rect.Dx(), b.Rect.Dy()
+	im := wkOverlayImg(w, h)
+	for y := range h {
+		copy(im.Pix[y*im.Stride:][:4*w], b.Pix[b.PixOffset(b.Rect.Min.X, b.Rect.Min.Y+y):][:4*w])
+	}
+	p := *base
+	p.img = im
+	p.buttons, p.rowBtns = slices.Clone(base.buttons), maps.Clone(base.rowBtns)
+	return &p
+}
+
+// wkFlat is page base as the screen shows it now (scrolled, with its fixed header, footer and
+// rail), as a page of its own that doesn't scroll: what a sheet is laid over. The page under
+// a sheet stays put (as on the iPad), so only the screen's worth of it is copied, not the
+// whole tall page. Caller holds drawMu.
+func (c *console) wkFlat(base *page) *page {
+	b := base.img
+	w, vh, ih := b.Rect.Dx(), c.viewH(), b.Rect.Dy()
+	sy := 0
+	if ih > vh {
+		sy = min(max(c.scrollY(), 0), ih-vh)
+	}
+	im := wkOverlayImg(w, vh)
+	// The same page under the next sheet (or this one, changed): copied as it was dimmed.
+	d := &wkDimmed
+	if d.base != base || d.sy != sy || d.img == nil || d.img.Rect != im.Rect {
+		if d.img == nil || d.img.Rect != im.Rect {
+			d.img = image.NewRGBA(im.Rect)
+		}
+		wkFlatCopy(d.img, base, sy)
+		blendRect(d.img, d.img.Rect, rgb(0), 0.6) // dimmed: the sheet is what's in front
+		d.base, d.sy = base, sy
+	}
+	copy(im.Pix, d.img.Pix)
+	return &page{img: im} // its buttons are the sheet's (drawSheet)
+}
+
+// wkDimmed is the page last laid under a sheet, as the screen showed it, dimmed.
+var wkDimmed struct {
+	base *page
+	sy   int
+	img  *image.RGBA
+}
+
+// wkFlatCopy puts page base, scrolled to sy, into im (the screen's size) as blitWindow puts
+// it on the screen.
+func wkFlatCopy(im *image.RGBA, base *page, sy int) {
+	b := base.img
+	w, vh, ih := b.Rect.Dx(), im.Rect.Dy(), b.Rect.Dy()
+	row := func(dy, sy, x0, x1 int) {
+		copy(im.Pix[dy*im.Stride+4*x0:][:4*(x1-x0)], b.Pix[b.PixOffset(b.Rect.Min.X+x0, b.Rect.Min.Y+sy):][:4*(x1-x0)])
+	}
+	if ih <= vh {
+		for y := range vh {
+			if y < ih {
+				row(y, y, 0, w)
+			} else {
+				ui.Fill(im, image.Rect(0, y, w, y+1), wkBG)
+			}
+		}
+	} else {
+		hh, fh, l := base.header, base.footer, base.left
+		for y := range vh {
+			switch {
+			case y < hh:
+				row(y, y, 0, w)
+			case y >= vh-fh:
+				row(y, ih-(vh-y), 0, w)
+			default:
+				row(y, sy+y, l, w)
+				row(y, y, 0, l) // the rail, as at the page's top
+			}
+		}
+	}
+}
+
+// wkRefreshLater draws the page under the open sheet again from the records as they are now,
+// once the tablet has been left alone a moment (it's shown as it was before they changed).
+// Caller holds drawMu.
+func (c *console) wkRefreshLater() {
+	if c.wkRefreshOn {
+		return
+	}
+	c.wkRefreshOn = true
+	var try func()
+	try = func() {
+		time.AfterFunc(wkRefreshIdle, func() {
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if c.mode != modeSoma || c.somaUI.sheet == "" || c.somaUI.typing || !c.screenOn {
+				c.wkRefreshOn = false // closing the sheet draws the page fresh anyway
+				return
+			}
+			if c.sc.drag || c.sc.cpuOn || c.press.on || c.drag.on || time.Since(c.lastInput) < wkRefreshIdle {
+				try() // in use: later
+				return
+			}
+			c.wkRefreshOn = false
+			c.wkFresh = true
+			c.showPage()
+			c.wkFresh = false
+		})
+	}
+	try()
+}
+
+const wkRefreshIdle = 300 * time.Millisecond
 
 // wkPageCache keeps the last few workstation pages drawn, each in its own picture.
 var wkPageCache wkPages_
 
 type wkCached struct {
 	key    string
+	view   string // the page and its choices; key adds what it shows (the records, the clock)
 	p      *page
 	tabsOn string
 	used   int
@@ -725,6 +903,21 @@ func (pc *wkPages_) find(key string) *wkCached {
 	return nil
 }
 
+// ofView is the page kept for view, whatever its records were then (nil if none).
+func (pc *wkPages_) ofView(view string) *wkCached {
+	if view == "" {
+		return nil
+	}
+	for _, e := range pc.list {
+		if e.view == view {
+			pc.clock++
+			e.used = pc.clock
+			return e
+		}
+	}
+	return nil
+}
+
 // canvas is a picture for a page about to be drawn: not one a kept page is in.
 func (pc *wkPages_) canvas(w, h int) *image.RGBA {
 	for i, im := range pc.spare {
@@ -740,17 +933,18 @@ func (pc *wkPages_) canvas(w, h int) *image.RGBA {
 }
 
 // keep remembers the page just drawn (key "": not kept, its picture is drawn into next time).
-func (pc *wkPages_) keep(key string, p *page, tabsOn string) {
+// One page is kept a view: the one drawn before (older records) goes.
+func (pc *wkPages_) keep(key, view string, p *page, tabsOn string) {
 	im := pc.next
 	pc.next = nil
 	if im == nil {
 		return
 	}
-	for i, e := range pc.list { // the same page drawn again: the old one goes
-		if e.key == key {
+	for i := 0; i < len(pc.list); i++ {
+		if e := pc.list[i]; e.key == key || view != "" && e.view == view {
 			pc.spare = append(pc.spare, e.p.img)
 			pc.list = append(pc.list[:i], pc.list[i+1:]...)
-			break
+			i--
 		}
 	}
 	if key == "" {
@@ -771,7 +965,7 @@ func (pc *wkPages_) keep(key string, p *page, tabsOn string) {
 		pc.spare = pc.spare[len(pc.spare)-2:]
 	}
 	pc.clock++
-	pc.list = append(pc.list, &wkCached{key: key, p: p, tabsOn: tabsOn, used: pc.clock})
+	pc.list = append(pc.list, &wkCached{key: key, view: view, p: p, tabsOn: tabsOn, used: pc.clock})
 }
 
 // drop forgets every kept page (what they show has changed in a way the key can't see).
@@ -785,24 +979,30 @@ func (pc *wkPages_) drop() {
 	}
 }
 
-// workKey is everything a workstation page shows that can change: the records, the page and
-// its choices, the minute, where it's scrolled to (the pills and sheets sit on the screen).
-// "" while typing: that page is drawn each time.
-func (c *console) workKey() string {
+// workKey names the workstation page on show: view is the page and its choices (not what's
+// laid over it: a sheet, the undo offer), content what it shows that changes by itself (the
+// records, the 5-minute clock, how syncing went where the page says). view is "" while
+// typing: that page is drawn each time.
+func (c *console) workKey() (view, content string) {
 	su := c.somaUI
 	if su.typing {
-		return ""
+		return "", ""
 	}
 	su.need, su.keep, su.toTop = nil, false, false
-	var undo string
-	if su.undo != nil {
-		undo = su.undo.label + su.undo.until.String()
-	}
-	su.undo = nil
-	now := time.Now().In(displayZone)
+	su.sheet, su.sheetPage, su.sheetStack, su.sheetBack, su.undo = "", 0, nil, "", nil
+	su.calMonth, su.dateWhat, su.dateCur, su.dateTitle = time.Time{}, "", "", ""
 	seeded := loadSeed() != nil
-	return fmt.Sprintf("%v|%s|%d|%s|%d|%v|%v|%v|%d", su, undo, somaGen.Load(), now.Format("2006-01-02 15:")+fmt.Sprint(now.Minute()/5),
-		c.scrollY(), c.cfg.SomaHidden, wkLime, seeded, c.barH)
+	view = fmt.Sprintf("%v|%v|%v|%v|%d", su, c.cfg.SomaHidden, wkLime, seeded, c.barH)
+	content = fmt.Sprintf("%d|%s|%s", somaGen.Load(), viewBucket(time.Now()), wkSyncShown(&su))
+	return view, content
+}
+
+// wkSyncShown is how syncing went, on the workstation's pages that say ("" on the others).
+func wkSyncShown(su *somaUI) string {
+	if su.work == "time" || su.work == "settings" {
+		return soma.status()
+	}
+	return ""
 }
 
 // workTap handles the Work tab's buttons: "wk:<action>:<arg>", an action registered in
@@ -920,8 +1120,7 @@ func (k *wk) sel(group string, def int) int {
 func wkStopTimer() {
 	for _, o := range somaList("timeEntries") {
 		if num(o["end"]) == 0 && num(o["start"]) > 0 {
-			o["end"] = float64(time.Now().UnixMilli())
-			somaPut("timeEntries#"+str(o["id"]), o)
+			somaPatch("timeEntries", str(o["id"]), func(o obj) { o["end"] = float64(time.Now().UnixMilli()) })
 		}
 	}
 }

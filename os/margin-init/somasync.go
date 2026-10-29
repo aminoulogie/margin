@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"math/big"
 	"net/http"
 	"os"
@@ -61,6 +62,7 @@ type somaStore struct {
 	LastOK      time.Time          `json:"last_ok"`
 	lastErr     string
 	running     bool
+	again       bool   // changed while syncing: one more round when it's done
 	changed     func() // called (without locks) after a pull brought something new
 }
 
@@ -226,6 +228,7 @@ func (s *somaStore) load() {
 		s.loaded = true
 		if b, err := os.ReadFile(filepath.Join(somaDir, "state.json")); err == nil {
 			json.Unmarshal(b, s)
+			somaGen.Add(1) // what was read before (nothing) is out of date
 		}
 		if s.Recs == nil {
 			s.Recs = map[string]somaRec{}
@@ -320,13 +323,25 @@ func (s *somaStore) saveLocked() {
 	time.AfterFunc(700*time.Millisecond, func() { s.saveTo(dir) })
 }
 
+// somaSaved is what state.json holds: somaStore's saved fields, taken out under its lock and
+// written without it (turning thousands of records into JSON held every page that reads a
+// record for a moment that was long on the tablet).
+type somaSaved struct {
+	Fields int                `json:"fields"`
+	Device string             `json:"device"`
+	Seq    int64              `json:"seq"`
+	Recs   map[string]somaRec `json:"recs"`
+	LastOK time.Time          `json:"last_ok"`
+}
+
 func (s *somaStore) saveTo(dir string) {
 	s.saveMu.Lock() // one writer of state.json at a time
 	defer s.saveMu.Unlock()
 	s.mu.Lock()
 	s.savePending = false
-	b, err := json.Marshal(s)
+	snap := somaSaved{s.Fields, s.Device, s.Seq, maps.Clone(s.Recs), s.LastOK}
 	s.mu.Unlock()
+	b, err := json.Marshal(snap)
 	if err != nil {
 		return
 	}
@@ -373,6 +388,17 @@ func (s *somaStore) get(key string) string {
 		return *r.V
 	}
 	return ""
+}
+
+// values are the records' values as they are now (nil for none), under one lock.
+func (s *somaStore) values(keys []string) []*string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*string, len(keys))
+	for i, k := range keys {
+		out[i] = s.Recs[k].V
+	}
+	return out
 }
 
 // keys lists the records whose names start with prefix.
@@ -449,6 +475,7 @@ func (s *somaStore) sync() {
 	}
 	s.mu.Lock()
 	if s.running {
+		s.again = true // changed while a sync is under way: it goes once more when done
 		s.mu.Unlock()
 		return
 	}
@@ -456,9 +483,22 @@ func (s *somaStore) sync() {
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	got, err := s.pull(ctx)
-	if err == nil {
-		err = s.push(ctx)
+	got := 0
+	var err error
+	for {
+		var n int
+		n, err = s.pull(ctx)
+		got += n
+		if err == nil {
+			err = s.push(ctx)
+		}
+		s.mu.Lock()
+		again := s.again && err == nil
+		s.again = false
+		s.mu.Unlock()
+		if !again {
+			break
+		}
 	}
 	s.mu.Lock()
 	s.running = false
@@ -502,15 +542,22 @@ func (s *somaStore) pull(ctx context.Context) (int, error) {
 		if err := json.Unmarshal(b, &res); err != nil {
 			return n, err
 		}
+		// Opened without the lock (pages read records meanwhile), then taken in under it.
 		s.mu.Lock()
-		for _, it := range res.Items {
-			s.Seq = max(s.Seq, it.Seq)
-			e, err := s.keys.open(it.Blob)
-			if err != nil || e.Device == s.Device {
-				continue // not ours to read, or our own echo
+		keys, device := s.keys, s.Device
+		s.mu.Unlock()
+		envs := make([]*somaEnvelope, len(res.Items))
+		for i, it := range res.Items {
+			if e, err := keys.open(it.Blob); err == nil && e.Device != device {
+				envs[i] = e // (else not ours to read, or our own echo)
 			}
-			if !somaFields[somaField(e.Key)] {
-				continue // a part of Soma the tablet doesn't show
+		}
+		s.mu.Lock()
+		for i, it := range res.Items {
+			s.Seq = max(s.Seq, it.Seq)
+			e := envs[i]
+			if e == nil || !somaFields[somaField(e.Key)] {
+				continue // not to be read, or a part of Soma the tablet doesn't show
 			}
 			r, have := s.Recs[e.Key]
 			if !newer(e, r, have) {
@@ -535,34 +582,42 @@ func (s *somaStore) push(ctx context.Context) error {
 		ID   string `json:"id"`
 		Blob string `json:"blob"`
 	}
+	// What's to go out, taken under the lock, sealed without it (pages read records meanwhile).
 	s.mu.Lock()
-	var items []item
-	var keys []string
+	type dirty struct {
+		k string
+		r somaRec
+	}
+	var out []dirty
 	for k, r := range s.Recs {
-		if !r.Dirty {
-			continue
+		if r.Dirty {
+			out = append(out, dirty{k, r})
 		}
-		blob, err := s.keys.seal(somaEnvelope{Key: k, Value: r.V, T: r.T, Device: s.Device})
+	}
+	keys, device := s.keys, s.Device
+	s.mu.Unlock()
+	items := make([]item, 0, len(out))
+	for _, d := range out {
+		blob, err := keys.seal(somaEnvelope{Key: d.k, Value: d.r.V, T: d.r.T, Device: device})
 		if err != nil {
-			s.mu.Unlock()
 			return err
 		}
-		items = append(items, item{s.keys.recordID(k), blob})
-		keys = append(keys, k)
+		items = append(items, item{keys.recordID(d.k), blob})
 	}
-	s.mu.Unlock()
 	for i := 0; i < len(items); i += 400 {
 		j := min(i+400, len(items))
 		body, _ := json.Marshal(map[string]any{"items": items[i:j]})
 		if _, err := s.call(ctx, "POST", "/v1/push", body); err != nil {
 			return err
 		}
+		// Sent: no longer dirty, unless it was changed again meanwhile (that goes next time).
+		// What the records say hasn't changed, so pages drawn from them still hold (somaGen).
 		s.mu.Lock()
-		for _, k := range keys[i:j] {
-			r := s.Recs[k]
-			r.Dirty = false
-			s.Recs[k] = r
-			somaGen.Add(1)
+		for _, d := range out[i:j] {
+			if r, ok := s.Recs[d.k]; ok && r.T == d.r.T && r.D == d.r.D {
+				r.Dirty = false
+				s.Recs[d.k] = r
+			}
 		}
 		s.mu.Unlock()
 	}

@@ -58,7 +58,13 @@ func TestViewsKept(t *testing.T) {
 	if he == nil || c.page != he.p {
 		t.Fatal("going back to Habits should show what was kept")
 	}
+	// Shown again with nothing changed: what was kept stays, not copied again.
+	c.showPage()
+	if c.page != he.p {
+		t.Fatal("showing the view again unchanged should keep what was kept")
+	}
 	// A change on the page itself is drawn at once.
+	somaPut("settings.name", "Amina")
 	c.showPage()
 	if c.page == he.p {
 		t.Fatal("drawing the view on screen again should draw it fresh")

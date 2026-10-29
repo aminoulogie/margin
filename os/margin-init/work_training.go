@@ -196,7 +196,7 @@ func (e *exLog) best() (float64, string) {
 func bodyweights() map[string]float64 {
 	out := map[string]float64{}
 	for _, k := range soma.keysWith("nutrition/") {
-		if w := num(somaObj(k)["bodyWeight"]); w > 0 {
+		if w := num(somaRead(k)["bodyWeight"]); w > 0 {
 			out[strings.TrimPrefix(k, "nutrition/")] = w
 		}
 	}
@@ -375,7 +375,7 @@ func parseSession(date string, o obj) wkSess {
 func wkSessions() []wkSess {
 	var out []wkSess
 	for _, k := range soma.keysWith("history/") {
-		if o := somaObj(k); o != nil {
+		if o := somaRead(k); o != nil {
 			out = append(out, parseSession(strings.TrimPrefix(k, "history/"), o))
 		}
 	}

@@ -272,8 +272,7 @@ func wkClockIn(client string) {
 func wkClockOut() {
 	for _, o := range somaList("shifts") {
 		if num(o["end"]) == 0 && num(o["start"]) > 0 {
-			o["end"] = float64(time.Now().UnixMilli())
-			somaPut("shifts#"+str(o["id"]), o)
+			somaPatch("shifts", str(o["id"]), func(o obj) { o["end"] = float64(time.Now().UnixMilli()) })
 		}
 	}
 }
@@ -404,11 +403,11 @@ func wkAddFinding(title string) {
 // --- health ---------------------------------------------------------------------------------------
 
 func sleepHours(date string) float64 {
-	sl, _ := somaObj("nutrition/" + date)["sleep"].(obj)
+	sl, _ := somaRead("nutrition/" + date)["sleep"].(obj)
 	return num(sl["hours"])
 }
 
-func bodyWeight(date string) float64 { return num(somaObj("nutrition/" + date)["bodyWeight"]) }
+func bodyWeight(date string) float64 { return num(somaRead("nutrition/" + date)["bodyWeight"]) }
 
 func avgOf(v []float64) (float64, int) {
 	s, n := 0.0, 0
