@@ -760,7 +760,6 @@ func TestOtherPagesUsable(t *testing.T) {
 	if len(foodList(foodDay(somaToday()), "planned")) == 0 {
 		t.Fatal("quick add")
 	}
-	tapBtn(t, c, "wk:sheet:close")
 
 	// Mind: a note with a task, ticked.
 	go2("mind")
