@@ -266,38 +266,8 @@ func (k *wk) timeTab(tab int) int {
 	}
 	y := 312
 	switch tab {
-	case 1: // every entry, newest first, by day
-		sort.SliceStable(entries, func(i, j int) bool { return entries[i].Start.After(entries[j].Start) })
-		shown := 60 * (1 + k.sel("more", 0))
-		day := ""
-		for i, e := range entries {
-			if i == shown {
-				k.boxBtn(fmt.Sprintf("wk:more:%d", k.sel("more", 0)+1), wkX0, y, wkX1, y+64, "chevron-down", "Show more", color.RGBA{}, wkFG)
-				y += 84
-				break
-			}
-			if d := somaDate(e.Start); d != day {
-				day = d
-				var tot time.Duration
-				for _, x := range entries {
-					if somaDate(x.Start) == d {
-						tot += x.dur(now)
-					}
-				}
-				k.text(wkFont("semi", 19), wkX0+8, y+32, wkMuted, strings.ToUpper(wkDate(d)))
-				k.textR(wkFont("semi", 19), wkX1-8, y+32, wkMuted, wkHM(tot))
-				y += 48
-			}
-			r := image.Rect(wkX0, y, wkX1, y+96)
-			k.card(r)
-			k.entryRow(e, byID[e.ProjectID], wkX0, y, wkX1, now, true)
-			y += 106
-		}
-		if len(entries) == 0 {
-			k.emptyNote(wkX0+20, y+40, "No time logged yet.")
-			y += 80
-		}
-		return y
+	case 1: // every entry by day, as on the PC, with the standby between
+		return k.timeEntriesTab(entries, byID, now, y)
 	case 2: // rates
 		cr := image.Rect(wkX0, y, wkX1, y+90+84*max(len(projects), 1))
 		k.card(cr)

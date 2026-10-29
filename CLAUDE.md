@@ -608,6 +608,17 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       are whole chips on their own lines under the name, then Done (wk:htick ticks them all).
       Tests: somaTestLink holds drawMu and waits for the pictures and state.json before its folder
       goes (they raced the temp dir's removal).
+- [x] **Time > Entries like the PC, with standby** (2026-10-29, work_timelog.go): each day as a table
+      like TimePage.tsx (start – end, hours, type tag, what was done with project · step, billable
+      money). Work log shifts (worklog.ts) are listed with the time entries (type "Work log"), so
+      work logged on either PC page shows. The empty time between pieces of work in a day is
+      **standby**, billed at 50% of the rate of the work before it; one gap starting 11:30-14:30 and
+      at most 90 min is lunch (none if a work log break exists that day); tapping a gap flips it
+      (/data/condor/standby.json). Week cards: worked, billable, standby, standby value; sync status
+      shown. Note: Soma's own standby.ts counts shift breaks as standby; this view doesn't (user:
+      lunch isn't standby). Sync fix (somasync.go pull): a newer record from the relay is no longer
+      skipped because the tablet has an unsent change to it (the pull position moved past it, so
+      the tablet stayed stale for good). **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

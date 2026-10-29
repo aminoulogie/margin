@@ -513,9 +513,12 @@ func (s *somaStore) pull(ctx context.Context) (int, error) {
 				continue // a part of Soma the tablet doesn't show
 			}
 			r, have := s.Recs[e.Key]
-			if r.Dirty || !newer(e, r, have) {
-				continue // a change made here goes out next, newer, and wins
+			if !newer(e, r, have) {
+				continue // what the tablet has is newer; an unsent change goes out next and wins
 			}
+			// Newer than the tablet's copy, even one changed here and not sent yet: the later
+			// change wins on every device, so take it (skipping it left the tablet stale for
+			// good, as its pull position had already moved past it).
 			s.Recs[e.Key] = somaRec{V: e.Value, T: e.T, D: e.Device}
 			somaGen.Add(1)
 			n++
