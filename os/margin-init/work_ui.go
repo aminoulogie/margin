@@ -465,7 +465,7 @@ func (c *console) wkType(field, prompt, initial string) {
 }
 
 // wkMenuSheets are menus of things to add: done with once something is chosen.
-var wkMenuSheets = map[string]bool{"create": true, "addmoney": true, "newentry": true, "switchproj": true, "readlog": true, "addtime": true}
+var wkMenuSheets = map[string]bool{"create": true, "addmoney": true, "newentry": true, "switchproj": true, "readlog": true, "addtime": true, "addfood": true, "fresults": true}
 
 // wkTyped hands what was typed to its field's handler, then shows the sheet it was typed from.
 func (c *console) wkTyped(field, text string) {
