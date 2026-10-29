@@ -158,6 +158,10 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 	c := testConsole(t)
 	oldDir, oldSoma, oldClient := somaDir, soma, webClient
 	somaDir, soma = t.TempDir(), &somaStore{Recs: map[string]somaRec{}}
+	snaps.Lock()
+	snaps.shown, snaps.saved = nil, nil // a new tablet: no pictures of pages yet
+	snaps.Unlock()
+	snapAsync = false
 	k, _ := somaKeysFor(somaSecret(somaVecCode))
 	relay := &fakeRelay{token: k.token, recs: map[string]struct {
 		seq  int64
@@ -165,7 +169,34 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 	}{}}
 	srv := httptest.NewServer(relay)
 	webClient = func() *http.Client { return srv.Client() }
-	t.Cleanup(func() { srv.Close(); somaDir, soma, webClient = oldDir, oldSoma, oldClient })
+	st := soma
+	t.Cleanup(func() {
+		// No page drawn (and no picture written) while the folder is let go of.
+		locked := false
+		for i := 0; i < 100 && !locked; i++ {
+			if locked = drawMu.TryLock(); !locked {
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		if locked {
+			defer drawMu.Unlock()
+		}
+		snapWrites.Wait()
+		// The records' write a moment after the last change: done before the folder goes.
+		for i := 0; i < 40; i++ {
+			st.mu.Lock()
+			p := st.savePending
+			st.mu.Unlock()
+			if !p {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		st.saveMu.Lock()
+		st.saveMu.Unlock()
+		srv.Close()
+		somaDir, soma, webClient = oldDir, oldSoma, oldClient
+	})
 	today := somaToday()
 	now := time.Now().UnixMilli() - 60000
 	relay.pcPut(t, k, "habits#h1", obj{"id": "h1", "name": "Stretch", "color": "#30d158", "desc": "", "goalDaysPerWeek": 7, "history": obj{}}, now)
