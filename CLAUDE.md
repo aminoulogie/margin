@@ -573,6 +573,12 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       up to half the panel (480p/576p) decode at half size, doubled on screen. Still open: whether
       plughw:4,0 (the chip's first device) makes sound at all needs the mixer controls from
       init.log ("sound card 4 controls: ...") to set the codec's speaker route.
+      Found 2026-10-29 (margin-results): `aplay -D plughw:4,0` prints "Playing WAVE" then hangs (no
+      period ever completes: likely the codec's clocks are off because no speaker route is powered);
+      Alpine's `amixer -c 4 scontrols` fails with "Mixer sysdefault:4 load error: Not a tty" (alsa-lib
+      vs kernel 3.4), so setupSound never set anything (its log lines list no controls). Next: the
+      Clipboard's "Sound 1-4" checks (kernel messages, `amixer controls`, Android's own sound tools and
+      parameter-framework route files, whether the PCM's hw_ptr moves).
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for

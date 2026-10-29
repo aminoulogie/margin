@@ -59,7 +59,10 @@ d=/tmp/margin-cb
 b=$d/$1
 [ -f "$b.sh" ] || { echo "cbrun: no Clipboard command $1"; exit 1; }
 printf '\033[90m%s\033[0m\n' "$(sed 's/^/$ /' "$b.sh")"
-{ sh "$b.sh"; echo $? >"$b.code"; } 2>&1 | tee "$b.out"
+# Ctrl-C stops the command but not cbrun: what it printed until then is still sent.
+trap 'echo 130 >"$b.code"; echo "(stopped with Ctrl-C)" >>"$b.out"' INT
+{ sh "$b.sh"; echo $? >"$b.code"; } 2>&1 | tee -i "$b.out"
+trap - INT
 exec /proc/1/root` + marginHome + `/condor-init cbsend "$b"
 `
 
