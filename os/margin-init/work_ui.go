@@ -462,6 +462,10 @@ func (c *console) wkType(field, prompt, initial string) {
 	su.typing, su.field, su.editing, su.prompt = true, "w."+field, initial, prompt
 	c.fieldBack = 0
 	c.skb.visible = true
+	if c.composing() && !su.cmpKeep { // a new to-do: the composer, set for where it was asked for
+		su.cmp = cmpFromField(field)
+	}
+	su.cmpKeep = false
 }
 
 // wkMenuSheets are menus of things to add: done with once something is chosen.

@@ -539,6 +539,15 @@ func (k *wk) training() int {
 	if date, ok := strings.CutPrefix(su.workSub, "sess:"); ok {
 		return k.session(date, log)
 	}
+	if i, ok := strings.CutPrefix(su.workSub, "libex:"); ok {
+		n, _ := strconv.Atoi(i)
+		return k.libExercisePage(n)
+	}
+	if _, ok := strings.CutPrefix(su.workSub, "pick:"); ok { // exercises picked for today
+		k.header([]string{"Personal", "Training ›"}, "Add exercises", "Today's workout · tap to add, tap again to take out", color.RGBA{})
+		k.square("wk:libdone:", "chevron-left", wkX1)
+		return k.library(236)
+	}
 	sessions := wkSessions()
 	days := map[string]bool{}
 	for _, l := range log {
@@ -554,13 +563,18 @@ func (k *wk) training() int {
 		sub += " · fetching your imported history…"
 	}
 	k.header([]string{"Personal", "Training"}, "Training", sub, color.RGBA{})
-	k.primary("wk:logsession", "plus", "Log a session", wkX1)
+	x := k.primary("wk:libpick:"+somaToday(), "plus", "Exercise", wkX1)
+	k.outline("wk:logsession", "notebook-pen", "Log a session", x-13, 103, 63)
 	tab := k.sel("tab", 0)
-	k.tabs("wk:tab", []string{"Overview", "Movements", "Sessions"}, []string{"", fmt.Sprint(len(log)), fmt.Sprint(len(days))}, tab)
+	k.tabs("wk:tab", []string{"Workout", "Library", "Overview", "Movements", "Sessions"}, []string{"", fmt.Sprint(len(libExercises())), "", fmt.Sprint(len(log)), fmt.Sprint(len(days))}, tab)
 	switch tab {
+	case 0:
+		return k.workout(312)
 	case 1:
+		return k.library(312)
+	case 3:
 		return k.movements(log)
-	case 2:
+	case 4:
 		return k.sessionList(log, sessions, days)
 	}
 	return k.trainingOverview(log, sessions, days)

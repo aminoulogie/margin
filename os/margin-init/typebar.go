@@ -41,6 +41,10 @@ func (c *console) drawTypeBar() {
 	if !ok || !c.skb.visible || !c.screenOn {
 		return
 	}
+	if c.composing() { // a new to-do: the composer, with its day and time
+		c.drawComposer()
+		return
+	}
 	f := apple()
 	y0 := c.skb.y0 - typeBarH
 	img := image.NewRGBA(image.Rect(0, 0, c.s.W, typeBarH))

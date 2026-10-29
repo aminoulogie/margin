@@ -181,7 +181,7 @@ func (c *console) pageBottom() int {
 		return c.skb.y0
 	default:
 		if _, ok := c.pageTyping(); ok {
-			return c.skb.y0 - typeBarH
+			return c.skb.y0 - c.typeBarHeight()
 		}
 	}
 	return c.s.H
@@ -209,12 +209,19 @@ func (c *console) scrollFrame(y int, bar bool) {
 	px := func(x, y int) uint32 { return words(t.s.buf)[(t.s.fbH-1-x)*t.s.fbW+min(max(y, 0), ih-1)] }
 	top, low := px(1, hh), px(1, ih-fh-1) // the background past the ends
 	bh := c.barH
+	left := c.page.left // the rail: blitPage drew it, the screen keeps it as the page moves
 	eachColumn(s.W, func(x0, x1 int) {
 		for x := x0; x < x1; x++ {
 			fy := s.fbH - 1 - x
 			dst := words(s.buf[fy*s.stride:])[:s.fbW]
 			src := words(t.s.buf[fy*t.s.stride:])[:ih]
 			copy(dst[bh:bh+hh], src[:hh])
+			if x < left {
+				if footer {
+					copy(dst[bh+vh-fh:bh+vh], src[ih-fh:])
+				}
+				continue
+			}
 			if a := min(cs, hi); lo < a { // above the page's top
 				fillWords(dst[bh+lo-y:bh+a-y], top)
 			}

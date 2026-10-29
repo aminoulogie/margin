@@ -53,14 +53,22 @@ func ringSet(img *image.RGBA, x, y, px int, rings []ringSpec, mute, big bool) {
 			lx, ly := float64(qx-x)+0.5, float64(py-y)+0.5
 			dx, dy := lx-c0, ly-c0
 			d := math.Hypot(dx, dy)
-			// Clockwise from the top, 0 to 1.
-			t := math.Atan2(dx, -dy) / (2 * math.Pi)
-			if t < 0 {
-				t++
-			}
+			// Clockwise from the top, 0 to 1 (worked out only for a pixel on a ring).
+			t := -1.0
 			for i, g := range geo {
 				if g.r <= half {
 					continue
+				}
+				// Nothing of this ring reaches a pixel this far off its circle: the band, the
+				// cap and the start all lie within half a width of it (the cheap test first).
+				if math.Abs(d-g.r) >= half+0.5 {
+					continue
+				}
+				if t < 0 {
+					t = math.Atan2(dx, -dy) / (2 * math.Pi)
+					if t < 0 {
+						t++
+					}
 				}
 				rs := rings[i]
 				band := cover(half - math.Abs(d-g.r))

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -64,6 +65,10 @@ type somaStore struct {
 }
 
 var soma = &somaStore{Recs: map[string]somaRec{}}
+
+// somaGen counts changes to Soma's records (an edit here, a pull from the relay): a page drawn
+// at one count is still right while it hasn't moved (the workstation keeps drawn pages).
+var somaGen atomic.Int64
 
 // --- keys (crypto.ts) -----------------------------------------------------------------------
 
@@ -224,10 +229,12 @@ func (s *somaStore) load() {
 		}
 		if s.Recs == nil {
 			s.Recs = map[string]somaRec{}
+			somaGen.Add(1)
 		}
 		for k, r := range s.Recs { // kinds no longer kept (older versions kept everything)
 			if !somaFields[somaField(k)] && !r.Dirty {
 				delete(s.Recs, k)
+				somaGen.Add(1)
 			}
 		}
 		if s.Fields != somaFieldsVersion { // kinds kept now that weren't: pull them again
@@ -394,6 +401,7 @@ func (s *somaStore) put(key, value string) {
 		v = &value
 	}
 	s.Recs[key] = somaRec{V: v, T: t, D: s.Device, Dirty: true}
+	somaGen.Add(1)
 	s.saveLocked()
 	s.mu.Unlock()
 	go s.sync()
@@ -509,6 +517,7 @@ func (s *somaStore) pull(ctx context.Context) (int, error) {
 				continue // a change made here goes out next, newer, and wins
 			}
 			s.Recs[e.Key] = somaRec{V: e.Value, T: e.T, D: e.Device}
+			somaGen.Add(1)
 			n++
 		}
 		s.mu.Unlock()
@@ -550,6 +559,7 @@ func (s *somaStore) push(ctx context.Context) error {
 			r := s.Recs[k]
 			r.Dirty = false
 			s.Recs[k] = r
+			somaGen.Add(1)
 		}
 		s.mu.Unlock()
 	}

@@ -116,6 +116,17 @@ func (p *page) setRowButtons(id string, btns []button) {
 // viewH is the height of the page area under the status bar.
 func (c *console) viewH() int { return c.s.H - c.barH }
 
+// pageYAt turns a screen point's y into page coordinates: as pageY, except in the fixed
+// column at the left (the rail), which doesn't scroll either.
+func (c *console) pageYAt(x, y int) int {
+	if c.page != nil && x < c.page.left {
+		if py := y - c.barH; c.page.footer == 0 || py < c.viewH()-c.page.footer || c.page.img.Rect.Dy() <= c.viewH() {
+			return py
+		}
+	}
+	return c.pageY(y)
+}
+
 // pageY turns a screen y into page coordinates (the fixed header doesn't scroll).
 func (c *console) pageY(y int) int {
 	py := y - c.barH
@@ -146,6 +157,9 @@ func (c *console) blitPage() {
 	if hh > 0 {
 		c.s.blitRGBA(img.SubImage(image.Rect(0, 0, img.Rect.Dx(), hh)).(*image.RGBA), 0, c.barH)
 	}
+	if l := c.page.left; l > 0 { // the rail, as at the page's top
+		c.s.blitRGBA(img.SubImage(image.Rect(0, hh, l, vh-fh)).(*image.RGBA), 0, c.barH+hh)
+	}
 	c.keepShown(sy) // already turned: scrolling starts from it
 	// Where you are on the page: a thin bar on the right, while scrolling.
 	if c.sc.drag && c.sc.moved && c.sc.vert {
@@ -165,6 +179,10 @@ func (c *console) pageTouch(p TouchPoint) {
 	switch {
 	case p.Down:
 		if c.page == nil {
+			return
+		}
+		if c.composerTap(p.X, p.Y) { // the new to-do's day, time, priority, Add
+			sc.drag = false
 			return
 		}
 		c.stopMotion() // a finger on a moving page catches it
@@ -194,6 +212,20 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 		})
 		sc.x0, sc.y0, sc.ox0, sc.oy0, sc.from = p.X, p.Y, p.X, p.Y, c.scrollY()
+		// The tab bar and the workstation's rail answer as the finger lands, as a switch
+		// does: nothing there scrolls, so there's no telling a tap from a scroll to wait for.
+		fixed := p.Y-c.barH < c.page.header || p.X < c.page.left
+		if id, _ := c.page.hitRect(p.X, c.pageYAt(p.X, p.Y)); fixed && instantTap(id) {
+			sc.longGen++
+			sc.drag = false
+			if !c.press.on {
+				c.pressShow(p.X, p.Y)
+			}
+			c.pressClear(false)
+			c.pageTap(p.X, p.Y)
+			c.s.Flush()
+			return
+		}
 		c.edgeDown(p.X, p.Y)
 		py := c.pageY(p.Y)
 		sc.zone, sc.swiping = "", false
@@ -207,6 +239,8 @@ func (c *console) pageTouch(p TouchPoint) {
 				sc.row = r
 			}
 		}
+	case p.Moved && sc.drag && c.drag.on:
+		c.dragDraw(p.X, p.Y) // a to-do being dragged follows the finger
 	case p.Moved && sc.drag:
 		if c.edge.on {
 			c.edgeMove(p.X, p.Y)
@@ -221,6 +255,7 @@ func (c *console) pageTouch(p TouchPoint) {
 			c.pressClear(true)
 			if sc.zone != "" && sc.row == nil && abs(dx) > abs(dy) { // a sideways swipe: no scrolling
 				sc.swiping, sc.vert = true, false
+				sc.x0 += scrollSlop * sign(dx) // it moves from here, without a jump
 				return
 			}
 			if c.edgeStart(dx, dy) { // in from the left edge: going back
@@ -240,6 +275,7 @@ func (c *console) pageTouch(p TouchPoint) {
 			dx, dy = p.X-sc.x0, p.Y-sc.y0
 		}
 		if sc.swiping {
+			c.swipeFollow(sc.zone, dx) // the week (the day, the month) moves with the finger
 			return
 		}
 		if c.gpuScrolls() { // the GPU follows the finger, every frame
@@ -274,6 +310,11 @@ func (c *console) pageTouch(p TouchPoint) {
 			return
 		}
 		sc.longGen++
+		if c.drag.on { // a dragged to-do: let go here
+			sc.longFired, sc.drag = false, false
+			c.dragDrop(p.X, p.Y)
+			return
+		}
 		if sc.longFired { // held: the long press did its thing, the lift isn't a tap
 			sc.longFired, sc.drag = false, false
 			if sc.gpuOn {
@@ -287,13 +328,7 @@ func (c *console) pageTouch(p TouchPoint) {
 			if sc.gpuOn {
 				c.gpuSettle()
 			}
-			if dx := p.X - sc.x0; abs(dx) >= 60 {
-				dir := 1
-				if dx > 0 {
-					dir = -1
-				}
-				c.pageSwipe(sc.zone, dir)
-			}
+			c.swipeFinish(sc.zone, p.X-sc.x0)
 			return
 		}
 		if c.edge.on {
@@ -341,6 +376,11 @@ func (c *console) pageTouch(p TouchPoint) {
 		c.pageTap(p.X, p.Y)
 		c.s.Flush()
 	}
+}
+
+// instantTap: a button that does its thing on touch-down (the tabs and the rail).
+func instantTap(id string) bool {
+	return strings.HasPrefix(id, "tab:") || strings.HasPrefix(id, "wk:go:")
 }
 
 func sign(v int) int {
@@ -435,7 +475,7 @@ func (c *console) pageLongPress(x, y int) bool {
 	if c.page == nil {
 		return false
 	}
-	id := c.page.hit(x, c.pageY(y))
+	id := c.page.hit(x, c.pageYAt(x, y))
 	switch {
 	case c.mode == modeBooksHome && !c.homeEdit && id != "" && c.pageY(y) > tabsH+40:
 		// Home's widgets: rearrange them.
@@ -443,6 +483,8 @@ func (c *console) pageLongPress(x, y int) bool {
 		vibrate(20)
 		c.showPage()
 		return true
+	case c.mode == modeSoma && !c.somaUI.typing && c.somaUI.sheet == "" && c.dragStart(id, x, y):
+		return true // a to-do lifted, to be dragged
 	case c.mode == modeSoma && strings.HasPrefix(id, "wk:"):
 		name, arg, _ := strings.Cut(strings.TrimPrefix(id, "wk:"), ":")
 		f := wkLongPress[name]

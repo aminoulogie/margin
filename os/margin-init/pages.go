@@ -47,6 +47,8 @@ type page struct {
 	buttons []button
 	header  int                 // rows at the top that stay put when the page scrolls (the tab bar)
 	footer  int                 // rows at the page's end shown fixed at the screen's bottom (a dock)
+	left    int                 // columns at the left that stay put when it scrolls (the workstation's rail)
+	drops   []dropZone          // where a dragged to-do can be let go (work_drag.go)
 	rows    []hrow              // rows that scroll sideways (scroll.go)
 	rowBtns map[string][]button // their buttons, replaced when a row moves
 	swipes  []swipeZone         // where a sideways swipe turns a page (the next week, say)

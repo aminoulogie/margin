@@ -35,7 +35,7 @@ func findBtn(c *console, id string) (image.Rectangle, bool) {
 // screenOf scrolls the page so page point (x, y) shows, and gives its place on the screen.
 func screenOf(c *console, x, y int) (int, int) {
 	hh, vh := c.page.header, c.viewH()
-	if y < hh {
+	if y < hh || x < c.page.left { // the tab bar, the rail: they don't scroll
 		return x, y + c.barH
 	}
 	if ih := c.page.img.Rect.Dy(); ih > vh {
@@ -64,7 +64,7 @@ func tapBtn(t *testing.T, c *console, id string) {
 		t.Fatalf("no button %q on the page (%s); there are %v", id, c.somaUI.work, ids)
 	}
 	x, y := screenOf(c, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2)
-	if got := c.page.hit(x, c.pageY(y)); got != id {
+	if got := c.page.hit(x, c.pageYAt(x, y)); got != id {
 		t.Fatalf("tapping %q at (%d,%d) hits %q", id, x, y, got)
 	}
 	c.pageTouch(TouchPoint{Down: true, X: x, Y: y})
@@ -86,7 +86,7 @@ func swipeAcross(t *testing.T, c *console, zone string, dir int) {
 		c.pageTouch(TouchPoint{Up: true, X: x - dir*300, Y: y + 5})
 		return
 	}
-	t.Fatalf("no swipe zone %q", zone)
+	t.Fatalf("no swipe zone %q on %s/%s sheet %q: %v", zone, c.somaUI.work, c.somaUI.workSub, c.somaUI.sheet, c.page.swipes)
 }
 
 // typeIn types text and return into the field being typed in.
@@ -560,7 +560,7 @@ func TestTrainingUsable(t *testing.T) {
 	}
 
 	// Movements, one opened, a sheet day corrected.
-	tapBtn(t, c, "wk:tab:1")
+	tapBtn(t, c, "wk:tab:3")
 	shot(t, c, "train-movements")
 	key := exerciseKey("Seated Cable Row")
 	tapBtn(t, c, "wk:move:"+key)
@@ -615,7 +615,7 @@ func TestTrainingUsable(t *testing.T) {
 	}
 	tapBtn(t, c, "wk:sheet:close")
 	tapBtn(t, c, "wk:back")
-	tapBtn(t, c, "wk:tab:2")
+	tapBtn(t, c, "wk:tab:4")
 	shot(t, c, "train-sessions")
 	tapBtn(t, c, "wk:sess:2026-02-01")
 	shot(t, c, "train-sheet-day")

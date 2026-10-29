@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -386,8 +387,7 @@ func (k *wk) habitRow(h somaHabit, ry int, today, mon string) {
 	col := habitColour(h)
 	cy := ry + 56
 	tile := k.R(186, cy-28, 242, cy+28)
-	ui.RoundRect(k.img, tile, 14, blend(wkCard, col, 0.2))
-	apTextCenter(k.img, wkFont("bold", 24), (tile.Min.X+tile.Max.X)/2, (tile.Min.Y+tile.Max.Y)/2, col, strings.ToUpper(string([]rune(h.Name + "?")[:1])))
+	habitTile(k.img, tile, h)
 	k.text(wkFont("semi", 23), 262, cy-6, wkFG, clip(wkFont("semi", 23), h.Name, 330))
 	sub := []string{}
 	if s := h.streak(today); s > 0 {
@@ -547,8 +547,8 @@ func (k *wk) habitGrid(hs []somaHabit, days []string, y int, title, zone string,
 	ry := y + 120
 	for _, hb := range hs {
 		col := habitColour(hb)
-		ui.RoundRect(k.img, k.R(188, ry+22, 202, ry+36), 4, col)
-		k.text(wkFont("semi", 20), 214, ry+38, wkFG, clip(wkFont("semi", 20), hb.Name, x0-230))
+		habitTile(k.img, k.R(184, ry+10, 228, ry+54), hb)
+		k.text(wkFont("semi", 20), 240, ry+38, wkFG, clip(wkFont("semi", 20), hb.Name, x0-256))
 		k.btn("wk:habit:"+hb.ID, k.R(wkX0, ry, x0-8, ry+rowH))
 		st := hb.start()
 		for i, d := range days {
@@ -1068,4 +1068,79 @@ func init() {
 func wkHabitObj(name, colour string) obj {
 	return obj{"id": fmt.Sprintf("habit-%d-%s", time.Now().UnixMilli(), somaNewID()[8:13]), "name": strings.TrimSpace(name),
 		"desc": "", "color": colour, "goalDaysPerWeek": 7, "history": obj{}, "since": somaToday()}
+}
+
+// habitIcons is Soma's HabitBits.tsx: the glyph a habit's name suggests (first match wins).
+var habitIcons = []struct {
+	re   *regexp.Regexp
+	icon string
+}{
+	{regexp.MustCompile(`(?i)no phone|offline|detox|unplug`), "phone-off"},
+	{regexp.MustCompile(`(?i)alcohol|beer|drink less|sober`), "beer-off"},
+	{regexp.MustCompile(`(?i)water|hydrat|drink`), "droplet"},
+	{regexp.MustCompile(`(?i)gym|train|lift|workout|push|pull|leg`), "dumbbell"},
+	{regexp.MustCompile(`(?i)run|cardio|walk|step`), "footprints"},
+	{regexp.MustCompile(`(?i)read|book|page`), "book-open"},
+	{regexp.MustCompile(`(?i)meditat|mindful|breath|pray`), "sparkles"},
+	{regexp.MustCompile(`(?i)sleep|bed`), "bed"},
+	{regexp.MustCompile(`(?i)night|evening`), "moon"},
+	{regexp.MustCompile(`(?i)morning|sun|wake`), "sun"},
+	{regexp.MustCompile(`(?i)journal|write|note`), "pen-line"},
+	{regexp.MustCompile(`(?i)creatine|vitamin|pill|supplement`), "pill"},
+	{regexp.MustCompile(`(?i)protein|eat|food|veg|salad|meal`), "salad"},
+	{regexp.MustCompile(`(?i)code|work|deep|focus|study`), "laptop"},
+	{regexp.MustCompile(`(?i)learn|language|brain`), "brain"},
+	{regexp.MustCompile(`(?i)screen|phone|social`), "smartphone"},
+	{regexp.MustCompile(`(?i)money|spend|budget|save`), "wallet"},
+	{regexp.MustCompile(`(?i)stretch|yoga|mobility`), "activity"},
+	// Beyond Soma's list, so fewer habits fall back to a letter.
+	{regexp.MustCompile(`(?i)brush|teeth|floss|smile`), "smile"},
+	{regexp.MustCompile(`(?i)skin|face|groom|shave`), "scan-face"},
+	{regexp.MustCompile(`(?i)shower|cold|bath|wash`), "shower-head"},
+	{regexp.MustCompile(`(?i)smok|cigar|vape|nicotine`), "cigarette-off"},
+	{regexp.MustCompile(`(?i)alcohol|beer|drink less|sober`), "beer-off"},
+	{regexp.MustCompile(`(?i)music|piano|sing|practi`), "music"},
+	{regexp.MustCompile(`(?i)guitar`), "guitar"},
+	{regexp.MustCompile(`(?i)english|french|arabic|spanish|german|duolingo|vocab|word`), "languages"},
+	{regexp.MustCompile(`(?i)course|class|exam|revis|lesson`), "graduation-cap"},
+	{regexp.MustCompile(`(?i)bike|cycl`), "bike"},
+	{regexp.MustCompile(`(?i)swim`), "waves"},
+	{regexp.MustCompile(`(?i)hike|climb`), "mountain"},
+	{regexp.MustCompile(`(?i)fruit|apple|diet|sugar|fast`), "apple"},
+	{regexp.MustCompile(`(?i)no phone|offline|detox|unplug`), "phone-off"},
+	{regexp.MustCompile(`(?i)salat|salah|quran|fajr|dhikr|islam|church|god|faith`), "moon-star"},
+	{regexp.MustCompile(`(?i)family|call|friend|kind|gratitude|thank`), "hand-heart"},
+}
+
+func habitIcon(name string) string {
+	for _, h := range habitIcons {
+		if h.re.MatchString(name) {
+			return h.icon
+		}
+	}
+	return ""
+}
+
+// habitTile is a habit's face, as Soma draws it: its colour falling from 42% to 18% over the
+// page, a lighter rim along the top, and the glyph its name suggests (else its initial).
+func habitTile(img *image.RGBA, r image.Rectangle, h somaHabit) {
+	col := habitColour(h)
+	rad := r.Dy() * 30 / 100
+	ui.RoundRect(img, r, rad, blend(wkBG, col, 0.30))
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		t := float64(y-r.Min.Y) / float64(max(r.Dy()-1, 1))
+		row := roundedRow(r, rad, y)
+		if row.Dx() > 4 {
+			ui.Fill(img, image.Rect(row.Min.X+2, y, row.Max.X-2, y+1), blend(wkBG, col, 0.42-0.24*t))
+		}
+	}
+	ui.Fill(img, image.Rect(r.Min.X+rad, r.Min.Y, r.Max.X-rad, r.Min.Y+1), blend(wkBG, col, 0.6))
+	fg := blend(col, rgb(0xffffff), 0.15)
+	cx, cy := (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2
+	if ic := habitIcon(h.Name); ic != "" {
+		lucideIcon(img, ic, cx, cy, r.Dy()/2, fg)
+		return
+	}
+	in := strings.ToUpper(string([]rune(strings.TrimSpace(h.Name) + "•")[:1]))
+	apTextCenter(img, wkFont("bold", float64(r.Dy())*0.42), cx, cy, fg, in)
 }

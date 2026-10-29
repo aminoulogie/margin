@@ -517,6 +517,27 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       download, found against /root/margin-src/.margin-manifest (md5 list written by update.sh, or at
       boot if missing); plain `update` refuses while there are unpublished changes (`--force`
       overrides). Tests: claude_test.go, termtabs_linux_test.go. **Not yet run on the tablet.**
+- [x] **Workstation feel + Soma's training** (2026-10-29, work.go, work_drag.go, work_compose.go,
+      work_library.go, scroll.go, fastscroll.go, ui/draw.go, ringset.go, exercises/): pages drawn are
+      kept (wkPageCache, 5, keyed by workKey: somaUI + somaGen (counts every change to Soma's
+      records) + a 5-minute clock + scroll), so going back to a page is a copy (PC: 4 ms vs 15-50 ms);
+      the header haze is drawn once, card sheens are fills, corner coverage is a table per radius,
+      rings skip pixels off every ring (calendar 53 → 32 ms on the PC). The tab bar and the rail
+      answer on touch-down (instantTap, only in the fixed header and page.left). The rail is a fixed
+      column (page.left: blitPage blits it unscrolled, scrollFrame leaves its columns alone, pageYAt
+      and onScreen don't scroll it). The running timer (and the rest timer on Training) is a fixed
+      band at the bottom (page.footer = wkTimerH) redrawn alone each second (startTimerTicks).
+      Planner: hold a to-do (block or list row) to drag it, snapped to the quarter hour over a
+      day's hours (page.drops: dropHours/dropDay), onto a day's heading = that day's list, let go
+      unmoved = its sheet; week/day/month swipes follow the finger and slide in. New to-dos type
+      into a composer card (day chips, time and length steppers, priority; chips don't end the
+      typing; composerTap on touch-down). Habits show Soma's name→lucide icons (habitIcons, plus
+      more). Training: Workout (Soma's splits to load, exercises from the library, each set's kg and
+      reps ± in place, tick → rest timer with Soma's restForSet times, Finish), Library (Soma's
+      BASE_EXERCISE_DB with its 56 photos embedded from public/exercises, muscle chips, search, S/A
+      tiers), an exercise's page. Health: Log today (sleep ± and quality, naps, creatine, weight,
+      measurements) as the phone's Body tab. Icons added to icons/lucide.png with the same Chromium
+      method (lucide-static SVGs, 96 px). **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
