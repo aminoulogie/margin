@@ -91,3 +91,17 @@ gamepad-2
 pen-tool
 app-window
 minus
+archive
+archive-restore
+calendar-x
+copy
+droplet
+flame
+pencil
+play
+rotate-ccw
+sunrise
+tag
+trash-2
+trophy
+undo-2

@@ -455,6 +455,21 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       behind, the workout from history.timestamp − duration, slotted to-dos (overlaps in
       columns); tapping an empty half hour types a to-do there (somaAddTodoAt = addTodoAt +
       setTodoSlot: date = slot.date, scope day, cleanSlot to 15 min).
+- [x] **Workstation fully usable** (2026-10-29, work_ui.go, work_edit.go, work_projects.go,
+      work_planner.go, work_habits.go, work_training.go, work_tabs.go, work_reports.go): every button
+      is "wk:<action>:<arg>" in wkActions; sheets (menus, steppers, segments, colours, a month to pick
+      a date) over the page (wkSheets, a stack: one opened from another goes back to it); typed
+      fields with a prompt (wkTypers, back to their sheet after); swipe zones (page.swipes); undo
+      for deletes. Projects: list/board/timeline/archive, sort, client filter, search, every field
+      editable, steps, time entries, notes, findings. Planner: week/day/month swipe, tap a time to
+      add, task sheet, board, day routines (dayRoutines synced now), Plan my day. Habits page
+      (habit-score.ts: weighted, 70% keeps the streak; only today changes, as on the phone).
+      Training: Soma's imported lift sheet (training-seed.json, fetched from the Soma repo into
+      /data/condor/soma, not kept in this repo) + logOverrides + history merged as training-log.ts
+      does; movements with progression; sessions and sets editable (recomputeSession). Overview/
+      Time/Money/Reports/Work log/Findings/Nutrition/Mind tabs all real; Settings > accent colour
+      (settings.accent, shared with the phone). TestNoDeadButtons fails on any button with no
+      handler. somaFieldsVersion 8 (dayRoutines, logOverrides, restDays).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
