@@ -133,7 +133,7 @@ func (c *console) pageY(y int) int {
 	if c.page != nil && c.page.footer > 0 && py >= c.viewH()-c.page.footer && c.page.img.Rect.Dy() > c.viewH() {
 		return c.page.img.Rect.Dy() - (c.viewH() - py) // the fixed footer: the page's last rows
 	}
-	if c.page != nil && py >= c.page.header {
+	if c.page != nil && py >= c.page.header && c.page.img.Rect.Dy() > c.viewH() { // as blitPage shows it
 		py += c.scrollY()
 	}
 	return py
@@ -254,6 +254,12 @@ func (c *console) pageTouch(p TouchPoint) {
 		}
 	case p.Moved && sc.drag && c.drag.on:
 		c.dragDraw(p.X, p.Y) // a to-do being dragged follows the finger
+	case p.Moved && sc.drag && c.sheetOpen():
+		// Nothing under a sheet moves; a finger that slid away isn't a tap.
+		if !sc.moved && (abs(p.X-sc.x0) >= scrollSlop || abs(p.Y-sc.y0) >= scrollSlop) {
+			sc.moved = true
+			c.pressClear(true)
+		}
 	case p.Moved && sc.drag:
 		if c.edge.on {
 			c.edgeMove(p.X, p.Y)
@@ -336,6 +342,10 @@ func (c *console) pageTouch(p TouchPoint) {
 			return
 		}
 		moved := sc.moved
+		if moved && c.sheetOpen() {
+			sc.drag = false
+			return
+		}
 		if sc.swiping { // across a zone: the next (or the last) week, day, month
 			sc.drag, sc.swiping = false, false
 			if sc.gpuOn {
@@ -390,6 +400,9 @@ func (c *console) pageTouch(p TouchPoint) {
 		c.s.Flush()
 	}
 }
+
+// sheetOpen: a sheet is open over the page (work_ui.go); the page under it doesn't move.
+func (c *console) sheetOpen() bool { return c.mode == modeSoma && c.somaUI.sheet != "" }
 
 // instantTap: a button that does its thing on touch-down (the tabs and the rail).
 func instantTap(id string) bool {

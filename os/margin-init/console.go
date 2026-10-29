@@ -88,6 +88,8 @@ type console struct {
 	viewOn           string          // the kept view on screen (views.go)
 	viewFresh        bool            // showPage is drawing it fresh, not showing what was kept
 	viewRefreshGen   int
+	wkFresh          bool                     // the page under a sheet is drawn fresh (work.go)
+	wkRefreshOn      bool                     // ...and waits for a quiet moment to be
 	termBar          *page                    // the tab bar over the terminal, as a page (its taps)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top

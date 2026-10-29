@@ -99,7 +99,7 @@ type scoreLine struct {
 // creatine against 5 g, and habits done.
 func somaDayScore(date string) (score int, lines []scoreLine) {
 	n := somaNutrition(date)
-	day := somaObj("nutrition/" + date)
+	day := somaRead("nutrition/" + date)
 	add := func(label string, possible, ratio float64, ok bool) {
 		lines = append(lines, scoreLine{label, math.Round(min(max(ratio, 0), 1)*possible*10) / 10, possible, ok})
 	}

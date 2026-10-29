@@ -59,6 +59,7 @@ const (
 type viewEntry struct {
 	key     string
 	p       *page
+	src     *page // the page p is a copy of
 	tabsOn  string
 	scrollY int
 	gen     int64    // somaGen when it was drawn

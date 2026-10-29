@@ -79,6 +79,7 @@ type fakeRelay struct {
 		seq  int64
 		blob string
 	}
+	beforePush func() // a test's: called as a push arrives
 }
 
 func (f *fakeRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +91,9 @@ func (f *fakeRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/v1/push":
+		if f.beforePush != nil {
+			f.beforePush()
+		}
 		var body struct{ Items []struct{ ID, Blob string } }
 		json.NewDecoder(r.Body).Decode(&body)
 		for _, it := range body.Items {
@@ -351,8 +355,20 @@ func TestSomaLinkFromThePC(t *testing.T) {
 func TestSomaLinkFromThePhone(t *testing.T) {
 	c := testConsole(t)
 	oldDir, oldSoma := somaDir, soma
-	somaDir, soma = t.TempDir(), &somaStore{Recs: map[string]somaRec{}}
-	t.Cleanup(func() { somaDir, soma = oldDir, oldSoma })
+	// Not t.TempDir: the sync the link starts saves when it gives up, which can be a moment
+	// after the test (as in somaTestLink).
+	dir, err := os.MkdirTemp("", "soma-link-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	somaDir, soma = dir, &somaStore{Recs: map[string]somaRec{}}
+	t.Cleanup(func() {
+		somaDir, soma = oldDir, oldSoma
+		go func() {
+			time.Sleep(3 * time.Second)
+			os.RemoveAll(dir)
+		}()
+	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.sendPage)
 	mux.HandleFunc("/soma-link", c.somaLinkPost)
@@ -844,4 +860,34 @@ func TestLongPress(t *testing.T) {
 	}
 	_ = relay
 	_ = k
+}
+
+// An edit made while the one before it is on its way to the relay goes out too: it isn't
+// taken as sent when that push comes back, and the sync goes round once more for it.
+func TestSomaEditDuringPushGoesOut(t *testing.T) {
+	_, relay, k := somaTestLink(t)
+	soma.sync()
+	relay.mu.Lock()
+	relay.beforePush = func() { // (under the relay's lock)
+		relay.beforePush = nil
+		somaPut("todos#t9", obj{"id": "t9", "text": "Second"})
+	}
+	relay.mu.Unlock()
+	somaPut("todos#t9", obj{"id": "t9", "text": "First"})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		soma.mu.Lock()
+		busy := soma.running || soma.Recs["todos#t9"].Dirty
+		soma.mu.Unlock()
+		if !busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the second edit was never sent")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if o, _ := relay.pcGet(t, k, "todos#t9"); str(o["text"]) != "Second" {
+		t.Fatalf("the PC has %v, not the latest edit", o)
+	}
 }

@@ -685,6 +685,32 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       billed) / "It was work: make it an entry" (wkAddEntry on the project before it, then the entry
       sheet opens). Entry sheet: tap Started/Ended to type an exact time (wkTypers "etime").
       wkLogAll caches the rows by somaGen + minute (page, totals and sheets share it); 7 days a page.
+- [x] **Soma tab instant: sheets, edits, deletes, every page** (2026-10-29; user: Time > Entries slow,
+      an entry took ~5 s to open, edits/deletes ~5 s more, same in every tab). Measured on the PC with
+      a year of records (bigVault: ~1,600 entries; MARGIN_SPEED=1 TestTimeEntriesSpeed), before → after:
+      Entries drawn 93 → ~22 ms (~45 with the fresh picture per drawing of the memory fix), entry
+      opened 130 → ~5 ms, a change in its sheet 170-230 → ~8 ms, closing after it ~6 ms, Projects
+      143 → ~26 ms (the Atom is 10-15x slower). Causes and fixes: (1) every draw decoded every
+      record again: somaList is kept per somaGen and each record stays decoded by its value pointer
+      (somaDecode), so after an edit only that record is decoded; the items are shared: never change
+      one, change a copy (somaObj, somaPatch); somaRead = the same for one record, read only.
+      (2) textFace made a new face (empty glyph cache) on every call, so every wkFont label was drawn
+      from the outlines: faces are kept per font + size (≤ 512); CachedFace locks every call (shared
+      across goroutines) and keeps advances and kerning. (3) a sheet redrew the whole page under it:
+      workBase keeps the page per view (key = view + content: somaGen, the 5-minute clock, the sync
+      status on Time/Settings; no scroll, no sheet, no undo), and a sheet is laid over a flat, dimmed
+      copy of the screen (wkFlat, the dimmed copy kept in wkDimmed); sheets are modal (nothing under
+      one scrolls or swipes, pageTouch/sheetOpen). After a change made in a sheet the page under it
+      is the one from before, drawn fresh once the tablet is left alone 300 ms (wkRefreshLater,
+      c.wkFresh), so closing is a copy. The undo pill is laid on a copy of the page (wkOverlay).
+      (4) the sync held soma.mu while it encrypted, decrypted and turned the vault
+      into JSON (state.json), freezing every page that read a record: all of that is outside the lock
+      now. An edit made while a sync is running makes it go round once more (s.again,
+      TestSomaEditDuringPushGoesOut). The caches note what they read (soma.note in somaList and
+      values) so the views kept still know which kinds of record their pages read. Also: pageY no
+      longer adds the scroll on a page that doesn't scroll; donuts and rings skip pixels off the ring before any square root or angle; card rims are
+      painted as edges, not a second fill (ui.RoundRectRim). Tests: work_sheet_test.go
+      (TestSheetsOverKeptPage). **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

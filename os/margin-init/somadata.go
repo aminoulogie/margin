@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,6 +37,11 @@ func mondayOf(date string) string {
 	return t.AddDate(0, 0, -((int(t.Weekday()) + 6) % 7)).Format("2006-01-02")
 }
 
+// somaRead is a record decoded for reading only: shared with every other reader until the
+// record changes (somaDecode), so pages drawn again don't decode it again. To change a record,
+// change a copy from somaObj (or somaPatch).
+func somaRead(key string) obj { return somaDecode(key, soma.values([]string{key})[0]) }
+
 func somaObj(key string) obj {
 	var o obj
 	if s := soma.get(key); s != "" {
@@ -56,16 +63,48 @@ func num(v any) float64 {
 
 func str(v any) string { s, _ := v.(string); return s }
 
-// list is the items of an id'd array field, in its order (items the order doesn't name last).
+// somaLists keeps each list decoded as it was at one count of changes (somaGen): a page reads
+// the same lists many times over, and decoding every record each time was most of the time a
+// workstation page took to draw (seconds on the tablet with a year of entries).
+var somaLists struct {
+	sync.Mutex
+	st  *somaStore
+	gen int64
+	m   map[string][]obj
+}
+
+// somaList is the items of an id'd array field, in its order (items the order doesn't name
+// last). The items are shared with the next callers until the records change: change a copy
+// (somaObj, somaPatch), never one of these.
 func somaList(field string) []obj {
+	soma.note(field) // read, kept or not (the views kept say what their pages read)
+	gen := somaGen.Load()
+	somaLists.Lock()
+	if somaLists.st != soma || somaLists.gen != gen {
+		somaLists.st, somaLists.gen, somaLists.m = soma, gen, map[string][]obj{}
+	}
+	l, ok := somaLists.m[field]
+	somaLists.Unlock()
+	if !ok {
+		l = somaListRead(field)
+		somaLists.Lock()
+		if somaLists.st == soma && somaLists.gen == gen && somaGen.Load() == gen {
+			somaLists.m[field] = l
+		}
+		somaLists.Unlock()
+	}
+	return slices.Clone(l) // the callers may sort or append to theirs
+}
+
+func somaListRead(field string) []obj {
 	var order []string
 	json.Unmarshal([]byte(soma.get(field+"@order")), &order)
 	seen := map[string]bool{}
-	var out []obj
+	var keys []string
 	for _, id := range order {
-		if o := somaObj(field + "#" + id); o != nil && !seen[id] {
-			out = append(out, o)
+		if !seen[id] {
 			seen[id] = true
+			keys = append(keys, field+"#"+id)
 		}
 	}
 	var rest []string
@@ -75,10 +114,13 @@ func somaList(field string) []obj {
 		}
 	}
 	sort.Strings(rest)
-	for _, k := range rest {
-		if o := somaObj(k); o != nil {
+	keys = append(keys, rest...)
+	out := make([]obj, 0, len(keys))
+	seen = map[string]bool{} // now: the ids read
+	for i, v := range soma.values(keys) {
+		if o := somaDecode(keys[i], v); o != nil {
 			out = append(out, o)
-			seen[strings.TrimPrefix(k, field+"#")] = true
+			seen[strings.TrimPrefix(keys[i], field+"#")] = true
 		}
 	}
 	// Soma sends a list as one record when it can't split it (an item without an id, or two
@@ -100,6 +142,43 @@ func somaList(field string) []obj {
 		}
 	}
 	return out
+}
+
+// somaDecoded keeps the records read through lists decoded, with the value each was decoded
+// from (a record's value is a new string each time it changes), so a list read again after
+// one of its records changed decodes that one only.
+var somaDecoded struct {
+	sync.Mutex
+	st *somaStore
+	m  map[string]somaDec
+}
+
+type somaDec struct {
+	v *string
+	o obj
+}
+
+func somaDecode(key string, v *string) obj {
+	if v == nil {
+		return nil
+	}
+	somaDecoded.Lock()
+	if somaDecoded.st != soma {
+		somaDecoded.st, somaDecoded.m = soma, map[string]somaDec{}
+	}
+	d, ok := somaDecoded.m[key]
+	somaDecoded.Unlock()
+	if ok && d.v == v {
+		return d.o
+	}
+	var o obj
+	json.Unmarshal([]byte(*v), &o)
+	somaDecoded.Lock()
+	if somaDecoded.st == soma {
+		somaDecoded.m[key] = somaDec{v, o}
+	}
+	somaDecoded.Unlock()
+	return o
 }
 
 func somaPut(key string, o any) {
@@ -353,7 +432,7 @@ func (s *somaSession) minutes() float64 {
 }
 
 func somaTraining(date string) *somaSession {
-	o := somaObj("history/" + date)
+	o := somaRead("history/" + date)
 	if o == nil {
 		return nil
 	}
@@ -373,7 +452,7 @@ type somaFood struct {
 }
 
 func somaNutrition(date string) somaFood {
-	o := somaObj("nutrition/" + date)
+	o := somaRead("nutrition/" + date)
 	n := somaFood{Date: date}
 	if o == nil {
 		return n
