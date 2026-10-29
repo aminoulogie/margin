@@ -51,6 +51,18 @@ export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy no_proxy=localhost,127.0.
 //go:embed update.sh
 var updateScript []byte
 
+// cbrunScript is /usr/local/bin/cbrun: "cbrun N" runs Clipboard command N (Margin writes it
+// to /tmp/margin-cb/N.sh when it's tapped), shows its output, and sends the output to GitHub
+// (margin-init cbsend), so an AI can read it.
+const cbrunScript = `#!/bin/sh
+d=/tmp/margin-cb
+b=$d/$1
+[ -f "$b.sh" ] || { echo "cbrun: no Clipboard command $1"; exit 1; }
+printf '\033[90m%s\033[0m\n' "$(sed 's/^/$ /' "$b.sh")"
+{ sh "$b.sh"; echo $? >"$b.code"; } 2>&1 | tee "$b.out"
+exec /proc/1/root` + marginHome + `/condor-init cbsend "$b"
+`
+
 const claudeWrapper = "#!/bin/sh\nexec /proc/1/root" + marginHome + "/condor-init claude \"$@\"\n"
 
 // configureAlpine writes alpineConfig and points apk at plain-http mirrors (packages are
@@ -71,6 +83,8 @@ func configureAlpine() {
 	// itself, reached through init's root (the real /data/condor seen from the chroot).
 	os.WriteFile(alpineRoot+"/usr/local/bin/claude", []byte(claudeWrapper), 0o755)
 	os.Chmod(alpineRoot+"/usr/local/bin/claude", 0o755)
+	os.WriteFile(alpineRoot+"/usr/local/bin/cbrun", []byte(cbrunScript), 0o755)
+	os.Chmod(alpineRoot+"/usr/local/bin/cbrun", 0o755)
 	repos := alpineRoot + "/etc/apk/repositories"
 	if b, err := os.ReadFile(repos); err == nil {
 		os.WriteFile(repos, []byte(strings.ReplaceAll(string(b), "https://", "http://")), 0o644)

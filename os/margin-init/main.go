@@ -68,6 +68,12 @@ func main() {
 			os.Exit(code)
 		case "claude": // the Terminal's Claude tab (claude.go); also /usr/local/bin/claude in Alpine
 			os.Exit(runClaude())
+		case "cbsend": // margin-init cbsend <base>: cbrun sends a Clipboard command's output (github_link.go)
+			if len(os.Args) != 3 {
+				fmt.Fprintln(os.Stderr, "usage: margin-init cbsend <base>")
+				os.Exit(2)
+			}
+			os.Exit(runCBSend(os.Args[2]))
 		case "untar": // margin-init untar <file.tar.gz> <dir>  (Android has no tar)
 			if len(os.Args) != 4 {
 				fmt.Fprintln(os.Stderr, "usage: margin-init untar <file.tar.gz> <dir>")

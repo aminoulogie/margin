@@ -43,6 +43,7 @@ func (c *console) serveBooks() {
 	mux.HandleFunc("/", c.sendPage)
 	mux.HandleFunc("/upload", c.sendUpload)
 	mux.HandleFunc("/soma-link", c.somaLinkPost)
+	mux.HandleFunc("/github-link", c.githubLinkPost)
 	srv := &http.Server{Handler: localOnly(mux)}
 	for _, port := range []int{80, 8080} {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -253,7 +254,8 @@ func (c *console) sendPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := strings.Replace(sendHTML, "<!--BOOKS-->", list.String(), 1)
-	io.WriteString(w, strings.Replace(page, "<!--SOMA-->", html.EscapeString(status), 1))
+	page = strings.Replace(page, "<!--SOMA-->", html.EscapeString(status), 1)
+	io.WriteString(w, strings.Replace(page, "<!--GITHUB-->", html.EscapeString(githubLinkStatus()), 1))
 }
 
 const sendHTML = `<!doctype html>
@@ -303,6 +305,13 @@ input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-
 <button id="slink">Link Soma</button>
 <div id="smsg"></div>
 </div>
+<div class="card" id="github"><h2>Link GitHub</h2>
+<p class="sub" style="margin-bottom:12px">So the tablet can send the output of Clipboard commands to a <b>private</b> repo the AI can read. On github.com: create a private repo (default <b>aminoulogie/margin-results</b>, tick "Add a README"), then Settings &rsaquo; Developer settings &rsaquo; Fine-grained tokens: give it that repo (and margin, to publish fixes) with Contents: read and write. Paste the token here. <span><!--GITHUB--></span></p>
+<input id="gtoken" type="password" placeholder="Token (github_pat_…)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+<input id="grepo" type="url" placeholder="Results repo (aminoulogie/margin-results)" autocapitalize="off" autocorrect="off" spellcheck="false">
+<button id="glink">Link GitHub</button>
+<div id="gmsg"></div>
+</div>
 <script>
 var f=document.getElementById('f'),go=document.getElementById('go'),msg=document.getElementById('msg'),
 bar=document.querySelector('.bar'),fill=document.querySelector('.bar i'),files=document.getElementById('files');
@@ -332,4 +341,17 @@ sl.onclick=function(){
     else{sm.textContent=r.error||'Linking failed.';sm.className='err'}};
   x.onerror=function(){sl.disabled=false;sm.textContent='Is the phone on the same Wi-Fi as the tablet?';sm.className='err'};
   x.send('url='+encodeURIComponent(u)+'&code='+encodeURIComponent(k))};
+var gl=document.getElementById('glink'),gm=document.getElementById('gmsg');
+gl.onclick=function(){
+  var t=document.getElementById('gtoken').value.trim(),rp=document.getElementById('grepo').value.trim();
+  if(!t){gm.textContent='Paste the token.';gm.className='err';return}
+  var x=new XMLHttpRequest();x.open('POST','/github-link');
+  x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+  gl.disabled=true;gm.textContent='Checking with GitHub…';gm.className='';
+  x.onload=function(){var r={};try{r=JSON.parse(x.responseText)}catch(e){}
+    gl.disabled=false;
+    if(r.ok){gm.textContent='Linked: outputs go to '+r.repo+'.';gm.className='ok';document.getElementById('gtoken').value=''}
+    else{gm.textContent=r.error||'Linking failed.';gm.className='err'}};
+  x.onerror=function(){gl.disabled=false;gm.textContent='Is the phone on the same Wi-Fi as the tablet?';gm.className='err'};
+  x.send('token='+encodeURIComponent(t)+'&repo='+encodeURIComponent(rp))};
 </script></body></html>`

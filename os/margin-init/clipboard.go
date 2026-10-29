@@ -30,7 +30,11 @@ const (
 	cbRows        = 5 // rows on show; more go on further pages
 )
 
-type clipItem struct{ title, cmd string }
+// clipItem is one command; send (its fence is ```send) means its output goes to GitHub.
+type clipItem struct {
+	title, cmd string
+	send       bool
+}
 
 type clipState struct {
 	open    bool
@@ -40,6 +44,7 @@ type clipState struct {
 	status  string // "updated 13:40", "no internet: the saved copy", ...
 	fetched time.Time
 	rect    image.Rectangle // where the panel is on the screen
+	runs    int             // commands sent through cbrun, for their names
 }
 
 // parseClipboard reads CLIPBOARD.md's titles and fenced commands.
@@ -54,6 +59,9 @@ func parseClipboard(md string) []clipItem {
 		case strings.HasPrefix(t, "```"):
 			if inFence && cur != nil && cur.cmd == "" {
 				cur.cmd = strings.Trim(strings.Join(body, "\n"), "\n")
+			}
+			if !inFence && cur != nil && strings.TrimSpace(t[3:]) == "send" {
+				cur.send = true
 			}
 			inFence, body = !inFence, nil
 		case inFence:
@@ -166,7 +174,13 @@ func (c *console) drawClipboard() {
 		it := cb.items[from+i]
 		r := image.Rect(kbPad, y+6, c.s.W-kbPad, y+cbRowH-6)
 		ui.RoundRect(img, r, 16, rgb(0x2c2c2e))
-		apText(img, f.callout, r.Min.X+24, r.Min.Y+40, rgb(0xffffff), clip(f.callout, it.title, r.Dx()-48))
+		titleW := r.Dx() - 48
+		if it.send {
+			tag := "output goes to GitHub"
+			apTextRight(img, f.caption, r.Max.X-24, r.Min.Y+38, rgb(0x32d74b), tag)
+			titleW -= ui.TextWidth(f.caption, tag) + 24
+		}
+		apText(img, f.callout, r.Min.X+24, r.Min.Y+40, rgb(0xffffff), clip(f.callout, it.title, titleW))
 		cmd := strings.ReplaceAll(it.cmd, "\n", " ⏎ ")
 		ui.DrawText(img, c.reg, r.Min.X+24, r.Min.Y+80, rgb(0x64d2ff), clip(c.reg, cmd, r.Dx()-48))
 		y += cbRowH
@@ -204,7 +218,18 @@ func (c *console) clipboardTouch(p TouchPoint) {
 	n := min(len(cb.items)-from, cbRows)
 	switch {
 	case row < n:
-		cmd := strings.ReplaceAll(cb.items[from+row].cmd, "\n", "\r")
+		it := cb.items[from+row]
+		cmd := strings.ReplaceAll(it.cmd, "\n", "\r")
+		if it.send && alpineInstalled() {
+			// Run through cbrun, which shows the output and sends it to GitHub.
+			cb.runs++
+			id := strconv.FormatInt(time.Now().Unix(), 10) + "-" + strconv.Itoa(cb.runs)
+			dir := alpineRoot + "/tmp/margin-cb/"
+			os.MkdirAll(dir, 0o755)
+			os.WriteFile(dir+id+".sh", []byte(it.cmd+"\n"), 0o644)
+			os.WriteFile(dir+id+".title", []byte(it.title), 0o644)
+			cmd = "cbrun " + id
+		}
 		cb.open = false
 		c.goLive()
 		c.redrawAll()

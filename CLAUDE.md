@@ -17,6 +17,15 @@ no longer useful so the list stays short. In your answer, tell the user to open
 Terminal > Clipboard and tap the command by its title, instead of asking them to type it.
 (clipboard.go; the file is cached on the tablet in /data/condor/clipboard.md for offline use.)
 
+**Seeing the output without the user copying it:** open the fence with ` ```send ` for any
+command whose output you need. The tablet runs it through `cbrun`, which shows the output and
+uploads it to the **private** repo `aminoulogie/margin-results` as
+`results/<YYYY-MM-DD>/<HHMMSS>-<title-slug>.md` (command, exit code, output). When the user says
+they ran it, attach that repo (read access) and read the newest files there instead of asking
+for photos. The tablet's token is pasted once from the phone (Send to Books page > Link GitHub,
+github_link.go; saved 0600 in /data/condor/github.json); the results repo must be private (the
+link refuses a public one), never the public margin repo.
+
 ## Names (2026-10-27: the OS is Margin)
 The OS was called condor until 2026-10-27; it is **Margin** now (repo aminoulogie/margin;
 the PC tool `margin.exe`, the tablet program `margin-init`, the GPU helpers `os/margin-gl`
@@ -569,7 +578,9 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
       offline. Tap = typed into the tab on show, lines joined by returns, no final return. Pages of
       5. Rows under the panel aren't drawn while it's open (render skips them). Tests:
-      clipboard_test.go (also checks CLIPBOARD.md parses).
+      clipboard_test.go (also checks CLIPBOARD.md parses). ```send commands run through cbrun
+      (alpine.go: writes /tmp/margin-cb/N.{sh,title}, output to N.out, exit code to N.code) and
+      `margin-init cbsend` uploads them to the private results repo (github_link.go, contents API).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

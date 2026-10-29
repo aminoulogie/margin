@@ -176,7 +176,11 @@ func (a *agent) runTool(ctx context.Context, call cBlock) (string, bool) {
 		return "Updated " + p + ": " + ansiRE.ReplaceAllString(msg, ""), false
 	case "publish_to_github":
 		a.out.startSpin("Publishing")
-		res, err := publishFixes(ctx, a.cfg.GitHubToken, a.repo(), a.branch(), marginSrc, in.Message)
+		token := a.cfg.GitHubToken
+		if token == "" {
+			token = loadGitHubLink().Token // linked from the phone (github_link.go)
+		}
+		res, err := publishFixes(ctx, token, a.repo(), a.branch(), marginSrc, in.Message)
 		a.out.stopSpin()
 		if err != nil {
 			a.out.write(head("Publish", in.Message, false) + bad(err.Error()) + "\r\n")
