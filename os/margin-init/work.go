@@ -77,6 +77,7 @@ func (k *wk) btn(id string, r image.Rectangle) {
 }
 
 func (k *wk) text(f font.Face, x, y int, col color.RGBA, s string) int {
+	drawCheck()
 	apText(k.img, f, x, k.Y(y), col, s)
 	return x + ui.TextWidth(f, s)
 }
@@ -90,6 +91,7 @@ func (k *wk) textC(f font.Face, cx, y int, col color.RGBA, s string) {
 }
 
 func (k *wk) icon(name string, cx, cy, size int, col color.RGBA) {
+	drawCheck()
 	lucideIcon(k.img, name, cx, k.Y(cy), size, col)
 }
 
@@ -99,6 +101,7 @@ func (k *wk) card(r image.Rectangle) {
 }
 
 func (k *wk) cardIn(r image.Rectangle, fill color.RGBA) {
+	drawCheck()
 	r = r.Sub(image.Pt(0, k.oy))
 	ui.RoundRectRim(k.img, r, 20, 2, wkRim)
 	in := r.Inset(2)
@@ -867,9 +870,15 @@ func (c *console) wkRefreshLater() {
 				return
 			}
 			c.wkRefreshOn = false
+			tabs, pg := c.tabsOn, c.page
 			c.wkFresh = true
-			c.showPage()
+			done := yielding(c.showPage) // gives way to a touch (views.go)
 			c.wkFresh = false
+			if !done { // the sheet as it was stays on screen; the page under it, later
+				c.tabsOn, c.page = tabs, pg
+				c.wkRefreshOn = true
+				try()
+			}
 		})
 	}
 	try()

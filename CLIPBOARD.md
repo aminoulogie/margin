@@ -13,10 +13,10 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 /proc/1/root/data/condor/condor-init soma-check
 ```
 
-## Freeze: what Margin wrote before it stopped
+## Slow or frozen: what Margin wrote
 ```send
 L=/proc/1/root/data/condor/init.log
-grep -n -E "margin-init starting|panic|fatal error|out of memory|slow page|soma: sync" $L | tail -40
+grep -n -E "margin-init starting|panic|fatal error|out of memory|slow page|soma:|memory:|views:" $L | tail -60
 echo "--- last lines"
 tail -25 $L
 echo "--- memory"

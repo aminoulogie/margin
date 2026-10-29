@@ -635,12 +635,22 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       whose READ records changed (viewPrepStale; not the 5-minute clock, which is drawn on opening)
       is drawn again off screen once the tablet is left alone 1.5 s, one at a time, the 10 most
       recently shown (state from the entry's somaUI copy; only when linked, as the unlinked page
-      draws into the shared canvas). main sets debug.SetMemoryLimit(400 MB); a panic
+      draws into the shared canvas). **Follow-up (user: fast for a few minutes, then slow again):**
+      every Soma page reads todos, projects, timeEntries, findings and settings (rail badges, timer,
+      accent), so one sync touching any of them made all ~15 views stale, and each background/
+      refresh redraw (~0.5 s on the Atom) held drawMu while the user tapped. Now those drawings
+      give way to a finger: the touch loop marks itself waiting (touchWaits) and wk.text/icon/
+      cardIn call drawCheck, which stops a yielding() drawing (panic drawStopped, recovered; only
+      deferred locks under those helpers); it's tried again when idle. A sync's redraw of the view
+      on screen goes through viewRefreshLater (idle, yielding) too. Settings are tracked one by
+      one (trackName: "settings.x"; "settings." = all). init.log: "soma: pulled N records: kinds",
+      "memory: heap … views …" every 5 min (memLog), "views: made … ready in …", "views: refresh
+      gave way to a touch". main sets debug.SetMemoryLimit(400 MB); a panic
       in a touch is logged (init.log "touch: panic") instead of killing Margin. Live heap after
       going through every Soma page: 139 MB (was ~540). Tests: views_test.go, views_mem_test.go,
       tabs_speed_test.go (MARGIN_SPEED=1). Redrawn the same = nothing sent to the panel (Flush
       compares rows). testConsole turns views off (views.off) and the background drawing
-      (views.noPrep) unless a test turns them on. **Not yet verified on the tablet** ("Freeze: what Margin wrote" on the
+      (views.noPrep) unless a test turns them on. **Not yet verified on the tablet** ("Slow or frozen: what Margin wrote" on the
       Clipboard shows panics, memory and slow pages from init.log).
 - [x] **Yesterday's PC hours missing on the tablet** (2026-10-29, somadata.go, work_pages.go,
       work.go, somacheck.go): cause not confirmed yet (no tablet data). Soma's PC format matches

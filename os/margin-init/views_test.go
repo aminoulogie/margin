@@ -254,3 +254,72 @@ func TestViewsReadyInBackground(t *testing.T) {
 		}
 	}
 }
+
+// A view being brought up to date gives way to a touch waiting for the screen: the drawing
+// stops, nothing it was doing is left behind, and it's done again later.
+func TestViewsGiveWayToATouch(t *testing.T) {
+	c := workFixture(t)
+	drawMu.Lock()
+	defer drawMu.Unlock()
+	views.Lock()
+	views.off = false
+	views.Unlock()
+	t.Cleanup(func() { views.off = true })
+	c.setMode(modeSoma)
+	c.somaUI.work = "planner"
+	c.showPage()
+	pk := c.viewKey()
+	c.somaUI.work = "habits"
+	c.showPage()
+	somaToggleTodo("t4")
+	views.Lock()
+	old := views.m[pk]
+	views.Unlock()
+	c.lastInput = time.Now().Add(-time.Minute)
+	done := touchWaits() // a finger, waiting
+	c.viewPrepTick()
+	done()
+	views.Lock()
+	still := views.m[pk]
+	views.Unlock()
+	if still != old || !viewPrepStale(still) {
+		t.Fatal("the drawing should have stopped for the touch, and still be to do")
+	}
+	if drawYield.on.Load() || soma.reading() != nil || c.somaUI.work != "habits" || c.mode != modeSoma {
+		t.Fatal("a stopped drawing left something behind")
+	}
+	if !c.viewPrepTick() {
+		t.Fatal("left alone again, it should be drawn")
+	}
+	views.Lock()
+	ready := views.m[pk]
+	views.Unlock()
+	if ready == old || viewPrepStale(ready) {
+		t.Fatal("the planner wasn't brought up to date")
+	}
+}
+
+// Every Soma page reads a few settings: a change to another setting leaves them be.
+func TestViewsIgnoreOtherSettings(t *testing.T) {
+	c := workFixture(t)
+	drawMu.Lock()
+	defer drawMu.Unlock()
+	views.Lock()
+	views.off = false
+	views.Unlock()
+	t.Cleanup(func() { views.off = true })
+	c.setMode(modeSoma)
+	c.somaUI.work = "projects"
+	c.showPage()
+	views.Lock()
+	e := views.m[c.viewKey()]
+	views.Unlock()
+	somaPut("settings.someOtherThing", 3)
+	if viewStale(e, time.Now()) {
+		t.Fatalf("another setting made Projects stale (it read %v)", e.fields)
+	}
+	somaPut("settings.currency", "EUR")
+	if !viewStale(e, time.Now()) {
+		t.Fatal("the currency Projects shows should make it stale")
+	}
+}

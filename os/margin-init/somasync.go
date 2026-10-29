@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,6 +68,7 @@ type somaStore struct {
 	fieldGen    map[string]int64 // somaGen at each kind of record's last change (fieldOf)
 	allGen      int64            // somaGen when everything changed at once (a load, another vault)
 	reads       map[string]bool  // kinds read while a page is drawn (track), nil when not tracking
+	pulled      map[string]bool  // kinds a pull is bringing in (logged)
 }
 
 var soma = &somaStore{Recs: map[string]somaRec{}}
@@ -77,13 +79,30 @@ var soma = &somaStore{Recs: map[string]somaRec{}}
 // view is drawn again only when something it read has changed (views.go).
 var somaGen atomic.Int64
 
+// trackName is what a read or a change of record key is noted under: its kind, or for a
+// setting the setting itself (every page reads a few settings; a change to another one, which
+// the phone makes often, mustn't make them all out of date). "settings." is all of them.
+func trackName(key string) string {
+	if strings.HasPrefix(key, "settings.") {
+		return key
+	}
+	return somaField(key)
+}
+
 // bumpLocked notes a change to record key (or a pseudo-kind, like "standby"). Caller holds s.mu.
 func (s *somaStore) bumpLocked(key string) {
 	g := somaGen.Add(1)
 	if s.fieldGen == nil {
 		s.fieldGen = map[string]int64{}
 	}
-	s.fieldGen[somaField(key)] = g
+	n := trackName(key)
+	s.fieldGen[n] = g
+	if n != somaField(key) {
+		s.fieldGen["settings."] = g // for a page that lists every setting
+	}
+	if s.pulled != nil {
+		s.pulled[n] = true
+	}
 }
 
 // bump notes a change to something pages read that isn't a record (standby choices, the
@@ -97,7 +116,7 @@ func (s *somaStore) bump(field string) {
 // note records that the page being drawn reads field. Caller holds s.mu.
 func (s *somaStore) noteLocked(key string) {
 	if s.reads != nil {
-		s.reads[somaField(key)] = true
+		s.reads[trackName(key)] = true
 	}
 }
 
@@ -571,6 +590,9 @@ func (s *somaStore) sync() {
 	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	s.mu.Lock()
+	s.pulled = map[string]bool{}
+	s.mu.Unlock()
 	got := 0
 	var err error
 	for {
@@ -587,6 +609,17 @@ func (s *somaStore) sync() {
 		if !again {
 			break
 		}
+	}
+	s.mu.Lock()
+	var kinds []string
+	for k := range s.pulled {
+		kinds = append(kinds, k)
+	}
+	s.pulled = nil
+	s.mu.Unlock()
+	if got > 0 {
+		sort.Strings(kinds)
+		log.Printf("soma: pulled %d records: %s", got, strings.Join(kinds, " "))
 	}
 	s.mu.Lock()
 	s.running = false

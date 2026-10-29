@@ -251,7 +251,9 @@ func (c *console) keyboardShown(visible bool) {
 func (c *console) touchLoop() {
 	for {
 		err := readTouch("Goodix", c.s.fbW, c.s.fbH, c.s.rot, func(string, ...any) {}, func(pts []TouchPoint) {
+			got := touchWaits() // a drawing nobody's waiting for gives way (views.go)
 			drawMu.Lock()
+			got()
 			defer drawMu.Unlock()
 			// A bug in what a tap does must not take Margin down: that left the last picture
 			// frozen on the screen until a restart. Logged, and the next touch goes on.
