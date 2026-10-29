@@ -62,7 +62,7 @@ func statusOf(p wkProject, now time.Time) (string, color.RGBA) {
 	case "archived":
 		return "Archived", wkMuted
 	}
-	if d, ok := p.daysLeft(now); ok && d < 0 {
+	if p.overdue(now) {
 		return "Overdue", wkRed
 	}
 	if p.stale(now) || (p.Due == "" && !p.Touched.IsZero() && now.Sub(p.Touched) > 3*24*time.Hour) {

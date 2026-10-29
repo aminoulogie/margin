@@ -69,6 +69,8 @@ func main() {
 			os.Exit(code)
 		case "soma-check": // margin-init soma-check: the tablet's time records next to the relay's (somacheck.go)
 			os.Exit(runSomaCheck())
+		case "soma-plan": // margin-init soma-plan "Name" YYYY-MM-DD < plan: a plan project (work_plans.go)
+			os.Exit(runSomaPlan(os.Args[2:]))
 		case "claude": // the Terminal's Claude tab (claude.go); also /usr/local/bin/claude in Alpine
 			os.Exit(runClaude())
 		case "cbsend": // margin-init cbsend <base>: cbrun sends a Clipboard command's output (github_link.go)

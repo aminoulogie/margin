@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"math"
 	"math/big"
 	"slices"
@@ -269,6 +270,7 @@ type somaTodo struct {
 	Done, Cleared              bool
 	SlotDate                   string
 	SlotStart, SlotMins        int
+	col                        color.RGBA // drawn in this colour (a plan's step shown with the to-dos)
 }
 
 func somaTodos() []somaTodo {

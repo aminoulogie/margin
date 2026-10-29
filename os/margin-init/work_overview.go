@@ -192,7 +192,7 @@ func (k *wk) overview() int {
 	for _, p := range projects {
 		if p.Status == "active" {
 			active++
-			if d, ok := p.daysLeft(now); ok && d < 0 {
+			if p.overdue(now) {
 				overdue++
 			}
 		}
@@ -413,7 +413,7 @@ func (k *wk) overview() int {
 			dl = append(dl, p)
 		}
 	}
-	sort.SliceStable(dl, func(i, j int) bool { return dl[i].Due < dl[j].Due })
+	sort.SliceStable(dl, func(i, j int) bool { return dl[i].effDue() < dl[j].effDue() })
 	dh := 80 + 100*max(min(len(dl), 4), 1)
 	dc := image.Rect(726, y0, wkX1, y0+dh)
 	k.card(dc)
@@ -427,7 +427,7 @@ func (k *wk) overview() int {
 		d, _ := p.daysLeft(now)
 		ui.RoundRect(k.img, k.R(753, ry+40, 768, ry+55), 4, wkColour(p, idx[p.ID]))
 		k.text(wkFont("semi", 22), 787, ry+40, wkFG, clip(wkFont("semi", 22), p.Name, 280))
-		due, _ := time.Parse("2006-01-02", p.Due)
+		due, _ := time.Parse("2006-01-02", p.effDue())
 		k.text(wkFont("regular", 19), 787, ry+69, wkFaint, due.Format("Mon 2 Jan"))
 		n, unit, col := fmt.Sprint(d), "days", wkFG
 		if d < 0 {
@@ -444,7 +444,7 @@ func (k *wk) overview() int {
 	if len(dl) == 0 {
 		k.text(wkFont("regular", 20), 754, ry+54, wkMuted, "No deadlines set.")
 	}
-	return max(na.Max.Y, dc.Max.Y) + 30
+	return k.dueThisWeek(projects, max(na.Max.Y, dc.Max.Y)+30, now)
 }
 
 type wkAttn struct {
@@ -480,12 +480,16 @@ func wkAttention(projects []wkProject, todos []somaTodo, now time.Time) []wkAttn
 			title = p.Name + ": " + next
 		}
 		switch {
-		case ok && d < 0:
-			out = append(out, wkAttn{"alarm-clock", title, fmt.Sprintf("%s · %d days late", who, -d), "Overdue", wkRed, p.ID, d})
+		case p.overdue(now):
+			late := fmt.Sprintf("%s · %d days late", who, -d)
+			if n := p.overdueSteps(now); n > 0 && p.plan() {
+				late = fmt.Sprintf("%s · %d %s past their date", who, n, map[bool]string{true: "step", false: "steps"}[n == 1])
+			}
+			out = append(out, wkAttn{"alarm-clock", title, late, "Overdue", wkRed, p.ID, min(d, -1)})
 		case p.stale(now):
 			out = append(out, wkAttn{"history", title, who + " · nothing moved for 10 days", "Stale", wkAmber, p.ID, 50})
 		case ok && d <= 3:
-			due, _ := time.Parse("2006-01-02", p.Due)
+			due, _ := time.Parse("2006-01-02", p.effDue())
 			out = append(out, wkAttn{"flag", title, who, "Due " + due.Format("Mon"), wkAmber, p.ID, d})
 		}
 	}

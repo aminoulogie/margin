@@ -588,6 +588,9 @@ func (s *somaStore) sync() {
 	}
 	s.running = true
 	s.mu.Unlock()
+	if s == soma {
+		wkImportPlans() // (margin-init soma-plan)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	s.mu.Lock()
