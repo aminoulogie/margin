@@ -550,6 +550,9 @@ func (k *wk) planBoard(todos []somaTodo, now time.Time) int {
 	}{{"Today", "sun", "wk:type-open:newtask:" + today, nil}, {"This week", "calendar-range", "wk:type-open:newweek:" + mon, nil},
 		{"Deadlines", "calendar-clock", "", nil}, {"Done", "circle-check", "", nil}}
 	for _, t := range todos {
+		if isPractice(t) {
+			continue
+		}
 		if t.Cleared {
 			continue
 		}

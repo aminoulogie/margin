@@ -734,6 +734,18 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       one-line field. `margin-init soma-plan "Name" YYYY-MM-DD < plan` (Clipboard "Soma: add the
       Campus France plan") queues it in /data/condor/soma/plan-inbox; Margin takes it in at its
       next sync (wkImportPlans). Tests: work_plans_test.go. **Not yet verified on the tablet.**
+- [x] **Daily practice for projects + Work/Plans switch** (2026-10-29, work_practice.go; user: "French
+      test 30 min a day until the exam"). project.practices (tablet only; Soma ignores and keeps
+      it): label, start (min), mins, until (a milestone step id, or "due"), from, done{date},
+      entries{date: time entry}. Runs from its first day to the day before the milestone (moves
+      with it). Shown as timed blocks on the planner (pseudo to-dos "practice:<p>:<pr>:<date>";
+      todoTapID/todoTickID map their buttons; never on the board, never dragged), on the
+      Calendar's day ("Plans and practice"), under Habits as "Temporary habits" (then "Finished"),
+      and as a card on the project (client projects only when they have one). Ticking a day logs
+      its minutes as internal (not billed) time; unticking removes it. Sheet: done today, name,
+      time and minutes steppers, until (milestones / deadline), stop. Projects: a Work / Plans
+      switch (two icons + a switch, workSel "projectswk:pk"). Test: work_practice_test.go.
+      What the user picked next, in order: docs/SOMA-BACKLOG.md. **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
