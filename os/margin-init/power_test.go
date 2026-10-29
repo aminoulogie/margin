@@ -34,6 +34,14 @@ func testConsole(t *testing.T) *console {
 	})
 	// Nothing from Home in the background (not put back: stray arrivals read them later).
 	backgroundRedraws, homeLoads, turnAhead, wifiAutoScan = false, false, false, false
+	// Views drawn every time (tests check what a drawing shows), kept in a temp folder.
+	oldViewDir := viewDirFn
+	vd := t.TempDir()
+	viewDirFn = func() string { return vd }
+	views.Lock()
+	views.m, views.bytes, views.saved, views.off, views.async = nil, 0, nil, true, false
+	views.Unlock()
+	t.Cleanup(func() { viewDirFn = oldViewDir })
 	setPalette(true)
 	return c
 }

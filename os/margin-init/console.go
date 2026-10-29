@@ -62,28 +62,31 @@ type console struct {
 	pinMsg           string      // "Wrong passcode"
 	pinBG            *image.RGBA // the keypad, drawn once (passcode.go)
 	pinBGKey         string
-	pinBlur          *image.RGBA              // what was on the screen when the keypad opened, blurred and dimmed
-	lockBlur         *image.RGBA              // the lock screen blurred, made once it's up so the keypad opens at once
-	walls            wallState                // Settings > Wallpaper (wallpaper.go)
-	alarm            string                   // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
-	alarmDay         string                   // the day it was last dismissed
-	winding          bool                     // wind-down: warm and dim
-	weather          weatherNow               // Algiers, for the morning
-	somaReadSecs     float64                  // reading time not yet added to Soma (reader.go)
-	fieldBack        int                      // the cursor in the field being typed in, from its end (lineedit.go)
-	ringsDay         string                   // the day the rings card shows ("" for today)
-	homeEdit         bool                     // Home's widgets are being rearranged (a long press)
-	lastMargin       mode                     // the Margin page last open (Home, Library, Store, Words)
-	tasks            taskState                // Settings > Task Manager (taskman.go)
-	apps             appsState                // Settings > Linux Apps (apps.go)
-	df               dictFetch                // the open book's words, saved for offline Look Up (dict.go)
-	sc               scrollState              // pages and rows scrolled by a finger (scroll.go)
-	press            pressState               // the button under a finger, shown pressed (press.go)
-	edge             edgeState                // a swipe in from the left edge, going back (edgeback.go)
-	tapFrom          image.Rectangle          // the button being tapped, on the screen (a book opens out of it)
-	wifi             wifiUI                   // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
-	tabsOn           string                   // the selected tab of the page on screen ("" if it has no tab bar)
-	drag             dragState                // a to-do being dragged (work_drag.go)
+	pinBlur          *image.RGBA     // what was on the screen when the keypad opened, blurred and dimmed
+	lockBlur         *image.RGBA     // the lock screen blurred, made once it's up so the keypad opens at once
+	walls            wallState       // Settings > Wallpaper (wallpaper.go)
+	alarm            string          // the alarm is up: "sunrise", "ringing", "morning" (sleep.go)
+	alarmDay         string          // the day it was last dismissed
+	winding          bool            // wind-down: warm and dim
+	weather          weatherNow      // Algiers, for the morning
+	somaReadSecs     float64         // reading time not yet added to Soma (reader.go)
+	fieldBack        int             // the cursor in the field being typed in, from its end (lineedit.go)
+	ringsDay         string          // the day the rings card shows ("" for today)
+	homeEdit         bool            // Home's widgets are being rearranged (a long press)
+	lastMargin       mode            // the Margin page last open (Home, Library, Store, Words)
+	tasks            taskState       // Settings > Task Manager (taskman.go)
+	apps             appsState       // Settings > Linux Apps (apps.go)
+	df               dictFetch       // the open book's words, saved for offline Look Up (dict.go)
+	sc               scrollState     // pages and rows scrolled by a finger (scroll.go)
+	press            pressState      // the button under a finger, shown pressed (press.go)
+	edge             edgeState       // a swipe in from the left edge, going back (edgeback.go)
+	tapFrom          image.Rectangle // the button being tapped, on the screen (a book opens out of it)
+	wifi             wifiUI          // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
+	tabsOn           string          // the selected tab of the page on screen ("" if it has no tab bar)
+	drag             dragState       // a to-do being dragged (work_drag.go)
+	viewOn           string          // the kept view on screen (views.go)
+	viewFresh        bool            // showPage is drawing it fresh, not showing what was kept
+	viewRefreshGen   int
 	termBar          *page                    // the tab bar over the terminal, as a page (its taps)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top
