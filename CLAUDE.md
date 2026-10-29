@@ -455,6 +455,21 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       behind, the workout from history.timestamp − duration, slotted to-dos (overlaps in
       columns); tapping an empty half hour types a to-do there (somaAddTodoAt = addTodoAt +
       setTodoSlot: date = slot.date, scope day, cleanSlot to 15 min).
+- [x] **Feel: scrolling, touch, motion** (2026-10-28, fastscroll.go, press.go, edgeback.go,
+      wifiui.go): tall pages are turned once (lazily, by rows; blitPage's window is kept) into
+      the framebuffer's native layout, so a scroll frame is one copy per native row (PC: 0.42 ms
+      vs blitPage 2.8 ms; BenchmarkScrollFrame); sideways rows slide from a turned strip of the
+      whole row. One frame loop draws the finger's latest position per vsync (moves skipped,
+      never queued); fling (flingTau), rubber band past the ends + bounce, rows settle on a
+      cover (hrow.snap), paged swipes glide. Frames flush with Screen.frame (no shadow compare).
+      "scrolling: N a frame" in init.log every 120 frames. Motion (Animations + SmoothScroll)
+      on by default, migrated once (cfg.Motion). Buttons show pressed 70 ms after touch-down
+      (or at lift), dim if shaped, highlight if a row. Swipe in from the left edge = back
+      (backID: s:back, w:back, wk:back, so:notes, Settings' home). Books open out of their
+      cover (transition "open", CPU frame == GPU quads). Settings > Wi-Fi: scan list (wifi
+      scan -m), tap to join, password on the keyboard (masked). Fields get a 5-row text
+      keyboard (newTextKeyboard, follows dark/light); the Terminal keeps its own. Tests write
+      settings to a temp file (settingsPath var). **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

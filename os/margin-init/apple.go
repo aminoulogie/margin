@@ -311,6 +311,12 @@ func ring(img *image.RGBA, cx, cy, rad, width int, frac float64, track, c color.
 // --- the Books app's tab bar --------------------------------------------------------------
 
 // booksTabs is the floating tab bar of Apple Books on iPad, with the reading goal ring.
+// pillHit is where a small pill under the tab bar takes a tap: taller and a little wider
+// than it looks (a fingertip is bigger than 42 pixels), up to the gaps beside it.
+func pillHit(r image.Rectangle) image.Rectangle {
+	return image.Rect(r.Min.X-6, r.Min.Y-8, r.Max.X+6, r.Max.Y+14)
+}
+
 func (c *console) booksTabs(p *page, on string) {
 	f := apple()
 	img := p.img
@@ -358,13 +364,13 @@ func (c *console) booksTabs(p *page, on string) {
 				ui.RoundRect(img, r, 21, apTabBG)
 			}
 			apTextCenter(img, f.caption, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
-			p.buttons = append(p.buttons, button{t.id, r})
+			p.buttons = append(p.buttons, button{t.id, pillHit(r)})
 			sx += w + 12
 		}
 		sr := image.Rect(sx, 114, sx+64, 156)
 		ui.RoundRect(img, sr, 21, apTabBG)
 		iconMagnifier(img, sr.Min.X+32, 135, apLabel)
-		p.buttons = append(p.buttons, button{"tab:search", sr})
+		p.buttons = append(p.buttons, button{"tab:search", pillHit(sr)})
 	}
 	// Playbox's own tabs, under it: Discover, Library, Add-ons, Settings, and search.
 	if playbox {
@@ -379,7 +385,7 @@ func (c *console) booksTabs(p *page, on string) {
 			}
 			ui.RoundRect(img, r, 21, bg)
 			apTextCenter(img, f.caption, (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, apLabel, t.label)
-			p.buttons = append(p.buttons, button{t.id, r})
+			p.buttons = append(p.buttons, button{t.id, pillHit(r)})
 			sx += w + 12
 		}
 		sr := image.Rect(sx, 114, sx+64, 156)
