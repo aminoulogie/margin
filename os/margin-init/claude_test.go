@@ -25,7 +25,7 @@ func TestClaudeReadStream(t *testing.T) {
 		ev(`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}`) +
 		ev(`{"type":"message_stop"}`)
 	var text, tools string
-	rep, err := readStream(strings.NewReader(body), func(s string) { text += s }, func(n string) { tools += n })
+	rep, err := readStream(strings.NewReader(body), func(s string) { text += s }, func(n string) { tools += n }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestClaudeReadStream(t *testing.T) {
 		t.Fatalf("blocks %+v", rep.Blocks)
 	}
 	// Cut short: an error, with what had arrived.
-	rep, err = readStream(strings.NewReader(body[:200]), nil, nil)
+	rep, err = readStream(strings.NewReader(body[:200]), nil, nil, nil)
 	if err == nil || rep == nil {
 		t.Fatal("a cut stream should be an error")
 	}
