@@ -51,6 +51,7 @@ type videoReq struct {
 	job              *tjob
 	direct, local    string
 	from             mode
+	alts             []*addonStream // next torrents to try if this one finds no peers
 }
 
 type videoProbe struct {
@@ -187,7 +188,7 @@ type probeStream struct {
 
 // probeVideo asks ffprobe what the film is: its size, frame rate, length and sound.
 func probeVideo(ctx context.Context, url string) (*videoProbe, error) {
-	cmd := alpineCtxCmd(ctx, ffprobePath(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
+	cmd := alpineCtxCmd(ctx, ffprobePath(), "-probesize", "3000000", "-analyzeduration", "3000000", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
 	out, err := cmd.Output()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -452,7 +453,7 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		return
 	}
 	setPipeSize(pw, 16<<10) // a short pipe: what's heard is close to what was written
-	a := alpineCtxCmd(ctx, aplayPath, append([]string{"-D", soundDev()}, aplayArgs...)...)
+	a := alpineCtxCmd(ctx, aplayPath, filmAplayArgs(soundDev())...)
 	a.Stdin = pr
 	var errs lineRing
 	ep, _ := a.StderrPipe()
@@ -714,14 +715,42 @@ func (c *console) videoPrepare(v *videoPlayer) {
 		if !set("torrent", "") {
 			return
 		}
+		since := time.Now()
 		for {
 			st := engine.status(j)
+			if st.State == "ready" || st.State == "downloading" || st.State == "saved" {
+				break
+			}
+			// No peers after a while (or a failure): the next best source, by itself.
+			stuck := st.State == "resolving" && (time.Since(since) > 25*time.Second && st.All == 0 || time.Since(since) > 50*time.Second && st.Peers == 0)
+			if (stuck || st.State == "failed") && len(v.req.alts) > 0 {
+				next := v.req.alts[0]
+				nj, err := engine.start(next, false, "", v.req.item)
+				drawMu.Lock()
+				if c.vid != v {
+					drawMu.Unlock()
+					if err == nil {
+						engine.stopPlay(nj)
+					}
+					return
+				}
+				v.req.alts = v.req.alts[1:]
+				if err == nil {
+					engine.stopPlay(j)
+					j, v.req.job, since = nj, nj, time.Now()
+					seeds := "seeders unknown"
+					if n := next.seeders(); n >= 0 {
+						seeds = groupDigits(n) + " seeders"
+					}
+					c.toastVideo("No peers: trying " + next.quality() + " · " + seeds)
+					log.Printf("playbox: no peers for %s: trying the next source", st.Name)
+				}
+				drawMu.Unlock()
+				continue
+			}
 			if st.State == "failed" {
 				fail(st.Err)
 				return
-			}
-			if st.State == "ready" || st.State == "downloading" || st.State == "saved" {
-				break
 			}
 			select {
 			case <-v.ctx.Done():

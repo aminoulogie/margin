@@ -262,3 +262,63 @@ func currentSoundDev() string {
 func callOutputsOK() bool { return pbShowCallOutputs }
 
 var pbShowCallOutputs bool
+
+// The film's aplay. Asking for a short buffer (-B/-F) keeps the sound in step with the
+// picture, but some sound chips refuse those sizes ("Unable to install hw params") while the
+// plain settings the chime uses work. So each device is tried once, both ways, with a second
+// of silence, and the way that works is kept.
+var (
+	aplayModeMu sync.Mutex
+	aplayMode   = map[string]bool{} // device → the short buffer works
+	aplayTested = map[string]bool{}
+)
+
+func filmAplayArgs(dev string) []string {
+	aplayModeMu.Lock()
+	tested, short := aplayTested[dev], aplayMode[dev]
+	aplayModeMu.Unlock()
+	if !tested && aplayPath == "/usr/bin/aplay" {
+		short = probeAplay(dev, true)
+		if !short && !probeAplay(dev, false) {
+			log.Printf("playbox: aplay can't open %s either way", dev)
+		}
+		aplayModeMu.Lock()
+		aplayTested[dev], aplayMode[dev] = true, short
+		aplayModeMu.Unlock()
+	} else if !tested {
+		short = true
+	}
+	args := []string{"-D", dev}
+	if short {
+		return append(args, aplayArgs...)
+	}
+	for i := 0; i < len(aplayArgs); i++ { // without -B and -F
+		if aplayArgs[i] == "-B" || aplayArgs[i] == "-F" {
+			i++
+			continue
+		}
+		args = append(args, aplayArgs[i])
+	}
+	return args
+}
+
+// probeAplay plays a moment of silence the film's way; true if the device took it.
+func probeAplay(dev string, short bool) bool {
+	args := []string{"-q", "-D", dev, "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", "48000"}
+	if short {
+		args = append(args, "-B", aplayBufferUS, "-F", aplayPeriodUS)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := alpineCtxCmd(ctx, "/usr/bin/aplay", append(args, "-")...)
+	cmd.Stdin = bytes.NewReader(make([]byte, audioBytesSec/4))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("playbox: aplay %s (short buffer %v): %v %s", dev, short, err, lastLines(string(out), 1))
+		if !short {
+			pbLastProblem = "Sound device " + dev + ": " + lastLines(string(out), 1)
+		}
+		return false
+	}
+	return true
+}

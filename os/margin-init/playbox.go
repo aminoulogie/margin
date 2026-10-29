@@ -75,7 +75,9 @@ type pbDetail struct {
 	errs    map[string]string
 	from    string // the view it was opened from
 	gen     int
-	seriesY int // the series page's scroll, kept while an episode is open
+	seriesY int   // the series page's scroll, kept while an episode is open
+	warming bool  // pbPrewarm is starting it
+	warm    *tjob // the best torrent, connecting while the page is read (pbPrewarm)
 }
 
 func (d *pbDetail) info() metaItem {
@@ -105,7 +107,10 @@ type pbSettings struct {
 	Flip       bool   `json:"flipPicture,omitempty"` // the picture turned the other way up
 	Volume     int    `json:"volume"`                // percent, 0 to 150
 	Sort       string `json:"sourceSort,omitempty"`
+	SortChosen bool   `json:"sourceSortChosen,omitempty"` // picked by hand since "Starts Fastest" came
 }
+
+var pbClientOnce sync.Once
 
 var (
 	pbCfgMu sync.Mutex
@@ -321,10 +326,13 @@ func (c *console) pbSearch(q string) {
 // pbOpen opens a film's or series' page. Caller holds drawMu.
 func (c *console) pbOpen(it metaItem) {
 	pb := &c.pb
+	if pb.sel != nil {
+		c.pbDropWarm(pb.sel)
+	}
 	pb.gen++
 	d := &pbDetail{item: it, from: pb.view, gen: pb.gen, sort: pbSettingsNow().Sort, limit: 12, epLimit: 30, errs: map[string]string{}}
-	if d.sort == "" {
-		d.sort = "seeders"
+	if d.sort == "" || d.sort == "seeders" && !pbSettingsNow().SortChosen {
+		d.sort = "fast"
 	}
 	pb.sel = d
 	c.setScroll(modePlaybox, 0)
@@ -425,7 +433,7 @@ func (c *console) pbLoadSources(d *pbDetail, id string) {
 	pb := &c.pb
 	for _, a := range asks {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
 			var streams []*addonStream
 			var subs []addonSubtitle
@@ -446,17 +454,11 @@ func (c *console) pbLoadSources(d *pbDetail, id string) {
 			if pb.sel != d || (d.episode != "" && d.episode != id) || (d.episode == "" && d.item.Type == "series") {
 				return
 			}
-			seen := map[string]bool{}
-			for _, s := range d.streams {
-				seen[s.key()] = true
-			}
-			for _, s := range streams {
-				if !seen[s.key()] {
-					seen[s.key()] = true
-					d.streams = append(d.streams, s)
-				}
+			for _, s := range streams { // one list from every add-on, the same torrent once
+				d.streams = mergeStream(d.streams, s)
 			}
 			sortStreams(d.streams)
+			c.pbPrewarm(d)
 			subSeen := map[string]bool{}
 			for _, s := range d.subs {
 				subSeen[s.key()] = true
@@ -566,6 +568,7 @@ func (c *console) playboxPage() *page {
 		c.pbRedraw()
 	}
 	pb.items = pb.items[:0]
+	pbClientOnce.Do(func() { go engine.client() }) // started early, never while the screen waits
 	if pb.sel != nil {
 		if pb.sel.episode != "" {
 			return c.pbEpisodePage()
@@ -1839,12 +1842,14 @@ func (c *console) playboxTap(id string) bool {
 			return true
 		}
 	case id == "pb:back" && d != nil:
+		c.pbDropWarm(d)
 		c.transition("pop", image.Rectangle{}, func() {
 			pb.sel = nil
 			c.showPage()
 		})
 		return true
 	case id == "pb:epback" && d != nil:
+		c.pbDropWarm(d)
 		c.transition("pop", image.Rectangle{}, func() {
 			d.episode, d.streams, d.subs = "", nil, nil
 			c.setScroll(modePlaybox, d.seriesY)
@@ -1878,7 +1883,7 @@ func (c *console) playboxTap(id string) bool {
 	case strings.HasPrefix(id, "pb:sort:") && d != nil:
 		d.sort = strings.TrimPrefix(id, "pb:sort:")
 		cfg := pbSettingsNow()
-		cfg.Sort = d.sort
+		cfg.Sort, cfg.SortChosen = d.sort, true
 		cfg.save()
 	case strings.HasPrefix(id, "pb:q:") && d != nil:
 		d.quality, d.limit = strings.TrimPrefix(id, "pb:q:"), 12
@@ -2127,6 +2132,11 @@ func (c *console) pbPlay(d *pbDetail, s *addonStream) {
 	}
 	req := videoReq{title: title, item: it, episode: ep, epLabel: epLabel, start: pbLib.resume(it.ID, ep)}
 	req.subs, req.subLang = d.subs, d.sub
+	if d.warm != nil && d.warm.key != s.key() {
+		engine.stopPlay(d.warm)
+	}
+	d.warm = nil // the player has it now
+	req.alts = alternatives(d.streams, s)
 	if u := s.playableURL(); u != "" {
 		req.direct = u
 	} else {
@@ -2197,5 +2207,44 @@ func (c *console) pbWatchProgress(key string) {
 		if st := engine.status(j).State; st == "saved" || st == "failed" || st == "stopped" {
 			return
 		}
+	}
+}
+
+// pbPrewarm starts the best torrent of a page in the background as soon as it's known: its
+// details and first pieces arrive while the page is read, so Play starts at once. Caller
+// holds drawMu.
+func (c *console) pbPrewarm(d *pbDetail) {
+	if d.warm != nil || d.warming || (d.item.Type == "series" && d.episode == "") {
+		return
+	}
+	s := quickPick(d.streams)
+	if s == nil || s.playableURL() != "" || s.seeders() == 0 {
+		return
+	}
+	d.warming = true
+	it := d.info()
+	// In the background: the torrent client can take a while to start, and the screen must
+	// not wait for it (holding drawMu here froze the page before its sources showed).
+	go func() {
+		j, err := engine.start(s, false, "", it)
+		drawMu.Lock()
+		defer drawMu.Unlock()
+		d.warming = false
+		if err != nil {
+			return
+		}
+		if c.pb.sel != d || d.warm != nil {
+			engine.stopPlay(j)
+			return
+		}
+		d.warm = j
+	}()
+}
+
+// pbDropWarm stops a page's background torrent when the page is left without playing.
+func (c *console) pbDropWarm(d *pbDetail) {
+	if d.warm != nil {
+		engine.stopPlay(d.warm)
+		d.warm = nil
 	}
 }

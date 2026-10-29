@@ -492,7 +492,7 @@ func sortStreams(list []*addonStream) {
 
 // Source orders and filters (Playbox's backlog: seeders high to low by default).
 var sourceSorts = []struct{ id, label string }{
-	{"seeders", "Seeders"}, {"quality", "Quality"}, {"size", "Smallest"}, {"tablet", "Best Here"},
+	{"fast", "Starts Fastest"}, {"seeders", "Seeders"}, {"quality", "Quality"}, {"size", "Smallest"}, {"tablet", "Best Here"},
 }
 
 // sortTorrents orders torrent sources by how.
@@ -511,6 +511,10 @@ func sortTorrents(list []*addonStream, how string) {
 			}
 			if sa != sb {
 				return sa < sb
+			}
+		case "fast":
+			if fa, fb := fastScore(a), fastScore(b); fa != fb {
+				return fa > fb
 			}
 		case "tablet": // what plays smoothly here: not 4K or HEVC, 720p before 1080p, then seeders
 			if a.heavy() != b.heavy() {
@@ -550,12 +554,7 @@ func quickPick(streams []*addonStream) *addonStream {
 	if len(torrents) == 0 {
 		return nil
 	}
-	sortTorrents(torrents, "seeders")
-	for _, s := range torrents {
-		if !s.heavy() && s.seeders() != 0 {
-			return s
-		}
-	}
+	sortTorrents(torrents, "fast")
 	return torrents[0]
 }
 
@@ -622,15 +621,21 @@ type installedAddon struct {
 	Manifest addonManifest `json:"manifest"`
 }
 
-type featuredAddon struct{ id, name, summary, category, manifest string }
+type featuredAddon struct {
+	id, name, summary, category, manifest string
+	auto                                  bool // installed by itself (free, no account)
+}
 
 const cinemetaBase = "https://v3-cinemeta.strem.io"
 
 var featuredAddons = []featuredAddon{
-	{"cinemeta", "Cinemeta", "Movie and series catalogs, metadata and ratings", "Catalogs", cinemetaBase + "/manifest.json"},
-	{"torrentio", "Torrentio", "Community source index with direct and torrent sources.", "Community", "https://torrentio.strem.fun/manifest.json"},
-	{"opensubtitles", "OpenSubtitles v3", "Subtitles in multiple languages", "Subtitles", "https://opensubtitles-v3.strem.io/manifest.json"},
-	{"watchhub", "WatchHub", "Find official streaming availability", "Discovery", "https://watchhub.strem.io/manifest.json"},
+	{"cinemeta", "Cinemeta", "Movie and series catalogs, metadata and ratings", "Catalogs", cinemetaBase + "/manifest.json", true},
+	{"torrentio", "Torrentio", "Community source index with direct and torrent sources.", "Community", "https://torrentio.strem.fun/manifest.json", true},
+	{"opensubtitles", "OpenSubtitles v3", "Subtitles in multiple languages", "Subtitles", "https://opensubtitles-v3.strem.io/manifest.json", true},
+	{"knightcrawler", "Knightcrawler", "Torrent index (free, no debrid needed), merged with Torrentio's.", "Community", "https://knightcrawler.elfhosted.com/manifest.json", true},
+	{"mediafusion", "MediaFusion", "Large torrent index for films and series, merged with the rest.", "Community", "https://mediafusion.elfhosted.com/manifest.json", true},
+	{"comet", "Comet", "Torrent indexer; more sources when it has them without debrid.", "Community", "https://comet.elfhosted.com/manifest.json", true},
+	{"watchhub", "WatchHub", "Find official streaming availability", "Discovery", "https://watchhub.strem.io/manifest.json", false},
 }
 
 // addonStore keeps the installed add-ons in /data/condor/playbox/addons.json. On the first
@@ -678,9 +683,15 @@ func (as *addonStore) load() {
 	first := err != nil
 	stale := len(as.list) > 0 && as.list[0].Manifest.Name == "" // saved without manifests
 	as.mu.Unlock()
+	if !first && !stale {
+		go installNewAddons() // the torrent add-ons added since (once)
+	}
 	if first || stale {
 		go func() {
-			for _, f := range featuredAddons[:3] {
+			for _, f := range featuredAddons {
+				if !f.auto {
+					continue
+				}
 				as.install(f.manifest)
 			}
 		}()
