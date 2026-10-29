@@ -82,3 +82,30 @@ func TestSoundStuckOutputDoesntFreezeFilm(t *testing.T) {
 	aw.Close()
 	pr.Close()
 }
+
+// The speaker route is Android's (asound.conf's pcm.speaker hooks), set with its alsa_amixer.
+func TestSoundRouteCloverview(t *testing.T) {
+	dir := t.TempDir()
+	log := dir + "/calls"
+	fake := dir + "/alsa_amixer"
+	os.WriteFile(fake, []byte("#!/bin/sh\necho \"$*\" >> "+log+"\n"), 0o755)
+	old := androidAmixer
+	androidAmixer = fake
+	t.Cleanup(func() { androidAmixer = old })
+	if err := routeCloverview("4", false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(log)
+	got := string(b)
+	for _, want := range []string{"-q -c 4 cset name=LPE IHF mixer 3", "-q -c 4 cset name=IHFAMP_SD_N Switch on", "-q -c 4 cset name=HP Amp Switch off"} {
+		if !strings.Contains(got, want+"\n") {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	os.Remove(log)
+	routeCloverview("4", true)
+	b, _ = os.ReadFile(log)
+	if !strings.Contains(string(b), "name=HP Amp Switch on\n") || !strings.Contains(string(b), "name=LPE headset mixer 3\n") {
+		t.Fatalf("headphones:\n%s", b)
+	}
+}

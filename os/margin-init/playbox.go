@@ -1706,7 +1706,10 @@ func (c *console) pbSettingsPage() *page {
 
 	head("Sound output")
 	cur := currentSoundDev()
-	outs := []soundOut{{dev: "", name: "Automatic (the tablet's own chip)"}}
+	outs := []soundOut{{dev: "", name: "Speaker (the tablet's own chip)"}}
+	if cloverviewCard() {
+		outs = append(outs, soundOut{dev: soundHeadphones, name: "Headphones (the jack)"})
+	}
 	calls := 0
 	for _, o := range soundOutputs() {
 		if o.call {

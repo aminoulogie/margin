@@ -589,6 +589,14 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Android's routes: /system/etc/parameter-framework (Settings/Audio/AudioConfigurableDomains.xml,
       Structure/Audio/CirrusLogicSubsystem.xml, LPEMixerSubsystem.xml). Next: copy Android's "media to
       IHF/headset" settings and set them with alsa_amixer in setupSound.
+      **Cause found (2026-10-29, Sound 5):** Android's /system/etc/asound.conf opens the chip through
+      hooks that set the route first: pcm.speaker = SPK Amp on, SPKLO Amp on, HP Amp off, EAR Amp off,
+      'LPE IHF mixer' 3 (Mixed), 'ESL-ASP Mux' 1, 'SPK-ASP Mux' 0, 'IHFAMP_SD_N Switch' on;
+      pcm.headphone = HP Amp on, SPK/SPKLO/EAR Amp off, 'LPE headset mixer' 3 (+ IHFAMP off in
+      pcm.headset). On the tablet the LPE mixers were 0 (None) and IHFAMP off → the stall. Fix:
+      setupSound calls routeCloverview (video.go) before every sound, with Android's alsa_amixer run
+      on Android's side; Playbox > Settings > Sound output: "Speaker" (default) and "Headphones (the
+      jack)" (soundHeadphones). Jack detection not done yet.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
