@@ -62,15 +62,101 @@ type somaStore struct {
 	LastOK      time.Time          `json:"last_ok"`
 	lastErr     string
 	running     bool
-	again       bool   // changed while syncing: one more round when it's done
-	changed     func() // called (without locks) after a pull brought something new
+	again       bool             // changed while syncing: one more round when it's done
+	changed     func()           // called (without locks) after a pull brought something new
+	fieldGen    map[string]int64 // somaGen at each kind of record's last change (fieldOf)
+	allGen      int64            // somaGen when everything changed at once (a load, another vault)
+	reads       map[string]bool  // kinds read while a page is drawn (track), nil when not tracking
 }
 
 var soma = &somaStore{Recs: map[string]somaRec{}}
 
 // somaGen counts changes to Soma's records (an edit here, a pull from the relay): a page drawn
 // at one count is still right while it hasn't moved (the workstation keeps drawn pages).
+// Each kind of record also remembers the count at its own last change (fieldGen), so a kept
+// view is drawn again only when something it read has changed (views.go).
 var somaGen atomic.Int64
+
+// bumpLocked notes a change to record key (or a pseudo-kind, like "standby"). Caller holds s.mu.
+func (s *somaStore) bumpLocked(key string) {
+	g := somaGen.Add(1)
+	if s.fieldGen == nil {
+		s.fieldGen = map[string]int64{}
+	}
+	s.fieldGen[somaField(key)] = g
+}
+
+// bump notes a change to something pages read that isn't a record (standby choices, the
+// training sheet), under the name pages read it by (soma.note).
+func (s *somaStore) bump(field string) {
+	s.mu.Lock()
+	s.bumpLocked(field)
+	s.mu.Unlock()
+}
+
+// note records that the page being drawn reads field. Caller holds s.mu.
+func (s *somaStore) noteLocked(key string) {
+	if s.reads != nil {
+		s.reads[somaField(key)] = true
+	}
+}
+
+func (s *somaStore) note(field string) {
+	s.mu.Lock()
+	s.noteLocked(field)
+	s.mu.Unlock()
+}
+
+// track starts noting the kinds of record read; tracked stops and lists them. Drawing is one
+// page at a time (drawMu), so one set is enough.
+func (s *somaStore) track() {
+	s.mu.Lock()
+	s.reads = map[string]bool{}
+	s.mu.Unlock()
+}
+
+func (s *somaStore) tracked() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.reads))
+	for f := range s.reads {
+		out = append(out, f)
+	}
+	s.reads = nil
+	return out
+}
+
+// reading lists the kinds read so far in the drawing being tracked (nil when none is).
+func (s *somaStore) reading() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reads == nil {
+		return nil
+	}
+	out := make([]string, 0, len(s.reads))
+	for f := range s.reads {
+		out = append(out, f)
+	}
+	return out
+}
+
+// changedSince: any of these kinds changed after count gen.
+func (s *somaStore) changedSince(fields []string, gen int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.allGen > gen {
+		return true
+	}
+	for _, f := range fields {
+		if s.fieldGen[f] > gen {
+			return true
+		}
+	}
+	return false
+}
+
+// bumpAllLocked: everything may have changed. Caller holds s.mu.
+func (s *somaStore) bumpAllLocked() { s.allGen = somaGen.Add(1) }
 
 // --- keys (crypto.ts) -----------------------------------------------------------------------
 
@@ -228,16 +314,14 @@ func (s *somaStore) load() {
 		s.loaded = true
 		if b, err := os.ReadFile(filepath.Join(somaDir, "state.json")); err == nil {
 			json.Unmarshal(b, s)
-			somaGen.Add(1) // what was read before (nothing) is out of date
 		}
 		if s.Recs == nil {
 			s.Recs = map[string]somaRec{}
-			somaGen.Add(1)
 		}
+		s.bumpAllLocked()
 		for k, r := range s.Recs { // kinds no longer kept (older versions kept everything)
 			if !somaFields[somaField(k)] && !r.Dirty {
 				delete(s.Recs, k)
-				somaGen.Add(1)
 			}
 		}
 		if s.Fields != somaFieldsVersion { // kinds kept now that weren't: pull them again
@@ -284,6 +368,7 @@ func (s *somaStore) setLinkLocked(l somaLink) error {
 	}
 	if s.keys != nil && s.keys.vault != k.vault { // another vault: start over
 		s.Recs, s.Seq = map[string]somaRec{}, 0
+		s.bumpAllLocked()
 	}
 	s.link, s.keys = &l, k
 	if s.Device == "" {
@@ -384,6 +469,7 @@ func (s *somaStore) linked() bool {
 func (s *somaStore) get(key string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.noteLocked(key)
 	if r, ok := s.Recs[key]; ok && r.V != nil {
 		return *r.V
 	}
@@ -396,6 +482,7 @@ func (s *somaStore) values(keys []string) []*string {
 	defer s.mu.Unlock()
 	out := make([]*string, len(keys))
 	for i, k := range keys {
+		s.noteLocked(k)
 		out[i] = s.Recs[k].V
 	}
 	return out
@@ -405,6 +492,7 @@ func (s *somaStore) values(keys []string) []*string {
 func (s *somaStore) keysWith(prefix string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.noteLocked(prefix)
 	var out []string
 	for k, r := range s.Recs {
 		if strings.HasPrefix(k, prefix) && r.V != nil {
@@ -427,7 +515,7 @@ func (s *somaStore) put(key, value string) {
 		v = &value
 	}
 	s.Recs[key] = somaRec{V: v, T: t, D: s.Device, Dirty: true}
-	somaGen.Add(1)
+	s.bumpLocked(key)
 	s.saveLocked()
 	s.mu.Unlock()
 	go s.sync()
@@ -567,7 +655,7 @@ func (s *somaStore) pull(ctx context.Context) (int, error) {
 			// change wins on every device, so take it (skipping it left the tablet stale for
 			// good, as its pull position had already moved past it).
 			s.Recs[e.Key] = somaRec{V: e.Value, T: e.T, D: e.Device}
-			somaGen.Add(1)
+			s.bumpLocked(e.Key)
 			n++
 		}
 		s.mu.Unlock()

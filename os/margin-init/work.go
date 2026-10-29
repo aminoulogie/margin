@@ -612,6 +612,9 @@ func (c *console) workPage() *page {
 		su.sheetStack = nil
 	}
 	if su.sheet == "" && su.undo == nil {
+		if cap(wkOverlayPix) > 8*c.s.W*c.viewH() { // a tall page's copy for the undo offer: let go
+			wkOverlayPix = nil
+		}
 		return c.workBase(false)
 	}
 	// A sheet or the undo offer is laid over a copy of the page as it is without them, and
@@ -657,18 +660,24 @@ func (c *console) workBase(stale bool) *page {
 	}
 	if e := wkPageCache.find(key); e != nil {
 		c.tabsOn = e.tabsOn
+		for _, f := range e.fields { // what its drawing read, for the view kept of it
+			soma.note(f)
+		}
 		return e.p
 	}
 	if stale && !c.wkFresh {
 		if e := wkPageCache.ofView(view); e != nil {
 			c.tabsOn = e.tabsOn
+			for _, f := range e.fields {
+				soma.note(f)
+			}
 			c.wkRefreshLater()
 			return e.p
 		}
 	}
 	img := wkPageCache.canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
-	p := &page{img: img, header: tabsH}
+	p := &page{img: img, header: tabsH, owned: true}
 	// Margin's tab bar stays at the top: the pages sit under it.
 	k := &wk{c: c, p: p, img: img, oy: c.barH - (tabsH - 24)}
 	k.glow()
@@ -713,13 +722,12 @@ func (c *console) workBase(stale bool) *page {
 	k.oy = c.barH - (tabsH - 24) // a page may have moved its lower part down
 	if end > h {
 		su.need[needKey] = end
-		if wkPageCache.next != nil { // drawn again, taller: this picture is free
-			wkPageCache.spare = append(wkPageCache.spare, wkPageCache.next)
-			wkPageCache.next = nil
-		}
-		return c.workBase(stale)
+		return c.workBase(stale) // drawn again, taller
 	}
 	if end < h && h > c.viewH() {
+		if end < h*3/4 { // much shorter than before: drawn at its size next time
+			su.need[needKey] = end
+		}
 		p.img = img.SubImage(image.Rect(0, 0, w, max(end, c.viewH()))).(*image.RGBA)
 		k.img = p.img
 	}
@@ -767,7 +775,7 @@ func wkOverlay(base *page) *page {
 		copy(im.Pix[y*im.Stride:][:4*w], b.Pix[b.PixOffset(b.Rect.Min.X, b.Rect.Min.Y+y):][:4*w])
 	}
 	p := *base
-	p.img = im
+	p.img, p.owned = im, false // (its picture is the next overlay's too: kept, it'd be copied)
 	p.buttons, p.rowBtns = slices.Clone(base.buttons), maps.Clone(base.rowBtns)
 	return &p
 }
@@ -869,7 +877,9 @@ func (c *console) wkRefreshLater() {
 
 const wkRefreshIdle = 300 * time.Millisecond
 
-// wkPageCache keeps the last few workstation pages drawn, each in its own picture.
+// wkPageCache keeps the last few workstation pages drawn, each in its own picture. A picture
+// is never drawn into again for another page: the views kept for the tabs (views.go) hold
+// the same pictures, rather than copies of them.
 var wkPageCache wkPages_
 
 type wkCached struct {
@@ -877,17 +887,16 @@ type wkCached struct {
 	view   string // the page and its choices; key adds what it shows (the records, the clock)
 	p      *page
 	tabsOn string
+	fields []string // the kinds of Soma record its drawing read
 	used   int
 }
 
 type wkPages_ struct {
 	list  []*wkCached
-	spare []*image.RGBA // pictures of pages dropped, drawn into again
 	clock int
-	next  *image.RGBA // the picture the page being drawn is in
 }
 
-const wkCacheN = 5
+const wkCacheN = 3
 
 func (pc *wkPages_) find(key string) *wkCached {
 	if key == "" {
@@ -918,38 +927,22 @@ func (pc *wkPages_) ofView(view string) *wkCached {
 	return nil
 }
 
-// canvas is a picture for a page about to be drawn: not one a kept page is in.
+// canvas is a fresh picture for a page about to be drawn.
 func (pc *wkPages_) canvas(w, h int) *image.RGBA {
-	for i, im := range pc.spare {
-		if im.Rect.Dx() == w && cap(im.Pix) >= 4*w*h {
-			pc.spare = append(pc.spare[:i], pc.spare[i+1:]...)
-			im = &image.RGBA{Pix: im.Pix[:4*w*h], Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
-			pc.next = im
-			return im
-		}
-	}
-	pc.next = image.NewRGBA(image.Rect(0, 0, w, h))
-	return pc.next
+	return image.NewRGBA(image.Rect(0, 0, w, h))
 }
 
-// keep remembers the page just drawn (key "": not kept, its picture is drawn into next time).
-// One page is kept a view: the one drawn before (older records) goes.
+// keep remembers the page just drawn (key "": not kept). One page is kept a view: the one
+// drawn before (older records) goes.
 func (pc *wkPages_) keep(key, view string, p *page, tabsOn string) {
-	im := pc.next
-	pc.next = nil
-	if im == nil {
+	if key == "" {
 		return
 	}
 	for i := 0; i < len(pc.list); i++ {
-		if e := pc.list[i]; e.key == key || view != "" && e.view == view {
-			pc.spare = append(pc.spare, e.p.img)
+		if e := pc.list[i]; e.key == key || e.view == view {
 			pc.list = append(pc.list[:i], pc.list[i+1:]...)
 			i--
 		}
-	}
-	if key == "" {
-		pc.spare = append(pc.spare[:0], im)
-		return
 	}
 	if len(pc.list) >= wkCacheN {
 		old := 0
@@ -958,26 +951,14 @@ func (pc *wkPages_) keep(key, view string, p *page, tabsOn string) {
 				old = i
 			}
 		}
-		pc.spare = append(pc.spare, pc.list[old].p.img)
 		pc.list = append(pc.list[:old], pc.list[old+1:]...)
 	}
-	if len(pc.spare) > 2 {
-		pc.spare = pc.spare[len(pc.spare)-2:]
-	}
 	pc.clock++
-	pc.list = append(pc.list, &wkCached{key: key, view: view, p: p, tabsOn: tabsOn, used: pc.clock})
+	pc.list = append(pc.list, &wkCached{key: key, view: view, p: p, tabsOn: tabsOn, fields: soma.reading(), used: pc.clock})
 }
 
 // drop forgets every kept page (what they show has changed in a way the key can't see).
-func (pc *wkPages_) drop() {
-	for _, e := range pc.list {
-		pc.spare = append(pc.spare, e.p.img)
-	}
-	pc.list = nil
-	if len(pc.spare) > 2 {
-		pc.spare = pc.spare[len(pc.spare)-2:]
-	}
-}
+func (pc *wkPages_) drop() { pc.list = nil }
 
 // workKey names the workstation page on show: view is the page and its choices (not what's
 // laid over it: a sheet, the undo offer), content what it shows that changes by itself (the
@@ -993,7 +974,7 @@ func (c *console) workKey() (view, content string) {
 	su.calMonth, su.dateWhat, su.dateCur, su.dateTitle = time.Time{}, "", "", ""
 	seeded := loadSeed() != nil
 	view = fmt.Sprintf("%v|%v|%v|%v|%d", su, c.cfg.SomaHidden, wkLime, seeded, c.barH)
-	content = fmt.Sprintf("%d|%s|%s", somaGen.Load(), viewBucket(time.Now()), wkSyncShown(&su))
+	content = fmt.Sprintf("%d|%s|%s", somaGen.Load(), viewClock(time.Now()), wkSyncShown(&su))
 	return view, content
 }
 
@@ -1034,7 +1015,15 @@ func (c *console) workTap(id string) bool {
 func (c *console) wkGo(page, sub string) {
 	su := &c.somaUI
 	su.work, su.workSub, su.sheet, su.sheetStack, su.toTop = page, sub, "", nil, true
+	// What the PC and the phone changed comes in now, not at the next two-minute sync (the
+	// page shows at once from what was kept, and is drawn again if the pull changed it).
+	if time.Since(wkLastSync) > 20*time.Second {
+		wkLastSync = time.Now()
+		go soma.sync()
+	}
 }
+
+var wkLastSync time.Time // wkGo's last sync. Caller holds drawMu.
 
 // wkHandled says whether a button id does something (the dead-button test asks).
 func wkHandled(id string) bool {

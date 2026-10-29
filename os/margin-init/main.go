@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -66,6 +67,8 @@ func main() {
 			}
 			fmt.Printf("alpine-run: exit %d\n", code)
 			os.Exit(code)
+		case "soma-check": // margin-init soma-check: the tablet's time records next to the relay's (somacheck.go)
+			os.Exit(runSomaCheck())
 		case "claude": // the Terminal's Claude tab (claude.go); also /usr/local/bin/claude in Alpine
 			os.Exit(runClaude())
 		case "cbsend": // margin-init cbsend <base>: cbrun sends a Clipboard command's output (github_link.go)
@@ -90,6 +93,10 @@ func main() {
 	}
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	log.Printf("margin-init starting, pid %d", os.Getpid())
+	// A 32-bit program on a 2 GB tablet: the collector works harder rather than let the heap
+	// grow past this (it had grown past a gigabyte, and the tablet froze). Soft: a heap that
+	// truly needs more still gets it.
+	debug.SetMemoryLimit(400 << 20)
 	// Survive the end of the adb/shell session that may have started us by hand.
 	signal.Ignore(syscall.SIGHUP)
 	fixClock()

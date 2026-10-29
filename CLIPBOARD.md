@@ -8,6 +8,22 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Time: yesterday's hours, tablet vs Soma's sync
+```send
+/proc/1/root/data/condor/condor-init soma-check
+```
+
+## Freeze: what Margin wrote before it stopped
+```send
+L=/proc/1/root/data/condor/init.log
+grep -n -E "margin-init starting|panic|fatal error|out of memory|slow page|soma: sync" $L | tail -40
+echo "--- last lines"
+tail -25 $L
+echo "--- memory"
+grep -E "MemTotal|MemFree|MemAvailable|^Cached" /proc/meminfo
+P=$(pidof condor-init); [ -n "$P" ] && grep -E "VmRSS|VmPeak" /proc/$P/status
+```
+
 ## Sound 8: switch the speaker on the way Android does, then play the chime
 ```send
 A=/system/bin/alsa_amixer

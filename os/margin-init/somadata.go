@@ -77,6 +77,7 @@ var somaLists struct {
 // last). The items are shared with the next callers until the records change: change a copy
 // (somaObj, somaPatch), never one of these.
 func somaList(field string) []obj {
+	soma.note(field) // read, kept or not (the views kept say what their pages read)
 	gen := somaGen.Load()
 	somaLists.Lock()
 	if somaLists.st != soma || somaLists.gen != gen {
@@ -115,9 +116,29 @@ func somaListRead(field string) []obj {
 	sort.Strings(rest)
 	keys = append(keys, rest...)
 	out := make([]obj, 0, len(keys))
+	seen = map[string]bool{} // now: the ids read
 	for i, v := range soma.values(keys) {
 		if o := somaDecode(keys[i], v); o != nil {
 			out = append(out, o)
+			seen[strings.TrimPrefix(keys[i], field+"#")] = true
+		}
+	}
+	// Soma sends a list as one record when it can't split it (an item without an id, or two
+	// with the same one: records.ts, idArray); its items are read from there.
+	if whole := soma.get(field); strings.HasPrefix(strings.TrimSpace(whole), "[") {
+		var items []any
+		json.Unmarshal([]byte(whole), &items)
+		for _, it := range items {
+			o, _ := it.(obj)
+			if o == nil {
+				continue
+			}
+			if id := str(o["id"]); id == "" || !seen[id] {
+				out = append(out, o)
+				if id != "" {
+					seen[id] = true
+				}
+			}
 		}
 	}
 	return out

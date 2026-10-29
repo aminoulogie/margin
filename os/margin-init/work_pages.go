@@ -327,7 +327,20 @@ func (k *wk) timePage() int {
 	var rows []row
 	var dayTot [7]float64
 	grand := 0.0
+	// Hours on a project the tablet doesn't have (deleted, or not synced yet) count too, as
+	// they do on the PC.
+	sheetProjects := projects
+	known := map[string]bool{}
 	for _, p := range projects {
+		known[p.ID] = true
+	}
+	for _, e := range entries {
+		if !known[e.ProjectID] {
+			known[e.ProjectID] = true
+			sheetProjects = append(sheetProjects[:len(sheetProjects):len(sheetProjects)], wkProject{ID: e.ProjectID, Name: "Deleted project", order: len(sheetProjects)})
+		}
+	}
+	for _, p := range sheetProjects {
 		r := row{p: p}
 		for i := range 7 {
 			d := wmon.AddDate(0, 0, i)
