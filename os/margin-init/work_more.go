@@ -198,6 +198,9 @@ func (k *wk) worklog() int {
 		k.boxBtn("so:type:clockin", 900, 526, 1136, 586, "timer", "Clock in", wkLime, wkOnLime)
 	}
 
+	if t := k.sel("tab", 0); t > 0 {
+		return k.worklogTab(t, 640)
+	}
 	// The shifts, and the clients.
 	y := 640
 	sh := image.Rect(wkX0, y, 690, y+96+84*max(len(shifts), 1))
@@ -316,6 +319,9 @@ func (k *wk) findingsPage() int {
 	}
 	rank := map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
 	sort.SliceStable(list, func(i, j int) bool { return rank[list[i].Severity] < rank[list[j].Severity] })
+	if t := k.sel("tab", 0); t > 0 {
+		return k.findingGroups(list, name, t, 572)
+	}
 	y := 572
 	lc := image.Rect(wkX0, y, wkX1, y+20+96*max(len(list), 1))
 	k.card(lc)
@@ -552,8 +558,11 @@ func (k *wk) nutrition() int {
 	n := somaNutrition(date)
 	day := somaObj("nutrition/" + date)
 	k.header([]string{"Personal", "Nutrition"}, "Nutrition", time.Now().In(displayZone).Format("Monday 2 January"), color.RGBA{})
-	k.primary("so:type:food", "plus", "Add food", wkX1)
+	k.primary("wk:type-open:food:"+somaToday(), "plus", "Add food", wkX1)
 	k.tabs("wk:tab", []string{"Dashboard", "Log", "Week"}, nil, k.sel("tab", 0))
+	if t := k.sel("tab", 0); t > 0 {
+		return k.nutritionTab(t)
+	}
 	goals := somaObj("settings.goals")
 	gC, gF := num(goals["carbs"]), num(goals["fat"])
 	if gC == 0 {
@@ -645,13 +654,20 @@ func (k *wk) nutrition() int {
 // --- mind -----------------------------------------------------------------------------------------
 
 func (k *wk) mindPage() int {
+	if id, ok := strings.CutPrefix(k.c.somaUI.workSub, "note:"); ok {
+		return k.notePage(id)
+	}
 	date := somaToday()
 	goal := num(jsonValue(soma.get("settings.readingGoalMin")))
 	if goal <= 0 {
 		goal = 30
 	}
 	k.header([]string{"Personal", "Mind"}, "Mind", "Reading, and the notes vault", color.RGBA{})
+	k.primary("wk:sheet-open:readlog:", "plus", "Log reading", wkX1)
 	k.tabs("wk:tab", []string{"Reading", "Notes"}, nil, k.sel("tab", 0))
+	if k.sel("tab", 0) == 1 {
+		return k.notesTab()
+	}
 	days := lastDays(28)
 	var mins []float64
 	streak := 0
@@ -701,7 +717,7 @@ func (k *wk) mindPage() int {
 		if nt.Mtime > 0 {
 			k.textR(wkFont("regular", 17), 1136, ry+34, wkFaint, time.UnixMilli(nt.Mtime).In(displayZone).Format("2 Jan"))
 		}
-		k.btn("so:note:"+nt.ID, k.R(wkX0, ry, wkX1, ry+72))
+		k.btn("wk:note:"+nt.ID, k.R(wkX0, ry, wkX1, ry+72))
 		ry += 72
 	}
 	if len(notes) == 0 {
@@ -846,7 +862,7 @@ func wkSetSetting(key, text string) {
 func (k *wk) settingsPage() int {
 	k.header([]string{"Soma", "Settings"}, "Settings", "Soma on this tablet: you, your targets, your clients, sync", color.RGBA{})
 	su := &k.c.somaUI
-	y := 236
+	y := k.accentCard(236)
 	// The groups as cards, a row per setting; a tap types a new value.
 	groups := []string{"You", "Work", "Body", "Mind"}
 	for _, g := range groups {

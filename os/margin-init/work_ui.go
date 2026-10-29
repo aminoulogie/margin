@@ -451,13 +451,21 @@ func (k *wk) sheetCal(img *image.RGBA, r image.Rectangle, it wkRow, btns *[]butt
 // up, prompt shown until something is typed, initial already in it.
 func (c *console) wkType(field, prompt, initial string) {
 	su := &c.somaUI
-	if su.sheet != "" { // typed from a sheet: back to it after
-		su.sheetBack, su.sheet = su.sheet, ""
+	if su.sheet != "" { // typed from a sheet: back to it after (not to a menu of things to add)
+		if name, _, _ := strings.Cut(su.sheet, ":"); !wkMenuSheets[name] {
+			su.sheetBack = su.sheet
+		} else {
+			su.sheetStack = nil
+		}
+		su.sheet = ""
 	}
 	su.typing, su.field, su.editing, su.prompt = true, "w."+field, initial, prompt
 	c.fieldBack = 0
 	c.skb.visible = true
 }
+
+// wkMenuSheets are menus of things to add: done with once something is chosen.
+var wkMenuSheets = map[string]bool{"create": true, "addmoney": true, "newentry": true, "switchproj": true, "readlog": true, "addtime": true}
 
 // wkTyped hands what was typed to its field's handler, then shows the sheet it was typed from.
 func (c *console) wkTyped(field, text string) {

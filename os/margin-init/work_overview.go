@@ -85,6 +85,9 @@ func (k *wk) overview() int {
 	x := k.primary("wk:create", "plus", "Create", wkX1)
 	k.square("wk:bell", "bell-dot", x-13)
 	k.tabs("wk:tab", []string{"Overview", "Results", "Clients", "Activity"}, nil, k.sel("tab", 0))
+	if t := k.sel("tab", 0); t > 0 {
+		return k.overviewTab(t)
+	}
 	rng := k.sel("chip", 0)
 	k.chips("wk:chip", 308, []string{"This week", "Last week", "This month"}, []string{"calendar"}, rng)
 	k.outline("wk:customize", "layout-grid", "Customize", wkX1, 308, 53)
@@ -198,136 +201,178 @@ func (k *wk) overview() int {
 		math.NaN(), true, fmt.Sprintf("%d overdue", overdue), []float64{1, 1}, wkBlue, wkFG)
 
 	// Today's rings, as Soma draws them on the phone: calories, protein, water, burned.
-	k.ringsCard(image.Rect(wkX0, 847, wkX1, 1147), somaToday())
-	k.oy -= 320 // everything below moves down under it
-
-	// Hours by project, a bar a day, stacked by project, with what's planned on the days ahead.
-	ch := image.Rect(wkX0, 847, wkX1, 1344)
-	k.card(ch)
-	k.cardHead(wkX0+28, 900, "chart-column", "Hours by project", fmt.Sprintf("· week %d", week))
-	seg := image.Rect(820, 868, 1136, 918)
-	ui.RoundRect(k.img, seg.Sub(image.Pt(0, k.oy)), 12, rgb(0x101117))
-	segSel := k.sel("seg", 0)
-	for i, l := range []string{"Week", "Month", "Quarter"} {
-		r := image.Rect(seg.Min.X+4+i*103, seg.Min.Y+4, seg.Min.X+4+(i+1)*103, seg.Max.Y-4)
-		col := wkText2
-		if i == segSel {
-			ui.RoundRect(k.img, r.Sub(image.Pt(0, k.oy)), 10, rgb(0x1f212b))
-			col = wkFG
-		}
-		k.textC(wkFont("semi", 20), (r.Min.X+r.Max.X)/2, r.Min.Y+28, col, l)
-		k.btn(fmt.Sprintf("wk:seg:%d", i), r.Sub(image.Pt(0, k.oy)))
+	hidden := k.c.cfg.SomaHidden
+	bottom := k.Y(817) // the page's end so far, should the cards below be hidden
+	if !hidden["rings"] {
+		k.ringsCard(image.Rect(wkX0, 847, wkX1, 1147), somaToday())
+		bottom = k.Y(1147)
+		k.oy -= 320 // everything below moves down under it
 	}
 	idx := map[string]int{}
 	for _, p := range projects {
 		idx[p.ID] = p.order
 	}
-	base, top := 1188, 992
-	maxH := 10.0
-	type stack struct {
-		parts   []float64
-		cols    []color.RGBA
-		planned float64
-	}
-	days := make([]stack, 7)
-	used := map[string]bool{}
-	for i := range 7 {
-		d := mon.AddDate(0, 0, i)
-		hrs := wkHours(entries, d, d.AddDate(0, 0, 1), now)
-		ids := make([]string, 0, len(hrs))
-		for id := range hrs {
-			ids = append(ids, id)
-		}
-		sort.Slice(ids, func(a, b int) bool { return idx[ids[a]] < idx[ids[b]] })
-		tot := 0.0
-		for _, id := range ids {
-			h := hrs[id].Hours()
-			if h < 0.05 {
-				continue
+	if !hidden["chart"] {
+
+		// Hours by project, a bar a day, stacked by project, with what's planned on the days ahead.
+		ch := image.Rect(wkX0, 847, wkX1, 1344)
+		k.card(ch)
+		k.cardHead(wkX0+28, 900, "chart-column", "Hours by project", fmt.Sprintf("· week %d", week))
+		seg := image.Rect(820, 868, 1136, 918)
+		ui.RoundRect(k.img, seg.Sub(image.Pt(0, k.oy)), 12, rgb(0x101117))
+		segSel := k.sel("seg", 0)
+		for i, l := range []string{"Week", "Month", "Quarter"} {
+			r := image.Rect(seg.Min.X+4+i*103, seg.Min.Y+4, seg.Min.X+4+(i+1)*103, seg.Max.Y-4)
+			col := wkText2
+			if i == segSel {
+				ui.RoundRect(k.img, r.Sub(image.Pt(0, k.oy)), 10, rgb(0x1f212b))
+				col = wkFG
 			}
-			p, _ := wkProjectByID(id)
-			days[i].parts = append(days[i].parts, h)
-			days[i].cols = append(days[i].cols, wkColour(p, idx[id]))
-			used[id] = true
-			tot += h
+			k.textC(wkFont("semi", 20), (r.Min.X+r.Max.X)/2, r.Min.Y+28, col, l)
+			k.btn(fmt.Sprintf("wk:seg:%d", i), r.Sub(image.Pt(0, k.oy)))
 		}
-		ds := d.Format("2006-01-02")
-		if d.After(today) {
-			for _, t := range todos {
-				if t.SlotDate == ds && !t.Done {
-					days[i].planned += float64(t.SlotMins) / 60
+		base, top := 1188, 992
+		maxH := 10.0
+		type stack struct {
+			parts   []float64
+			cols    []color.RGBA
+			planned float64
+		}
+		// The buckets: the week's days, the month's days, or the quarter's weeks.
+		type bucket struct {
+			from, to time.Time
+			label    string
+			now      bool
+		}
+		var bks []bucket
+		switch segSel {
+		case 1:
+			first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, displayZone)
+			for d := first; d.Month() == first.Month(); d = d.AddDate(0, 0, 1) {
+				l := ""
+				if d.Day() == 1 || d.Day()%5 == 0 {
+					l = d.Format("2")
+				}
+				bks = append(bks, bucket{d, d.AddDate(0, 0, 1), l, d.Equal(today)})
+			}
+		case 2:
+			q := time.Date(now.Year(), time.Month((int(now.Month())-1)/3*3+1), 1, 0, 0, 0, 0, displayZone)
+			for w := weekStart(q); w.Before(q.AddDate(0, 3, 0)); w = w.AddDate(0, 0, 7) {
+				_, wn := w.ISOWeek()
+				bks = append(bks, bucket{w, w.AddDate(0, 0, 7), fmt.Sprintf("W%d", wn), !today.Before(w) && today.Before(w.AddDate(0, 0, 7))})
+			}
+		default:
+			for i := range 7 {
+				d := mon.AddDate(0, 0, i)
+				bks = append(bks, bucket{d, d.AddDate(0, 0, 1), d.Format("Mon"), d.Equal(today)})
+			}
+		}
+		days := make([]stack, len(bks))
+		used := map[string]bool{}
+		for i, bk := range bks {
+			d := bk.from
+			hrs := wkHours(entries, bk.from, bk.to, now)
+			ids := make([]string, 0, len(hrs))
+			for id := range hrs {
+				ids = append(ids, id)
+			}
+			sort.Slice(ids, func(a, b int) bool { return idx[ids[a]] < idx[ids[b]] })
+			tot := 0.0
+			for _, id := range ids {
+				h := hrs[id].Hours()
+				if h < 0.05 {
+					continue
+				}
+				p, _ := wkProjectByID(id)
+				days[i].parts = append(days[i].parts, h)
+				days[i].cols = append(days[i].cols, wkColour(p, idx[id]))
+				used[id] = true
+				tot += h
+			}
+			ds := d.Format("2006-01-02")
+			if segSel != 2 && d.After(today) {
+				for _, t := range todos {
+					if t.SlotDate == ds && !t.Done {
+						days[i].planned += float64(t.SlotMins) / 60
+					}
 				}
 			}
+			maxH = max(maxH, math.Ceil((tot+days[i].planned)/2)*2)
 		}
-		maxH = max(maxH, math.Ceil((tot+days[i].planned)/2)*2)
-	}
-	for i := 0; i <= 5; i++ {
-		y := base - i*(base-top)/5
-		k.textR(wkFont("regular", 17), 218, y+6, wkFaint, fmt.Sprintf("%.0fh", maxH*float64(i)/5))
-		if i == 0 {
-			ui.Fill(k.img, k.R(232, y, 1136, y+2), wkLine)
-		}
-	}
-	step := (1136 - 232) / 7
-	for i, st := range days {
-		cx := 232 + step*i + step/2
-		d := mon.AddDate(0, 0, i)
-		isToday := d.Equal(today)
-		if isToday {
-			ui.RoundRect(k.img, k.R(cx-46, top-16, cx+46, base+4), 14, rgb(0x14151b))
-		}
-		y := base
-		tot := 0.0
-		for j, h := range st.parts {
-			ph := int(h / maxH * float64(base-top))
-			r := k.R(cx-32, y-ph+2, cx+33, y)
-			if j == len(st.parts)-1 {
-				ui.RoundRect(k.img, r, 6, st.cols[j])
-				ui.Fill(k.img, image.Rect(r.Min.X, r.Min.Y+6, r.Max.X, r.Max.Y), st.cols[j])
-			} else {
-				ui.Fill(k.img, r, st.cols[j])
+		for i := 0; i <= 5; i++ {
+			y := base - i*(base-top)/5
+			k.textR(wkFont("regular", 17), 218, y+6, wkFaint, fmt.Sprintf("%.0fh", maxH*float64(i)/5))
+			if i == 0 {
+				ui.Fill(k.img, k.R(232, y, 1136, y+2), wkLine)
 			}
-			y -= ph
-			tot += h
 		}
-		if st.planned > 0 {
-			ph := int(st.planned / maxH * float64(base-top))
-			ui.RoundRect(k.img, k.R(cx-32, y-ph, cx+33, y), 6, rgb(0x24252c))
-			y -= ph
+		step := (1136 - 232) / len(bks)
+		bw := min(33, step*3/10)
+		for i, st := range days {
+			cx := 232 + step*i + step/2
+			isToday := bks[i].now
+			if isToday {
+				ui.RoundRect(k.img, k.R(cx-bw-13, top-16, cx+bw+13, base+4), 14, rgb(0x14151b))
+			}
+			y := base
+			tot := 0.0
+			for j, h := range st.parts {
+				ph := int(h / maxH * float64(base-top))
+				r := k.R(cx-bw+1, y-ph+2, cx+bw, y)
+				if j == len(st.parts)-1 {
+					ui.RoundRect(k.img, r, 6, st.cols[j])
+					ui.Fill(k.img, image.Rect(r.Min.X, r.Min.Y+6, r.Max.X, r.Max.Y), st.cols[j])
+				} else {
+					ui.Fill(k.img, r, st.cols[j])
+				}
+				y -= ph
+				tot += h
+			}
+			if st.planned > 0 {
+				ph := int(st.planned / maxH * float64(base-top))
+				ui.RoundRect(k.img, k.R(cx-bw+1, y-ph, cx+bw, y), 6, rgb(0x24252c))
+				y -= ph
+			}
+			col, f := wkFaint, wkFont("regular", 19)
+			if isToday {
+				col, f = wkFG, wkFont("semi", 19)
+				lbl := fmt.Sprintf("%.1f h", tot)
+				bw := ui.TextWidth(wkFont("semi", 18), lbl) + 36
+				b := k.R(cx-bw/2, y-56, cx+bw/2, y-18)
+				ui.RoundRect(k.img, b, 10, rgb(0xf5f6f8))
+				apTextCenter(k.img, wkFont("semi", 18), cx, (b.Min.Y+b.Max.Y)/2, wkInk, lbl)
+			}
+			k.textC(f, cx, 1219, col, bks[i].label)
 		}
-		col, f := wkFaint, wkFont("regular", 19)
-		if isToday {
-			col, f = wkFG, wkFont("semi", 19)
-			lbl := fmt.Sprintf("%.1f h", tot)
-			bw := ui.TextWidth(wkFont("semi", 18), lbl) + 36
-			b := k.R(cx-bw/2, y-56, cx+bw/2, y-18)
-			ui.RoundRect(k.img, b, 10, rgb(0xf5f6f8))
-			apTextCenter(k.img, wkFont("semi", 18), cx, (b.Min.Y+b.Max.Y)/2, wkInk, lbl)
+		// The legend: the projects with time this week, then what's planned.
+		lx, ly := wkX0+28, 1264
+		byOrder := append([]wkProject(nil), projects...)
+		sort.SliceStable(byOrder, func(a, b int) bool { return byOrder[a].order < byOrder[b].order })
+		for _, p := range byOrder {
+			if !used[p.ID] {
+				continue
+			}
+			i := p.order
+			lw := 26 + ui.TextWidth(wkFont("regular", 20), p.Name) + 22
+			if lx+lw > wkX1-20 {
+				lx, ly = wkX0+28, ly+47
+			}
+			ui.RoundRect(k.img, k.R(lx, ly-14, lx+16, ly+2), 4, wkColour(p, i))
+			k.text(wkFont("regular", 20), lx+26, ly+2, wkText2, p.Name)
+			lx += lw
 		}
-		k.textC(f, cx, 1219, col, d.Format("Mon"))
-	}
-	// The legend: the projects with time this week, then what's planned.
-	lx, ly := wkX0+28, 1264
-	byOrder := append([]wkProject(nil), projects...)
-	sort.SliceStable(byOrder, func(a, b int) bool { return byOrder[a].order < byOrder[b].order })
-	for _, p := range byOrder {
-		if !used[p.ID] {
-			continue
-		}
-		i := p.order
-		lw := 26 + ui.TextWidth(wkFont("regular", 20), p.Name) + 22
-		if lx+lw > wkX1-20 {
+		if lx+140 > wkX1-20 {
 			lx, ly = wkX0+28, ly+47
 		}
-		ui.RoundRect(k.img, k.R(lx, ly-14, lx+16, ly+2), 4, wkColour(p, i))
-		k.text(wkFont("regular", 20), lx+26, ly+2, wkText2, p.Name)
-		lx += lw
+		ui.RoundRect(k.img, k.R(lx, ly-14, lx+16, ly+2), 4, rgb(0x2a2b33))
+		k.text(wkFont("regular", 20), lx+26, ly+2, wkText2, "Planned")
+		bottom = k.Y(1344)
+	} else {
+		k.oy += 1377 - 847 // what follows moves up into its place
 	}
-	if lx+140 > wkX1-20 {
-		lx, ly = wkX0+28, ly+47
+	if hidden["attention"] {
+		return bottom + k.oy
 	}
-	ui.RoundRect(k.img, k.R(lx, ly-14, lx+16, ly+2), 4, rgb(0x2a2b33))
-	k.text(wkFont("regular", 20), lx+26, ly+2, wkText2, "Planned")
 
 	// Needs attention, and the deadlines.
 	y0 := 1377

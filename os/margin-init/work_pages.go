@@ -248,6 +248,9 @@ func (k *wk) timePage() int {
 	x := k.primary("wk:entry", "plus", "Entry", wkX1)
 	k.square("wk:cal", "calendar", x-13)
 	k.tabs("wk:tab", []string{"Timesheet", "Entries", "Rates", "Invoiced"}, nil, k.sel("tab", 0))
+	if t := k.sel("tab", 0); t > 0 {
+		return k.timeTab(t)
+	}
 
 	// The timer.
 	k.cardIn(image.Rect(wkX0, 312, wkX1, 640), rgb(0x16181d))
@@ -278,12 +281,16 @@ func (k *wk) timePage() int {
 		k.text(wkFont("bold", 92), 190, 465, wkFaint, "00:00:00")
 		k.text(wkFont("regular", 21), 193, 511, wkFaint, "Start one from a project, or add an entry.")
 	}
-	k.boxBtn("wk:break", 193, 546, 494, 609, "coffee", "Take a break", color.RGBA{}, wkFG)
-	k.boxBtn("wk:go:projects", 512, 546, 811, 609, "arrow-left-right", "Switch project", color.RGBA{}, wkFG)
+	if !running && k.c.somaUI.breakProj != "" {
+		k.boxBtn("wk:break", 193, 546, 494, 609, "play", "Resume", color.RGBA{}, wkFG)
+	} else {
+		k.boxBtn("wk:break", 193, 546, 494, 609, "coffee", "Take a break", color.RGBA{}, wkFG)
+	}
+	k.boxBtn("wk:sheet-open:switchproj:", 512, 546, 811, 609, "arrow-left-right", "Switch project", color.RGBA{}, wkFG)
 	if running {
 		k.boxBtn("wk:stop", 829, 546, 1130, 609, "square", "Stop", wkRed, rgb(0xffffff))
 	} else {
-		k.boxBtn("wk:go:projects", 829, 546, 1130, 609, "timer", "Start", wkLime, wkOnLime)
+		k.boxBtn("wk:sheet-open:switchproj:", 829, 546, 1130, 609, "timer", "Start", wkLime, wkOnLime)
 	}
 
 	// The week's figures, against the same days last week.
@@ -345,7 +352,7 @@ func (k *wk) timePage() int {
 	}
 	nav(fmt.Sprintf("wk:week:%d", off-1), "chevron-left", 884)
 	nav(fmt.Sprintf("wk:week:%d", off+1), "chevron-right", 947)
-	k.outline("wk:excel", "file-spreadsheet", "Excel", 1136, 876, 50)
+	k.outline(fmt.Sprintf("wk:excel:%d", off), "file-down", "To notes", 1136, 876, 50)
 	cols := []int{471, 562, 654, 745, 828, 909, 997}
 	todayCol := -1
 	for i := range 7 {

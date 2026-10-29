@@ -1015,7 +1015,9 @@ func init() {
 			somaPatch("habits", id, func(o obj) { o["name"] = text })
 		}
 	}
-	wkPrompts["hdesc"] = func(id string) (string, string) { return "What it is, why it matters", str(somaObj("habits#" + id)["desc"]) }
+	wkPrompts["hdesc"] = func(id string) (string, string) {
+		return "What it is, why it matters", str(somaObj("habits#" + id)["desc"])
+	}
 	wkTypers["hdesc"] = func(c *console, id, text string) { somaPatch("habits", id, func(o obj) { o["desc"] = text }) }
 	wkPrompts["hnewstep"] = func(string) (string, string) { return "A step, e.g. Floss (a number after it: times a day)", "" }
 	wkTypers["hnewstep"] = func(c *console, id, text string) {

@@ -525,7 +525,7 @@ func (k *wk) planBoard(todos []somaTodo, now time.Time) int {
 	mon := mondayOf(today)
 	cols := []struct {
 		title, icon, add string
-		list           []somaTodo
+		list             []somaTodo
 	}{{"Today", "sun", "wk:type-open:newtask:" + today, nil}, {"This week", "calendar-range", "wk:type-open:newweek:" + mon, nil},
 		{"Deadlines", "calendar-clock", "", nil}, {"Done", "circle-check", "", nil}}
 	for _, t := range todos {

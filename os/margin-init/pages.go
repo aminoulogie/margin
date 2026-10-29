@@ -206,6 +206,8 @@ type savedSettings struct {
 	// Home's widgets: their order, and the hidden ones (bookshome.go).
 	HomeOrder  []string        `json:"home_order,omitempty"`
 	HomeHidden map[string]bool `json:"home_hidden,omitempty"`
+	// SomaHidden: the workstation Overview's cards switched off (Customize).
+	SomaHidden map[string]bool `json:"soma_hidden,omitempty"`
 	// SmoothScroll: pages follow the finger and fling (the default). Off: a swipe jumps a
 	// screen, as on a Kindle.
 	SmoothScroll bool `json:"smooth_scroll"`

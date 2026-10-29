@@ -610,7 +610,7 @@ func TestTrainingUsable(t *testing.T) {
 	}
 	tapBtn(t, c, "wk:sheet-open:sess:"+today)
 	tapBtn(t, c, "wk:sdur:"+today+":5")
-	if str(somaObj("history/"+today)["durationFormatted"]) != "5:00" {
+	if str(somaObj("history/" + today)["durationFormatted"]) != "5:00" {
 		t.Fatal("duration")
 	}
 	tapBtn(t, c, "wk:sheet:close")
@@ -619,4 +619,186 @@ func TestTrainingUsable(t *testing.T) {
 	shot(t, c, "train-sessions")
 	tapBtn(t, c, "wk:sess:2026-02-01")
 	shot(t, c, "train-sheet-day")
+}
+
+// Every button on every page and tab of the workstation does something.
+func TestNoDeadButtons(t *testing.T) {
+	c := workAt(t, "overview")
+	dead := map[string]string{}
+	for _, pg := range []string{"overview", "projects", "project", "planner", "time", "money", "reports", "findings", "worklog",
+		"habits", "health", "training", "nutrition", "mind", "stats", "settings"} {
+		for tab := 0; tab < 6; tab++ {
+			c.somaUI.work, c.somaUI.workProj, c.somaUI.workSub, c.somaUI.sheet = pg, "p1", "", ""
+			if c.somaUI.workSel == nil {
+				c.somaUI.workSel = map[string]string{}
+			}
+			c.somaUI.workSel[pg+"wk:tab"] = string(rune('0' + tab))
+			c.showPage()
+			for _, b := range c.page.buttons {
+				if strings.HasPrefix(b.id, "wk:") && !wkHandled(b.id) || strings.HasPrefix(b.id, "so:note:") {
+					dead[b.id] = pg
+				}
+			}
+		}
+	}
+	for id, pg := range dead {
+		t.Errorf("dead button %s on %s", id, pg)
+	}
+}
+
+func TestOtherPagesUsable(t *testing.T) {
+	c := workAt(t, "overview")
+	go2 := func(page string) {
+		tapBtn(t, c, "wk:go:"+page)
+	}
+	// Overview: its tabs, Create, the bell, Customize.
+	for i := 1; i <= 3; i++ {
+		tapBtn(t, c, "wk:tab:"+string(rune('0'+i)))
+		shot(t, c, "ov-tab"+string(rune('0'+i)))
+	}
+	tapBtn(t, c, "wk:tab:0")
+	tapBtn(t, c, "wk:create")
+	tapBtn(t, c, "wk:create-todo")
+	typeIn(t, c, "Ring the printer")
+	found := false
+	for _, td := range somaTodos() {
+		found = found || td.Text == "Ring the printer" && td.Date == somaToday()
+	}
+	if !found {
+		t.Fatal("create a to-do")
+	}
+	tapBtn(t, c, "wk:bell")
+	tapBtn(t, c, "wk:sheet:close")
+	tapBtn(t, c, "wk:customize")
+	tapBtn(t, c, "wk:ovtoggle:rings")
+	if !c.cfg.SomaHidden["rings"] {
+		t.Fatal("customize")
+	}
+	tapBtn(t, c, "wk:sheet:close")
+
+	// Time: a break and back, switching, entries.
+	go2("time")
+	tapBtn(t, c, "wk:break")
+	if _, ok := wkRunning(wkEntries()); ok {
+		t.Fatal("break didn't stop the timer")
+	}
+	tapBtn(t, c, "wk:break")
+	if run, ok := wkRunning(wkEntries()); !ok || run.ProjectID != "p1" {
+		t.Fatal("resume")
+	}
+	tapBtn(t, c, "wk:sheet-open:switchproj:")
+	tapBtn(t, c, "wk:start:p3")
+	if run, _ := wkRunning(wkEntries()); run.ProjectID != "p3" {
+		t.Fatal("switch")
+	}
+	for i := 1; i <= 3; i++ {
+		tapBtn(t, c, "wk:tab:"+string(rune('0'+i)))
+		shot(t, c, "time-tab"+string(rune('0'+i)))
+	}
+
+	// Money: add, change, delete; the tabs.
+	go2("money")
+	tapBtn(t, c, "wk:add")
+	tapBtn(t, c, "wk:type-open:money:spend")
+	typeIn(t, c, "450 food lunch with Sam")
+	var lid string
+	for _, o := range somaList("ledger") {
+		if str(o["note"]) == "lunch with Sam" && str(o["category"]) == "Food" && num(o["amount"]) == 450 {
+			lid = str(o["id"])
+		}
+	}
+	if lid == "" {
+		t.Fatal("money added")
+	}
+	tapBtn(t, c, "wk:tab:2")
+	shot(t, c, "money-spending")
+	tapBtn(t, c, "wk:sheet-open:ledger:"+lid)
+	tapBtn(t, c, "wk:leddel:"+lid)
+	if somaObj("ledger#"+lid) != nil {
+		t.Fatal("ledger delete")
+	}
+	tapBtn(t, c, "wk:tab:1")
+	tapBtn(t, c, "wk:tab:3")
+
+	// Reports: a week back, a section off, saved to the notes.
+	go2("reports")
+	tapBtn(t, c, "wk:rper:0")
+	tapBtn(t, c, "wk:rback:1")
+	tapBtn(t, c, "wk:rinc:Findings")
+	shot(t, c, "reports")
+	tapBtn(t, c, "wk:rsave")
+	saved := false
+	for _, n := range somaNotes() {
+		if strings.HasPrefix(n.title(), "Report · Northbank Ltd · Week") && !strings.Contains(n.Text, "Open findings") {
+			saved = true
+		}
+	}
+	if !saved {
+		t.Fatal("report not saved as asked")
+	}
+	tapBtn(t, c, "wk:tab:3")
+	shot(t, c, "reports-saved")
+
+	// The work log's shifts, findings grouped.
+	go2("worklog")
+	tapBtn(t, c, "wk:tab:1")
+	tapBtn(t, c, "wk:sheet-open:shift:sh1")
+	tapBtn(t, c, "wk:shset:sh1:start:-15")
+	if msTime(somaObj("shifts#sh1")["start"]).In(displayZone).Hour() != 7 {
+		t.Fatal("shift start")
+	}
+	tapBtn(t, c, "wk:sheet:close")
+	go2("findings")
+	tapBtn(t, c, "wk:tab:1")
+	shot(t, c, "findings-by-project")
+
+	// Nutrition: food on the log, changed.
+	go2("nutrition")
+	tapBtn(t, c, "wk:tab:1")
+	tapBtn(t, c, "wk:type-open:food:"+somaToday())
+	typeIn(t, c, "Greek yoghurt 180 18")
+	items, _ := somaObj("nutrition/" + somaToday())["items"].([]any)
+	last := len(items) - 1
+	tapBtn(t, c, "wk:sheet-open:food:"+somaToday()+":"+string(rune('0'+last)))
+	tapBtn(t, c, "wk:foodset:"+somaToday()+":"+string(rune('0'+last))+":cals:25")
+	items, _ = somaObj("nutrition/" + somaToday())["items"].([]any)
+	if f := items[last].(obj); num(f["cals"]) != 205 {
+		t.Fatalf("food %v", f)
+	}
+	tapBtn(t, c, "wk:sheet:close")
+	tapBtn(t, c, "wk:tab:2")
+	shot(t, c, "nutrition-week")
+
+	// Mind: a note with a task, ticked.
+	go2("mind")
+	tapBtn(t, c, "wk:sheet-open:readlog:")
+	tapBtn(t, c, "wk:read:15")
+	tapBtn(t, c, "wk:tab:1")
+	tapBtn(t, c, "wk:type-open:newnote:")
+	typeIn(t, c, "Bridge ideas")
+	tapBtn(t, c, "wk:type-open:notetask:Inbox/Bridge ideas.md")
+	typeIn(t, c, "Ask about bearings")
+	shot(t, c, "mind-note")
+	n := somaNoteByID("Inbox/Bridge ideas.md")
+	lines := strings.Split(n.Text, "\n")
+	ti := -1
+	for i, l := range lines {
+		if strings.Contains(l, "Ask about bearings") {
+			ti = i
+		}
+	}
+	tapBtn(t, c, "wk:notetick:"+string(rune('0'+ti)))
+	if !strings.Contains(somaNoteByID("Inbox/Bridge ideas.md").Text, "[x] Ask about bearings") {
+		t.Fatal("tick in a note")
+	}
+
+	// Settings: the accent, everywhere.
+	go2("settings")
+	tapBtn(t, c, "wk:accent:#a77bff")
+	if wkAccentHex() != "#a77bff" || wkLime != rgb(0xa77bff) {
+		t.Fatalf("accent %s", wkAccentHex())
+	}
+	shot(t, c, "settings-accent")
+	go2("overview")
+	shot(t, c, "overview-violet")
 }

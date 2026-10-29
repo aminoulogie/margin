@@ -492,6 +492,7 @@ func (k *wk) timerPill(h int) {
 	}
 	ui.Circle(k.img, r.Max.X-126, cy, 32, rgb(0x262833))
 	lucideIcon(k.img, "coffee", r.Max.X-126, cy, 28, wkFG)
+	k.btn("wk:break", image.Rect(r.Max.X-166, r.Min.Y, r.Max.X-86, r.Max.Y))
 	ui.Circle(k.img, r.Max.X-48, cy, 32, wkRed)
 	lucideIcon(k.img, "square", r.Max.X-48, cy, 26, rgb(0xffffff))
 	k.btn("wk:stop", image.Rect(r.Max.X-82, r.Min.Y, r.Max.X, r.Max.Y))
@@ -619,6 +620,20 @@ func (c *console) workTap(id string) bool {
 func (c *console) wkGo(page, sub string) {
 	su := &c.somaUI
 	su.work, su.workSub, su.sheet, su.sheetStack, su.toTop = page, sub, "", nil, true
+}
+
+// wkHandled says whether a button id does something (the dead-button test asks).
+func wkHandled(id string) bool {
+	name, _, _ := strings.Cut(strings.TrimPrefix(id, "wk:"), ":")
+	if wkActions[name] != nil {
+		return true
+	}
+	for _, p := range []string{"go", "proj", "back", "stop", "clockout", "finding", "water", "start", "tab", "chip", "seg", "week", "client", "step", "todo"} {
+		if name == p {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *console) workTapPage(id string) bool {

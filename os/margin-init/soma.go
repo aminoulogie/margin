@@ -57,9 +57,15 @@ type somaUI struct {
 	dateWhat   string            // what the date sheet sets: "<setter>:<arg>"
 	dateCur    string            // and the date it has now
 	dateTitle  string
-	toTop      bool         // the tap being handled opened another page: scroll to its top
-	pf         wkProjFilter // how Projects are sorted and filtered
-	planDate   string       // the Planner's day (its week, its month); "" today
+	toTop      bool            // the tap being handled opened another page: scroll to its top
+	pf         wkProjFilter    // how Projects are sorted and filtered
+	reportProj string          // the project a report is about
+	reportBack int             // how many periods back the report is
+	reportOff  map[string]bool // the report's sections switched off
+	breakProj  string          // the project the timer ran on before a break
+	nutDate    string          // the day Nutrition's log shows ("" today)
+	noteQuery  string          // what the notes are searched for
+	planDate   string          // the Planner's day (its week, its month); "" today
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {
