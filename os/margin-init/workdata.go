@@ -142,6 +142,7 @@ type wkEntry struct {
 	ID, ProjectID, Note, StepID string
 	Start, End                  time.Time // End zero while running
 	Billable                    bool
+	FromSteps                   bool // posted from steps' worked time (fromSteps)
 }
 
 // dur is how long it ran, a running one up to now, at most 12 hours (MAX_ENTRY_MS).
@@ -161,6 +162,7 @@ func wkEntries() []wkEntry {
 		if b, ok := o["billable"].(bool); ok {
 			e.Billable = b
 		}
+		e.FromSteps, _ = o["fromSteps"].(bool)
 		if !e.Start.IsZero() {
 			out = append(out, e)
 		}

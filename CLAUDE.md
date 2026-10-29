@@ -589,6 +589,14 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Android's routes: /system/etc/parameter-framework (Settings/Audio/AudioConfigurableDomains.xml,
       Structure/Audio/CirrusLogicSubsystem.xml, LPEMixerSubsystem.xml). Next: copy Android's "media to
       IHF/headset" settings and set them with alsa_amixer in setupSound.
+      **Cause found (2026-10-29, Sound 5):** Android's /system/etc/asound.conf opens the chip through
+      hooks that set the route first: pcm.speaker = SPK Amp on, SPKLO Amp on, HP Amp off, EAR Amp off,
+      'LPE IHF mixer' 3 (Mixed), 'ESL-ASP Mux' 1, 'SPK-ASP Mux' 0, 'IHFAMP_SD_N Switch' on;
+      pcm.headphone = HP Amp on, SPK/SPKLO/EAR Amp off, 'LPE headset mixer' 3 (+ IHFAMP off in
+      pcm.headset). On the tablet the LPE mixers were 0 (None) and IHFAMP off → the stall. Fix:
+      setupSound calls routeCloverview (video.go) before every sound, with Android's alsa_amixer run
+      on Android's side; Playbox > Settings > Sound output: "Speaker" (default) and "Headphones (the
+      jack)" (soundHeadphones). Jack detection not done yet.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
@@ -613,6 +621,17 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       keyboard keeps its drawn picture per look (Terminal 21 → 10 ms). Tests: views_test.go,
       tabs_speed_test.go (MARGIN_SPEED=1). testConsole turns views off (views.off) unless a test
       turns them on.
+- [x] **Time > Entries like the PC, with standby** (2026-10-29, work_timelog.go): each day as a table
+      like TimePage.tsx (start – end, hours, type tag, what was done with project · step, billable
+      money). Work log shifts (worklog.ts) are listed with the time entries (type "Work log"), so
+      work logged on either PC page shows. The empty time between pieces of work in a day is
+      **standby**, billed at 50% of the rate of the work before it; one gap starting 11:30-14:30 and
+      at most 90 min is lunch (none if a work log break exists that day); tapping a gap flips it
+      (/data/condor/standby.json). Week cards: worked, billable, standby, standby value; sync status
+      shown. Note: Soma's own standby.ts counts shift breaks as standby; this view doesn't (user:
+      lunch isn't standby). Sync fix (somasync.go pull): a newer record from the relay is no longer
+      skipped because the tablet has an unsent change to it (the pull position moved past it, so
+      the tablet stayed stale for good). **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

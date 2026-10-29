@@ -11,9 +11,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -110,12 +112,15 @@ func (c *console) fetchClipboard() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		// A changing query: GitHub's raw files are cached for minutes otherwise.
-		var b []byte
-		resp, err := webGetCtx(ctx, clipboardURL+"?t="+strconv.FormatInt(time.Now().Unix(), 10))
-		if err == nil {
-			b, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			resp.Body.Close()
+		b, err := fetchClipboardAPI(ctx)
+		if err != nil { // the API can say no (60 asks an hour without a token): the cached raw file
+			log.Printf("clipboard: api: %v", err)
+			var resp *http.Response
+			resp, err = webGetCtx(ctx, clipboardURL+"?t="+strconv.FormatInt(time.Now().Unix(), 10))
+			if err == nil {
+				b, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+				resp.Body.Close()
+			}
 		}
 		drawMu.Lock()
 		defer drawMu.Unlock()
@@ -133,6 +138,34 @@ func (c *console) fetchClipboard() {
 			c.s.Flush()
 		}
 	}()
+}
+
+// clipboardAPI is the file through GitHub's API: always the newest commit (raw.githubusercontent
+// keeps a copy for about 5 minutes, so a command pushed a minute ago wasn't there yet). Tests
+// point it at a fake.
+var clipboardAPI = "https://api.github.com/repos/aminoulogie/margin/contents/CLIPBOARD.md?ref=main"
+
+// fetchClipboardAPI gets CLIPBOARD.md's newest version from GitHub's API (with the tablet's
+// token when it's linked: more asks an hour).
+func fetchClipboardAPI(ctx context.Context) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", clipboardAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.raw")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if l := loadGitHubLink(); l.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+l.Token)
+	}
+	resp, err := webClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s", resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 }
 
 // drawClipboard paints the panel over the bottom of the terminal's text, above the

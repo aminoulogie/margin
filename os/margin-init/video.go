@@ -1794,22 +1794,85 @@ func soundCardNo() string {
 	return "0"
 }
 
+// cloverviewCard: the tablet's own audio chip is there (/proc/asound/cards).
+func cloverviewCard() bool {
+	b, _ := os.ReadFile("/proc/asound/cards")
+	return strings.Contains(string(b), "cloverview")
+}
+
 // soundDev is the ALSA device films play through: the chip's first playback device (on this
 // tablet "Headset", which the speaker is routed from), with ALSA converting formats.
 // /data/condor/sounddev ("4,1": card,device) overrides it.
 func soundDev() string {
-	if d := currentSoundDev(); d != "" {
+	if d := currentSoundDev(); d != "" && d != soundHeadphones {
 		return "plughw:" + d
 	}
 	return "plughw:" + soundCardNo() + ",0"
+}
+
+// soundHeadphones is the output "Headphones (the jack)": the chip's first device, routed to
+// the jack instead of the speaker.
+const soundHeadphones = "headphones"
+
+// The chip's routes, as Android sets them before playing (its /system/etc/asound.conf,
+// pcm.speaker and pcm.headphone hooks; found 2026-10-29). Without them the DSP's output
+// mixers are "None" and the speaker amplifier is off: the chip takes one period of sound and
+// stalls, and aplay hangs. Alpine's alsa-lib can't write these controls on kernel 3.4 (its
+// newer ioctl structs get ENOTTY), so Android's own alsa_amixer sets them.
+var (
+	cloverviewSpeaker = [][2]string{
+		{"SPK Amp Switch", "on"}, {"SPKLO Amp Switch", "on"}, {"HP Amp Switch", "off"}, {"EAR Amp Switch", "off"},
+		{"LPE IHF mixer", "3"}, {"ESL-ASP Mux", "1"}, {"SPK-ASP Mux", "0"}, {"IHFAMP_SD_N Switch", "on"},
+	}
+	cloverviewHeadphones = [][2]string{
+		{"HP Amp Switch", "on"}, {"SPK Amp Switch", "off"}, {"SPKLO Amp Switch", "off"}, {"EAR Amp Switch", "off"},
+		{"LPE headset mixer", "3"}, {"IHFAMP_SD_N Switch", "off"},
+	}
+)
+
+// androidAmixer is Android's alsa_amixer (bionic, made for this kernel); tests replace it.
+var androidAmixer = "/system/bin/alsa_amixer"
+
+// routeCloverview sets the chip's speaker or headphone route with Android's alsa_amixer, run
+// on Android's side (not in Alpine). It's quick, so it's done before every sound. Best effort:
+// it says what failed.
+func routeCloverview(card string, headphones bool) error {
+	if _, err := os.Stat(androidAmixer); err != nil {
+		return err
+	}
+	route := cloverviewSpeaker
+	if headphones {
+		route = cloverviewHeadphones
+	}
+	var failed []string
+	for _, c := range route {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, err := exec.CommandContext(ctx, androidAmixer, "-q", "-c", card, "cset", "name="+c[0], c[1]).CombinedOutput()
+		cancel()
+		if err != nil {
+			failed = append(failed, c[0]+": "+lastLines(string(out), 1))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%s", strings.Join(failed, "; "))
+	}
+	return nil
 }
 
 // setupSound turns the speaker and headphone outputs on and up (ALSA's mixer), once: without
 // Android's audio service nothing has. Best effort.
 func setupSound() {
 	card := soundCardNo()
-	if d := currentSoundDev(); d != "" {
+	d := currentSoundDev()
+	if d != "" && d != soundHeadphones {
 		card = strings.Split(d, ",")[0]
+	}
+	if card == soundCardNo() && cloverviewCard() { // the tablet's own chip: Android's routes
+		if err := routeCloverview(card, d == soundHeadphones); err != nil {
+			log.Printf("playbox: sound route on card %s: %v", card, err)
+		} else {
+			log.Printf("playbox: sound routed to the %s", map[bool]string{true: "headphones", false: "speaker"}[d == soundHeadphones])
+		}
 	}
 	soundSetMu.Lock()
 	defer soundSetMu.Unlock()
