@@ -1611,7 +1611,7 @@ func (c *console) pbSettingsPage() *page {
 	pb := &c.pb
 	cfg := pbSettingsNow()
 	w, mx := c.s.W, pageGutter
-	img := canvas(w, max(2700, c.viewH()))
+	img := canvas(w, max(3600, c.viewH()))
 	ui.Fill(img, img.Rect, apBG)
 	p := &page{img: img}
 	c.booksTabs(p, "pbt:settings")
@@ -1682,26 +1682,50 @@ func (c *console) pbSettingsPage() *page {
 	foot("Chosen for each film when an add-on has subtitles in that language. CC in the player changes them.")
 
 	head("Video player")
-	rows = groupRows(img, mx, y, gw, 2, 110)
-	state := "Installed"
-	if !ffmpegInstalled() {
-		state = "Not installed (installed the first time a film plays)"
-	}
-	if pb.installing {
+	rows = groupRows(img, mx, y, gw, 1, 110)
+	state := "Fast (ffmpeg 6, for this processor)"
+	switch {
+	case pb.installing:
 		state = "Installing…"
+	case !ffmpegInstalled():
+		state = "Not installed yet: tap to install"
+	case !fastFFmpegReady():
+		state = "Slow (Alpine's): tap to get the fast one"
 	}
-	apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+68, apLabel, "ffmpeg")
-	apTextRight(img, f.callout, rows[0].Max.X-30, rows[0].Min.Y+66, apSecondary, clip(f.callout, state, 700))
-	if !ffmpegInstalled() && !pb.installing {
+	apText(img, f.body, rows[0].Min.X+30, rows[0].Min.Y+68, apLabel, "Player")
+	apTextRight(img, f.callout, rows[0].Max.X-30, rows[0].Min.Y+66, apSecondary, clip(f.callout, state, 760))
+	if !fastFFmpegReady() && !pb.installing {
 		p.buttons = append(p.buttons, button{"pb:install-ffmpeg", rows[0]})
 	}
-	apText(img, f.body, rows[1].Min.X+30, rows[1].Min.Y+68, apBlue, "Test the sound")
-	if pb.soundTest != "" {
-		apTextRight(img, f.callout, rows[1].Max.X-30, rows[1].Min.Y+66, apSecondary, clip(f.callout, pb.soundTest, 600))
+	y = rows[0].Max.Y
+	note := "Films are decoded on the processor: 720p plays best; 4K and HEVC are marked heavy."
+	if fastFailed != "" {
+		note += " The fast player couldn't be set up: " + fastFailed
 	}
-	p.buttons = append(p.buttons, button{"pb:soundtest", rows[1]})
-	y = rows[1].Max.Y
-	foot("Films are decoded by ffmpeg (from Alpine) on the processor: 720p plays best here; 4K and HEVC are marked heavy. Sound goes out through ALSA.")
+	foot(note)
+
+	head("Sound output")
+	outs := soundOutputs()
+	cur := currentSoundDev()
+	rows = groupRows(img, mx, y, gw, len(outs)+1, 100)
+	for i, o := range append([]soundOut{{dev: "", name: "Automatic (the tablet's own chip)"}}, outs...) {
+		r := rows[i]
+		apText(img, f.body, r.Min.X+30, r.Min.Y+62, apLabel, clip(f.body, o.name, r.Dx()-200))
+		if o.dev == cur {
+			iconCheck(img, r.Max.X-70, (r.Min.Y+r.Max.Y)/2, apBlue)
+		}
+		p.buttons = append(p.buttons, button{"pb:snd:" + o.dev, r})
+	}
+	y = rows[len(rows)-1].Max.Y
+	msg := "Tap an output: it's chosen and plays a chime. Pick the one you hear."
+	if pb.soundTest != "" {
+		msg = pb.soundTest
+	}
+	foot(msg)
+	if pbLastProblem != "" {
+		head("Last playback problem")
+		y = drawParagraphs(img, f.callout, pbLastProblem, mx+30, y, w-2*mx-60, 42, y+300, apRed) + 20
+	}
 
 	head("Storage")
 	rows = groupRows(img, mx, y, gw, 2, 110)
@@ -1925,6 +1949,21 @@ func (c *console) playboxTap(id string) bool {
 		cfg.save()
 	case id == "pb:install-ffmpeg":
 		c.installFFmpeg(nil)
+	case strings.HasPrefix(id, "pb:snd:"):
+		dev := strings.TrimPrefix(id, "pb:snd:")
+		if dev == "" {
+			os.Remove(marginHome + "/sounddev")
+		} else {
+			os.WriteFile(marginHome+"/sounddev", []byte(dev), 0o644)
+		}
+		pb.soundTest = "Playing a chime…"
+		go func() {
+			msg := testSound()
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			pb.soundTest = msg
+			c.pbRedraw()
+		}()
 	case id == "pb:soundtest":
 		pb.soundTest = "Playing…"
 		go func() {
