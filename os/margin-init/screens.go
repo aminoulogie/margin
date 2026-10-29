@@ -92,6 +92,9 @@ func (c *console) showPage() {
 	// Going to another view: what was kept of it, at once (views.go).
 	vkey := c.viewKey()
 	shown := vkey != "" && vkey != c.viewOn && !c.viewFresh && c.viewShow(vkey)
+	if !shown {
+		soma.track() // which of Soma's records the drawing reads: kept, it's redrawn when they change
+	}
 	switch {
 	case shown:
 	case c.mode == modeSettings:
@@ -114,13 +117,14 @@ func (c *console) showPage() {
 		c.page = c.booksHomePage()
 	}
 	if !shown {
+		fields := soma.tracked()
 		c.blitPage() // the window of a tall page that's scrolled to
 		// Named as it is now (drawing may have settled the page's defaults), and kept for the
 		// next time it's opened, before toasts and keyboards. A view drawn under a sheet or
 		// while typing isn't kept, but stays the one on screen: back from it is drawn fresh.
 		if vkey = c.viewKey(); vkey != "" {
 			c.viewOn = vkey
-			c.viewKeep(vkey)
+			c.viewKeep(vkey, fields)
 		}
 	}
 	c.prefetchPage()

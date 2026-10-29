@@ -604,11 +604,14 @@ func (c *console) workPage() *page {
 	key := c.workKey()
 	if e := wkPageCache.find(key); e != nil {
 		c.tabsOn = e.tabsOn
+		for _, f := range e.fields { // what its drawing read, for the view kept of it
+			soma.note(f)
+		}
 		return e.p
 	}
 	img := wkPageCache.canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
-	p := &page{img: img, header: tabsH}
+	p := &page{img: img, header: tabsH, owned: true}
 	// Margin's tab bar stays at the top: the pages sit under it.
 	k := &wk{c: c, p: p, img: img, oy: c.barH - (tabsH - 24)}
 	k.glow()
@@ -653,13 +656,12 @@ func (c *console) workPage() *page {
 	k.oy = c.barH - (tabsH - 24) // a page may have moved its lower part down
 	if end > h {
 		su.need[needKey] = end
-		if wkPageCache.next != nil { // drawn again, taller: this picture is free
-			wkPageCache.spare = append(wkPageCache.spare, wkPageCache.next)
-			wkPageCache.next = nil
-		}
-		return c.workPage()
+		return c.workPage() // drawn again, taller
 	}
 	if end < h && h > c.viewH() {
+		if end < h*3/4 { // much shorter than before: drawn at its size next time
+			su.need[needKey] = end
+		}
 		p.img = img.SubImage(image.Rect(0, 0, w, max(end, c.viewH()))).(*image.RGBA)
 		k.img = p.img
 	}
@@ -692,24 +694,25 @@ func (c *console) workPage() *page {
 	return p
 }
 
-// wkPageCache keeps the last few workstation pages drawn, each in its own picture.
+// wkPageCache keeps the last few workstation pages drawn, each in its own picture. A picture
+// is never drawn into again for another page: the views kept for the tabs (views.go) hold
+// the same pictures, rather than copies of them.
 var wkPageCache wkPages_
 
 type wkCached struct {
 	key    string
 	p      *page
 	tabsOn string
+	fields []string // the kinds of Soma record its drawing read
 	used   int
 }
 
 type wkPages_ struct {
 	list  []*wkCached
-	spare []*image.RGBA // pictures of pages dropped, drawn into again
 	clock int
-	next  *image.RGBA // the picture the page being drawn is in
 }
 
-const wkCacheN = 5
+const wkCacheN = 3
 
 func (pc *wkPages_) find(key string) *wkCached {
 	if key == "" {
@@ -725,37 +728,21 @@ func (pc *wkPages_) find(key string) *wkCached {
 	return nil
 }
 
-// canvas is a picture for a page about to be drawn: not one a kept page is in.
+// canvas is a fresh picture for a page about to be drawn.
 func (pc *wkPages_) canvas(w, h int) *image.RGBA {
-	for i, im := range pc.spare {
-		if im.Rect.Dx() == w && cap(im.Pix) >= 4*w*h {
-			pc.spare = append(pc.spare[:i], pc.spare[i+1:]...)
-			im = &image.RGBA{Pix: im.Pix[:4*w*h], Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
-			pc.next = im
-			return im
-		}
-	}
-	pc.next = image.NewRGBA(image.Rect(0, 0, w, h))
-	return pc.next
+	return image.NewRGBA(image.Rect(0, 0, w, h))
 }
 
-// keep remembers the page just drawn (key "": not kept, its picture is drawn into next time).
+// keep remembers the page just drawn (key "": not kept).
 func (pc *wkPages_) keep(key string, p *page, tabsOn string) {
-	im := pc.next
-	pc.next = nil
-	if im == nil {
+	if key == "" {
 		return
 	}
 	for i, e := range pc.list { // the same page drawn again: the old one goes
 		if e.key == key {
-			pc.spare = append(pc.spare, e.p.img)
 			pc.list = append(pc.list[:i], pc.list[i+1:]...)
 			break
 		}
-	}
-	if key == "" {
-		pc.spare = append(pc.spare[:0], im)
-		return
 	}
 	if len(pc.list) >= wkCacheN {
 		old := 0
@@ -764,26 +751,14 @@ func (pc *wkPages_) keep(key string, p *page, tabsOn string) {
 				old = i
 			}
 		}
-		pc.spare = append(pc.spare, pc.list[old].p.img)
 		pc.list = append(pc.list[:old], pc.list[old+1:]...)
 	}
-	if len(pc.spare) > 2 {
-		pc.spare = pc.spare[len(pc.spare)-2:]
-	}
 	pc.clock++
-	pc.list = append(pc.list, &wkCached{key: key, p: p, tabsOn: tabsOn, used: pc.clock})
+	pc.list = append(pc.list, &wkCached{key: key, p: p, tabsOn: tabsOn, fields: soma.reading(), used: pc.clock})
 }
 
 // drop forgets every kept page (what they show has changed in a way the key can't see).
-func (pc *wkPages_) drop() {
-	for _, e := range pc.list {
-		pc.spare = append(pc.spare, e.p.img)
-	}
-	pc.list = nil
-	if len(pc.spare) > 2 {
-		pc.spare = pc.spare[len(pc.spare)-2:]
-	}
-}
+func (pc *wkPages_) drop() { pc.list = nil }
 
 // workKey is everything a workstation page shows that can change: the records, the page and
 // its choices, the minute, where it's scrolled to (the pills and sheets sit on the screen).
@@ -834,7 +809,15 @@ func (c *console) workTap(id string) bool {
 func (c *console) wkGo(page, sub string) {
 	su := &c.somaUI
 	su.work, su.workSub, su.sheet, su.sheetStack, su.toTop = page, sub, "", nil, true
+	// What the PC and the phone changed comes in now, not at the next two-minute sync (the
+	// page shows at once from what was kept, and is drawn again if the pull changed it).
+	if time.Since(wkLastSync) > 20*time.Second {
+		wkLastSync = time.Now()
+		go soma.sync()
+	}
 }
+
+var wkLastSync time.Time // wkGo's last sync. Caller holds drawMu.
 
 // wkHandled says whether a button id does something (the dead-button test asks).
 func wkHandled(id string) bool {

@@ -611,16 +611,40 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Done (wk:htick ticks them all).
 - [x] **Every tab instant after its first visit, also after a restart** (2026-10-29, views.go,
       keyboard.go; replaces work_snaps.go): showPage asks viewKey() for a key per view (Home,
-      Library, Store query/topic, Words, Soma page + sub-page + project + choices, Playbox view,
-      Browser url, Settings pane; "" while typing, a sheet/undo open or dragging; reader, terminal,
-      video have none). A view drawn once is kept in memory (page copy + the native screen, 320 MB,
-      least recently used dropped) and its first screen + buttons/swipes on disk in
-      /data/condor/views/<sha1>.view (gob meta + RGBA, at most every 30 s a view, 80 kept). Showing it
-      again is a copy (~3 ms on the PC); when it may be stale (from disk, somaGen changed, older
-      than 20 s) it's redrawn fresh once the finger has been still 700 ms (viewRefreshLater). The
-      keyboard keeps its drawn picture per look (Terminal 21 → 10 ms). Tests: views_test.go,
+      Library, Store query/topic, Words, Soma page + sub-page + project + choices + hidden cards,
+      Playbox view, Browser url, Settings pane; "" while typing, a sheet/undo open or dragging;
+      reader, terminal, video have none). The keyboard keeps its drawn picture per look.
+      **Reworked 2026-10-29 (user: tabs froze after a while, then Margin froze for good):** the
+      first version kept a copy of every page + the native screen (320 MB) on top of the
+      workstation's own 5+2 kept pictures; on the PC 15 Soma tabs took the heap to 500-800 MB
+      (sys ~900 MB) — on the 2 GB, 32-bit tablet that ends in a crawl, then a crash with the last
+      frame frozen (the hook doesn't restart margin-init). Now: memory keeps pages only (no screen
+      copy; showing = blitPage, ~4 ms PC), 112 MB budget, pictures shared not copied (workstation
+      pages are drawn into fresh pictures, page.owned; pageCanvas/tabCanvas are taken over, not
+      copied; wkPageCache = 3, no recycled spares). Disk: /data/condor/views/<sha1>.mv = magic +
+      gob meta + the WHOLE page packed (runs of a pixel stored once, ~11x: 11 MB → 1 MB; unpack
+      ~3 ms PC), with all buttons and the scroll, 60 kept; packed under drawMu only after 1.5 s
+      untouched (~4 ms PC), written in the background, skipped if the same (crc); old .view files
+      deleted. Staleness by content: while a page is drawn, somasync notes which kinds of record it
+      reads (soma.track/tracked, fieldGen per kind; pseudo-kinds "standby", "trainingSeed"), so a
+      Soma view is redrawn only if one of those changed or the 5-minute clock moved; other tabs
+      after a minute; disk views once after a restart. A sync that brings nothing the screen read
+      no longer redraws it (soma.changed → viewNeedsDraw); push no longer bumps somaGen (and keeps
+      Dirty if the record changed while sending). main sets debug.SetMemoryLimit(400 MB); a panic
+      in a touch is logged (init.log "touch: panic") instead of killing Margin. Live heap after
+      going through every Soma page: 139 MB (was ~540). Tests: views_test.go, views_mem_test.go,
       tabs_speed_test.go (MARGIN_SPEED=1). testConsole turns views off (views.off) unless a test
-      turns them on.
+      turns them on. **Not yet verified on the tablet** ("Freeze: what Margin wrote" on the
+      Clipboard shows panics, memory and slow pages from init.log).
+- [x] **Yesterday's PC hours missing on the tablet** (2026-10-29, somadata.go, work_pages.go,
+      work.go, somacheck.go): cause not confirmed yet (no tablet data). Soma's PC format matches
+      (timeEntries#te-…, start/end ms). Made robust: a list Soma sends as ONE record (records.ts
+      splits by id only when every item has a distinct id) is read too (somaList); the Timesheet
+      counts hours on projects the tablet doesn't have ("Deleted project", as the PC does); moving
+      between workstation pages syncs (at most every 20 s, wkGo). `margin-init soma-check`
+      (Clipboard "Time: yesterday's hours, tablet vs Soma's sync") prints the tablet's clock, sync
+      position, and every entry/shift of the last 3 days on the tablet vs the relay (pulled from
+      seq 0, read only): MISSING ON THE TABLET / DIFFERS / same, with the device each came from.
 - [x] **Time > Entries like the PC, with standby** (2026-10-29, work_timelog.go): each day as a table
       like TimePage.tsx (start – end, hours, type tag, what was done with project · step, billable
       money). Work log shifts (worklog.ts) are listed with the time entries (type "Work log"), so

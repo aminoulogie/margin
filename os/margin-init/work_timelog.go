@@ -49,6 +49,7 @@ func (r wkLogRow) dur() time.Duration { return max(0, r.end.Sub(r.start)) }
 var standbyPath = filepath.Join(marginHome, "standby.json")
 
 func standbyChoices() map[string]string {
+	soma.note("standby") // a page that shows them is drawn again when they change
 	m := map[string]string{}
 	if b, err := os.ReadFile(standbyPath); err == nil {
 		json.Unmarshal(b, &m)
@@ -62,7 +63,7 @@ func setStandbyChoice(key, v string) {
 	b, _ := json.Marshal(m)
 	os.MkdirAll(filepath.Dir(standbyPath), 0o755)
 	os.WriteFile(standbyPath, b, 0o644)
-	somaGen.Add(1) // pages drawn before this are stale
+	soma.bump("standby") // pages drawn before this are stale
 }
 
 // --- rows ---------------------------------------------------------------------------------------

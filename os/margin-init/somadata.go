@@ -78,6 +78,25 @@ func somaList(field string) []obj {
 	for _, k := range rest {
 		if o := somaObj(k); o != nil {
 			out = append(out, o)
+			seen[strings.TrimPrefix(k, field+"#")] = true
+		}
+	}
+	// Soma sends a list as one record when it can't split it (an item without an id, or two
+	// with the same one: records.ts, idArray); its items are read from there.
+	if whole := soma.get(field); strings.HasPrefix(strings.TrimSpace(whole), "[") {
+		var items []any
+		json.Unmarshal([]byte(whole), &items)
+		for _, it := range items {
+			o, _ := it.(obj)
+			if o == nil {
+				continue
+			}
+			if id := str(o["id"]); id == "" || !seen[id] {
+				out = append(out, o)
+				if id != "" {
+					seen[id] = true
+				}
+			}
 		}
 	}
 	return out

@@ -117,9 +117,11 @@ func (c *console) somaPage() *page {
 	soma.changed = func() {
 		drawMu.Lock()
 		defer drawMu.Unlock()
-		if c.mode == modeSoma && !c.somaUI.typing {
+		// Drawn again only if what's on screen read something that changed (or a sheet is
+		// open over it): a pull that brought the phone's screen time leaves Projects be.
+		if c.mode == modeSoma && !c.somaUI.typing && (c.somaUI.sheet != "" || c.viewNeedsDraw()) {
 			c.redrawSoon(func() {
-				if c.mode == modeSoma {
+				if c.mode == modeSoma && (c.somaUI.sheet != "" || c.viewNeedsDraw()) {
 					c.showPage()
 				}
 			})

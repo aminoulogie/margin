@@ -39,7 +39,7 @@ func testConsole(t *testing.T) *console {
 	vd := t.TempDir()
 	viewDirFn = func() string { return vd }
 	views.Lock()
-	views.m, views.bytes, views.saved, views.off, views.async = nil, 0, nil, true, false
+	views.m, views.bytes, views.sums, views.saving, views.off, views.async = nil, 0, nil, false, true, false
 	views.Unlock()
 	t.Cleanup(func() { viewDirFn = oldViewDir })
 	setPalette(true)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -250,6 +251,13 @@ func (c *console) touchLoop() {
 		err := readTouch("Goodix", c.s.fbW, c.s.fbH, c.s.rot, func(string, ...any) {}, func(pts []TouchPoint) {
 			drawMu.Lock()
 			defer drawMu.Unlock()
+			// A bug in what a tap does must not take Margin down: that left the last picture
+			// frozen on the screen until a restart. Logged, and the next touch goes on.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("touch: panic: %v\n%s", r, debug.Stack())
+				}
+			}()
 			c.lastInput = time.Now()
 			if !c.screenOn {
 				return // only the power button wakes the screen

@@ -53,6 +53,7 @@ func seedPath() string { return somaDir + "/training-seed.json" }
 // loadSeed is the sheet: from the copy on the tablet, or fetched (once an hour at most) in
 // the background, the page drawn again when it arrives.
 func loadSeed() *seedFile {
+	soma.note("trainingSeed") // pages drawn without it are drawn again once it's here
 	trainingSeed.Lock()
 	defer trainingSeed.Unlock()
 	if trainingSeed.data != nil {
@@ -88,6 +89,7 @@ func fetchSeed() {
 	trainingSeed.Lock()
 	trainingSeed.data = &f
 	trainingSeed.Unlock()
+	soma.bump("trainingSeed")
 	soma.mu.Lock()
 	changed := soma.changed
 	soma.mu.Unlock()
