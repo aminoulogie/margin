@@ -96,7 +96,7 @@ type videoPlayer struct {
 	drops     int // frames skipped in the last stretch, to see whether it keeps up
 	shown     int
 	keepSince time.Time // when the current stretch of drops/shown began
-	scrub     float64 // the timeline's finger: the time it points at (-1: none)
+	scrub     float64   // the timeline's finger: the time it points at (-1: none)
 	touch     videoTouch
 	ticker    bool
 	pauseNext bool // show the next frame, then pause (a seek while paused)
@@ -122,6 +122,9 @@ type videoTouch struct {
 
 // ffmpegInstalled: Alpine has ffmpeg and ffprobe.
 func ffmpegInstalled() bool {
+	if fastFFmpegReady() {
+		return true
+	}
 	for _, p := range []string{"/usr/bin/ffmpeg", "/usr/bin/ffprobe"} {
 		if _, err := os.Stat(alpineRoot + p); err != nil {
 			return false
@@ -140,20 +143,10 @@ func (c *console) installFFmpeg(done func(error)) {
 	}
 	c.pb.installing = true
 	go func() {
-		ffmpegInstall.Lock()
-		var err error
-		if !ffmpegInstalled() || !aplayInstalled() {
-			var out []byte
-			out, err = apkOut("apk", "add", "ffmpeg", "alsa-utils")
-			log.Printf("playbox: apk add ffmpeg alsa-utils: %v %s", err, lastLines(string(out), 3))
-			if err == nil && !ffmpegInstalled() {
-				err = fmt.Errorf("ffmpeg isn't there after apk add")
-			}
-			if err != nil {
-				err = fmt.Errorf("couldn't install ffmpeg (is Wi-Fi on?): %s", lastLines(string(out), 2))
-			}
-		}
-		ffmpegInstall.Unlock()
+		fastMu.Lock()
+		fastTried = false // asked for: try the fast build again
+		fastMu.Unlock()
+		err := ensurePlayer(nil)
 		drawMu.Lock()
 		defer drawMu.Unlock()
 		c.pb.installing = false
@@ -194,7 +187,7 @@ type probeStream struct {
 
 // probeVideo asks ffprobe what the film is: its size, frame rate, length and sound.
 func probeVideo(ctx context.Context, url string) (*videoProbe, error) {
-	cmd := alpineCtxCmd(ctx, "/usr/bin/ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
+	cmd := alpineCtxCmd(ctx, ffprobePath(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", url)
 	out, err := cmd.Output()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -406,7 +399,7 @@ func startRun(ctx context.Context, url string, p *videoProbe, base, speed float6
 	run := &videoRun{fw: fw, fh: fh, half: half, rate: p.rateVal, base: base, speed: speed, done: make(chan struct{})}
 	run.cond = sync.NewCond(&run.mu)
 	run.volume.Store(int32(volume))
-	vcmd := alpineCtxCmd(ctx, "/usr/bin/ffmpeg", ffmpegVideoArgs(url, p, base, speed, fw, fh)...)
+	vcmd := alpineCtxCmd(ctx, ffmpegPath(), ffmpegVideoArgs(url, p, base, speed, fw, fh)...)
 	out, err := vcmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -464,7 +457,7 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		return
 	}
 	pr.Close()
-	acmd := alpineCtxCmd(ctx, "/usr/bin/ffmpeg", ffmpegAudioArgs(url, p, r.base, r.speed)...)
+	acmd := alpineCtxCmd(ctx, ffmpegPath(), ffmpegAudioArgs(url, p, r.base, r.speed)...)
 	aout, err := acmd.StdoutPipe()
 	if err == nil {
 		aerr, _ := acmd.StderrPipe()
@@ -664,27 +657,17 @@ func (c *console) videoPrepare(v *videoPlayer) {
 		c.videoRedraw()
 		return true
 	}
-	fail := func(msg string) { set("failed", msg) }
-	if !ffmpegInstalled() {
-		if !set("install", "Getting the video player ready (once, about 40 MB)…") {
+	fail := func(msg string) {
+		set("failed", msg)
+		drawMu.Lock()
+		pbLastProblem = msg
+		drawMu.Unlock()
+	}
+	if !ffmpegInstalled() || !aplayInstalled() || !fastFFmpegReady() && !fastTried {
+		if !set("install", "Getting the video player ready (once)…") {
 			return
 		}
-		ffmpegInstall.Lock()
-		var err error
-		if !ffmpegInstalled() {
-			var out []byte
-			out, err = apkOut("apk", "add", "ffmpeg", "alsa-utils")
-			log.Printf("playbox: apk add ffmpeg alsa-utils: %v %s", err, lastLines(string(out), 3))
-			if err != nil || !ffmpegInstalled() {
-				why := lastLines(string(out), 1)
-				if why == "" && err != nil {
-					why = err.Error()
-				}
-				err = fmt.Errorf("Couldn't install the video player (ffmpeg). Is Wi-Fi on? %s", why)
-			}
-		}
-		ffmpegInstall.Unlock()
-		if err != nil {
+		if err := ensurePlayer(func(msg string) { set("install", msg) }); err != nil {
 			fail(err.Error())
 			return
 		}
@@ -839,6 +822,7 @@ func (c *console) videoFrames(v *videoPlayer, run *videoRun) {
 		}
 		if run.soundErr != "" && v.noSound == "" {
 			v.noSound = run.soundErr
+			pbLastProblem = run.soundErr + " (on " + soundDev() + ")"
 			log.Printf("playbox: %s", run.soundErr)
 		}
 		c.lastInput = time.Now() // a film playing keeps the screen on
@@ -914,6 +898,7 @@ func (c *console) videoWait(v *videoPlayer, run *videoRun) {
 			msg = err.Error()
 		}
 		v.state, v.msg = "failed", "Playback failed: "+msg
+		pbLastProblem = v.msg
 		v.controls = true
 	}
 	c.videoRedraw()
@@ -1752,8 +1737,6 @@ func blendPart(s *Screen, p *ovPart, flip bool) {
 
 // --- sound setup -------------------------------------------------------------------------------
 
-var soundOnce sync.Once
-
 // soundCardNo is the number of the tablet's own audio chip in ALSA ("cloverview_audio"):
 // card 0 here is the Loopback card, which ALSA's default device points at.
 func soundCardNo() string {
@@ -1784,32 +1767,56 @@ func soundDev() string {
 // setupSound turns the speaker and headphone outputs on and up (ALSA's mixer), once: without
 // Android's audio service nothing has. Best effort.
 func setupSound() {
-	soundOnce.Do(func() {
-		if _, err := os.Stat(alpineRoot + "/usr/bin/amixer"); err != nil {
-			return
+	card := soundCardNo()
+	if d := currentSoundDev(); d != "" {
+		card = strings.Split(d, ",")[0]
+	}
+	soundSetMu.Lock()
+	defer soundSetMu.Unlock()
+	if soundSet[card] {
+		return
+	}
+	soundSet[card] = true
+	if _, err := os.Stat(alpineRoot + "/usr/bin/amixer"); err != nil {
+		return
+	}
+	amixer := func(args ...string) ([]byte, error) {
+		return alpineCtxCmd(context.Background(), "/usr/bin/amixer", append([]string{"-c", card}, args...)...).Output()
+	}
+	want := regexp.MustCompile(`(?i)speaker|headphone|headset|master|pcm|dac|line ?out|playback|spk|hp|media|ihf|earpiece`)
+	skip := regexp.MustCompile(`(?i)capture|mic|boost|adc|record|input|loopback`)
+	out, err := amixer("scontrols")
+	if err != nil {
+		log.Printf("playbox: amixer: %v", err)
+		return
+	}
+	log.Printf("playbox: sound card %s controls: %s", card, strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", " | "))
+	re := regexp.MustCompile(`Simple mixer control '([^']+)',(\d+)`)
+	for _, m := range re.FindAllStringSubmatch(string(out), -1) {
+		if !want.MatchString(m[1]) || skip.MatchString(m[1]) {
+			continue
 		}
-		card := soundCardNo()
-		out, err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-c", card, "scontrols").Output()
-		if err != nil {
-			log.Printf("playbox: amixer: %v", err)
-			return
+		ctl := m[1] + "," + m[2]
+		if _, err := amixer("-q", "sset", ctl, "85%", "unmute"); err != nil {
+			amixer("-q", "sset", ctl, "on")
 		}
-		log.Printf("playbox: sound card %s controls: %s", card, strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", " | "))
-		re := regexp.MustCompile(`Simple mixer control '([^']+)',(\d+)`)
-		want := regexp.MustCompile(`(?i)speaker|headphone|master|pcm|dac|line ?out|playback|spk|hp|media`)
-		skip := regexp.MustCompile(`(?i)capture|mic|boost|adc|record|input`)
-		for _, m := range re.FindAllStringSubmatch(string(out), -1) {
-			if !want.MatchString(m[1]) || skip.MatchString(m[1]) {
-				continue
+	}
+	// The chip's switches that aren't simple controls (routes): on, for playback ones.
+	if out, err := amixer("contents"); err == nil {
+		reCtl := regexp.MustCompile(`numid=(\d+),iface=MIXER,name='([^']+)'\s*\n\s*; type=BOOLEAN`)
+		for _, m := range reCtl.FindAllStringSubmatch(string(out), -1) {
+			if want.MatchString(m[2]) && !skip.MatchString(m[2]) {
+				amixer("-q", "cset", "numid="+m[1], "on")
 			}
-			ctl := m[1] + "," + m[2]
-			if err := alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", card, "sset", ctl, "85%", "unmute").Run(); err != nil {
-				alpineCtxCmd(context.Background(), "/usr/bin/amixer", "-q", "-c", card, "sset", ctl, "on").Run()
-			}
 		}
-		log.Printf("playbox: mixer set up")
-	})
+	}
+	log.Printf("playbox: mixer of card %s set up", card)
 }
+
+var (
+	soundSetMu sync.Mutex
+	soundSet   = map[string]bool{}
+)
 
 // testSound plays a short chime the way films play, and says how it went.
 func testSound() string {
