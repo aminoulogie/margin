@@ -650,7 +650,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       going through every Soma page: 139 MB (was ~540). Tests: views_test.go, views_mem_test.go,
       tabs_speed_test.go (MARGIN_SPEED=1). Redrawn the same = nothing sent to the panel (Flush
       compares rows). testConsole turns views off (views.off) and the background drawing
-      (views.noPrep) unless a test turns them on. **Not yet verified on the tablet** ("Freeze: what Margin wrote" on the
+      (views.noPrep) unless a test turns them on. **Not yet verified on the tablet** ("Slow or frozen: what Margin wrote" on the
       Clipboard shows panics, memory and slow pages from init.log).
 - [x] **Yesterday's PC hours missing on the tablet** (2026-10-29, somadata.go, work_pages.go,
       work.go, somacheck.go): cause not confirmed yet (no tablet data). Soma's PC format matches
