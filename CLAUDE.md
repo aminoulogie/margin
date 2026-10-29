@@ -622,3 +622,7 @@ Update this checklist as things are done.
   `GOARCH=386 go test ./...` (a 1<<62 constant once broke the tablet's own `update` build).
 - Work in github.com/aminoulogie/margin, branch `main` (the project moved there from the
   condor-linux folder of aminoulogie/ipakill, which is private now). No model names in commits.
+- **Merge your own work into `main` yourself** (the user asked, 2026-10-29): once the tests pass
+  (`GOARCH=386 go test ./...`), merge the branch or pull request into `main` right away (e.g.
+  `gh api -X PUT repos/aminoulogie/margin/pulls/<n>/merge -f merge_method=merge`), then tell the
+  user it's merged and that `update` on the tablet installs it. Don't ask the user to merge.
