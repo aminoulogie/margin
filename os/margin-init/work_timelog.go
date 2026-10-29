@@ -263,10 +263,12 @@ func wkLogDays(entries []wkEntry, projects []wkProject, now time.Time) ([]string
 					row.rate, row.project, row.client = w.rate, w.project, w.client
 				}
 			}
-			lunch := false
+			lunch, free := false, false
 			switch choice[row.gapKey] {
 			case "lunch":
 				lunch = true
+			case "free":
+				free = true
 			case "standby":
 			default:
 				h := g.a.In(displayZone)
@@ -275,13 +277,15 @@ func wkLogDays(entries []wkEntry, projects []wkProject, now time.Time) ([]string
 					lunch = true
 				}
 			}
-			if lunch {
+			if free {
+				row.kind, row.col, row.title = "Free", wkMuted, "Free time · not billed"
+			} else if lunch {
 				lunchTaken = true
 				row.kind, row.col, row.title = "Lunch", wkMuted, "Lunch"
 			} else {
 				row.kind, row.col, row.title, row.billable = "Standby", wkAmber, "Standby · waiting on the client", true
 			}
-			row.tap = "wk:standby:" + row.gapKey
+			row.tap = "wk:sheet-open:gap:" + row.gapKey
 			rows = append(rows, row)
 		}
 		sort.SliceStable(rows, func(i, j int) bool {
@@ -351,27 +355,37 @@ var standbyCache struct {
 	sync.Mutex
 	key  string
 	segs []wkStandbySeg
+	keys []string
+	days map[string][]wkLogRow
 }
 
-// wkStandby is every piece of standby there is, worked out again only when the records change.
-func wkStandby(now time.Time) []wkStandbySeg {
+// wkLogAll is wkLogDays for everything there is, worked out again only when the records (or
+// the minute) change: the Entries page, standby in every total and the gap sheet share it.
+func wkLogAll(now time.Time) ([]string, map[string][]wkLogRow) {
 	key := fmt.Sprintf("%d|%s", somaGen.Load(), now.Format("2006-01-02 15:04"))
 	standbyCache.Lock()
 	defer standbyCache.Unlock()
-	if standbyCache.key == key {
-		return standbyCache.segs
-	}
-	keys, days := wkLogDays(wkEntries(), wkProjects(), now)
-	var segs []wkStandbySeg
-	for _, d := range keys {
-		for _, r := range days[d] {
-			if r.gap && r.kind == "Standby" {
-				segs = append(segs, wkStandbySeg{r.start, r.end, r.project, r.client, r.rate})
+	if standbyCache.key != key {
+		keys, days := wkLogDays(wkEntries(), wkProjects(), now)
+		var segs []wkStandbySeg
+		for _, d := range keys {
+			for _, r := range days[d] {
+				if r.gap && r.kind == "Standby" {
+					segs = append(segs, wkStandbySeg{r.start, r.end, r.project, r.client, r.rate})
+				}
 			}
 		}
+		standbyCache.key, standbyCache.segs, standbyCache.keys, standbyCache.days = key, segs, keys, days
 	}
-	standbyCache.key, standbyCache.segs = key, segs
-	return segs
+	return standbyCache.keys, standbyCache.days
+}
+
+// wkStandby is every piece of standby there is.
+func wkStandby(now time.Time) []wkStandbySeg {
+	wkLogAll(now)
+	standbyCache.Lock()
+	defer standbyCache.Unlock()
+	return standbyCache.segs
 }
 
 // wkStandbyIn is the standby billed to these projects that starts in [from, to), and its value.
@@ -421,7 +435,7 @@ func (k *wk) wkEntryRange(now time.Time) (from, to time.Time, label string) {
 }
 
 func (k *wk) timeEntriesTab(entries []wkEntry, projects []wkProject, now time.Time, y int) int {
-	keys, days := wkLogDays(entries, projects, now)
+	keys, days := wkLogAll(now)
 	from, to, label := k.wkEntryRange(now)
 	fromD, toD := somaDate(from), somaDate(to)
 	if from.IsZero() {
@@ -466,7 +480,7 @@ func (k *wk) timeEntriesTab(entries []wkEntry, projects []wkProject, now time.Ti
 		"Tap a gap to switch it between standby and lunch.   Sync: "+soma.status(), wkX1-wkX0-16))
 	y += 44
 
-	shown := 14 * (1 + k.sel("more", 0)) // days
+	shown := 7 * (1 + k.sel("more", 0)) // days: a short page draws and scrolls fast
 	for i, d := range shownKeys {
 		if i == shown {
 			k.boxBtn(fmt.Sprintf("wk:more:%d", k.sel("more", 0)+1), wkX0, y, wkX1, y+64, "chevron-down", "Show more", color.RGBA{}, wkFG)
@@ -511,7 +525,7 @@ func (k *wk) timeEntriesTab(entries []wkEntry, projects []wkProject, now time.Ti
 func (k *wk) logRow(r wkLogRow, ry int, now time.Time) {
 	cy := ry + 44
 	fg := wkFG
-	if r.kind == "Lunch" || r.kind == "On duty" {
+	if r.kind == "Lunch" || r.kind == "On duty" || r.kind == "Free" {
 		fg = wkMuted
 	}
 	end := r.end.In(displayZone).Format("15:04")
@@ -536,7 +550,7 @@ func (k *wk) logRow(r wkLogRow, ry int, now time.Time) {
 	bill := "—"
 	col := wkFaint
 	switch {
-	case r.kind == "Lunch":
+	case r.kind == "Lunch" || r.kind == "Free":
 		bill = "not billed"
 	case r.kind == "On duty":
 		bill = "see entries"
@@ -558,24 +572,90 @@ func (k *wk) logRow(r wkLogRow, ry int, now time.Time) {
 }
 
 func init() {
-	// wk:standby:<date|HH:MM> switches a gap between standby and lunch.
-	wkActions["standby"] = func(c *console, key string) {
-		now := time.Now().In(displayZone)
-		_, days := wkLogDays(wkEntries(), wkProjects(), now)
-		d, _, _ := strings.Cut(key, "|")
-		next := "lunch"
-		for _, r := range days[d] {
-			if r.gap && r.gapKey == key && r.kind == "Lunch" {
-				next = "standby"
+	// The gap sheet: what a stretch between pieces of work was. wk:sheet-open:gap:<date|HH:MM>.
+	wkSheets["gap"] = func(k *wk, key string) *wkSheet {
+		g, ok := wkFindGap(key)
+		if !ok {
+			return nil
+		}
+		d := g.dur()
+		sh := &wkSheet{title: fmt.Sprintf("%s – %s · %d:%02d", g.start.In(displayZone).Format("15:04"), g.end.In(displayZone).Format("15:04"), int(d.Hours()), int(d.Minutes())%60),
+			sub: "What was this time? " + g.start.In(displayZone).Format("Monday 2 January")}
+		sb := "50%"
+		if g.rate > 0 {
+			sb = "50% · " + wkMoney(d.Hours()*g.rate*wkStandbyShare)
+		}
+		proj := "a project"
+		if p, ok := wkProjectByID(g.project); ok {
+			proj = p.Name
+		}
+		sh.rows = []wkRow{
+			{id: "wk:gapset:standby|" + key, label: "Standby · waiting on the client", icon: "hourglass", col: wkAmber, detail: sb, sel: g.kind == "Standby"},
+			{id: "wk:gapset:lunch|" + key, label: "Lunch", icon: "coffee", detail: "not billed", sel: g.kind == "Lunch"},
+			{id: "wk:gapset:free|" + key, label: "Free time", icon: "clock", detail: "not billed", sel: g.kind == "Free"},
+			{id: "wk:gapwork:" + key, label: "It was work: make it an entry", icon: "plus", col: wkLime, detail: proj},
+		}
+		return sh
+	}
+	wkActions["gapset"] = func(c *console, arg string) { // <standby|lunch|free>|<date|HH:MM>
+		v, key, _ := strings.Cut(arg, "|")
+		setStandbyChoice(key, v)
+		c.toastMsg(map[string]string{"standby": "Standby: billed at 50%", "lunch": "Lunch: not billed", "free": "Free time: not billed"}[v])
+		c.somaUI.sheet, c.somaUI.sheetStack = "", nil
+		c.somaUI.keep = true
+	}
+	wkActions["gapwork"] = func(c *console, key string) {
+		g, ok := wkFindGap(key)
+		if !ok {
+			return
+		}
+		pid := g.project
+		if pid == "" {
+			for _, p := range wkProjects() {
+				if p.Status == "active" {
+					pid = p.ID
+					break
+				}
 			}
 		}
-		setStandbyChoice(key, next)
-		if next == "lunch" {
-			c.toastMsg("Marked as lunch: not billed")
-		} else {
-			c.toastMsg("Marked as standby: billed at 50%")
+		id := wkAddEntry(pid, g.start, g.end, "")
+		c.somaUI.sheet, c.somaUI.sheetStack = "", nil
+		c.openSheet("entry:" + id) // to set the project, note and times
+		c.toastMsg("Logged as work: change what's needed")
+	}
+	// Typing a start or end time on an entry: wk:type-open:etime:<id>|start (or |end).
+	wkPrompts["etime"] = func(arg string) (string, string) {
+		id, which, _ := strings.Cut(arg, "|")
+		cur := msTime(somaObj("timeEntries#" + id)[which])
+		v := ""
+		if !cur.IsZero() {
+			v = cur.In(displayZone).Format("15:04")
 		}
-		c.somaUI.keep = true
+		if which == "end" {
+			return "Ended at, e.g. 17:45", v
+		}
+		return "Started at, e.g. 9:30", v
+	}
+	wkTypers["etime"] = func(c *console, arg, text string) {
+		id, which, _ := strings.Cut(arg, "|")
+		var h, m int
+		if _, err := fmt.Sscanf(strings.ReplaceAll(strings.TrimSpace(text), ".", ":"), "%d:%d", &h, &m); err != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			c.toastMsg("Type a time like 14:30")
+			return
+		}
+		o := somaObj("timeEntries#" + id)
+		start := msTime(o["start"])
+		if start.IsZero() {
+			return
+		}
+		day := dayStart(start)
+		t := day.Add(time.Duration(h)*time.Hour + time.Duration(m)*time.Minute)
+		end := msTime(o["end"])
+		if which == "start" && !end.IsZero() && !t.Before(end) || which == "end" && !t.After(start) {
+			c.toastMsg("The end has to be after the start")
+			return
+		}
+		somaPatch("timeEntries", id, func(o obj) { o[which] = float64(t.UnixMilli()) })
 	}
 	// wk:srange:from|to picks a day for the custom period.
 	wkActions["srange"] = func(c *console, which string) {
@@ -590,4 +670,16 @@ func init() {
 		setStandbyChoice("_"+which, date)
 		c.somaUI.keep = true
 	}
+}
+
+// wkFindGap is the gap row with this key (date|HH:MM), as the Entries page shows it.
+func wkFindGap(key string) (wkLogRow, bool) {
+	_, days := wkLogAll(time.Now().In(displayZone))
+	d, _, _ := strings.Cut(key, "|")
+	for _, r := range days[d] {
+		if r.gap && r.gapKey == key {
+			return r, true
+		}
+	}
+	return wkLogRow{}, false
 }

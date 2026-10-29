@@ -1361,12 +1361,12 @@ func init() {
 			wkRow{id: "wk:type-open:enote:" + id, label: "Note", icon: "pencil", detail: note},
 			wkRow{id: "wk:sheet-open:eproj:" + id, label: "Project", icon: "folder-kanban", detail: p.Name},
 			wkRow{kind: "seg", opts: []wkOpt{{id: "wk:eset:" + id + ":billable:1", label: "Billable", sel: en.Billable}, {id: "wk:eset:" + id + ":billable:0", label: "Internal", sel: !en.Billable}}},
-			wkRow{kind: "stepper", label: "Started", detail: en.Start.In(displayZone).Format("15:04"), minus: "wk:eset:" + id + ":start:-15", plus: "wk:eset:" + id + ":start:15"},
+			wkRow{kind: "stepper", id: "wk:type-open:etime:" + id + "|start", label: "Started", detail: en.Start.In(displayZone).Format("15:04"), minus: "wk:eset:" + id + ":start:-15", plus: "wk:eset:" + id + ":start:15"},
 		)
 		if en.End.IsZero() {
 			sh.rows = append(sh.rows, wkRow{id: "wk:stop", label: "Stop it now", icon: "square", col: wkRed})
 		} else {
-			sh.rows = append(sh.rows, wkRow{kind: "stepper", label: "Ended", detail: end, minus: "wk:eset:" + id + ":end:-15", plus: "wk:eset:" + id + ":end:15"})
+			sh.rows = append(sh.rows, wkRow{kind: "stepper", id: "wk:type-open:etime:" + id + "|end", label: "Ended", detail: end, minus: "wk:eset:" + id + ":end:-15", plus: "wk:eset:" + id + ":end:15"})
 		}
 		sh.rows = append(sh.rows,
 			wkRow{id: "wk:edate:" + id, label: "Day", icon: "calendar", detail: wkDate(somaDate(en.Start))},

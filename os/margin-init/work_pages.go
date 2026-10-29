@@ -248,6 +248,9 @@ func (k *wk) timePage() int {
 	x := k.primary("wk:entry", "plus", "Entry", wkX1)
 	k.square("wk:cal", "calendar", x-13)
 	k.tabs("wk:tab", []string{"Timesheet", "Entries", "Rates", "Invoiced"}, nil, k.sel("tab", 0))
+	// The title, + Entry and the tabs stay put while the page scrolls under them (a fixed band
+	// answers on touch-down, too).
+	k.p.header = k.Y(300)
 	if t := k.sel("tab", 0); t > 0 {
 		return k.timeTab(t)
 	}

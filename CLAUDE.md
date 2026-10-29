@@ -639,6 +639,12 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       somaGen + minute) is added to wkValue (every billable value: Overview, Timesheet, Reports,
       clients), to the invoices (per client-month, "standby" in the line) and to Reports (Hours
       label + the saved timesheet text).
+      2026-10-29, second follow-up (user's photo: rows showed standby, the cards 0 = it was last week):
+      Time's title, + Entry and tabs are a fixed header (page.header = k.Y(300); fixed band answers
+      on touch-down). Tapping a gap opens a sheet (wkSheets "gap"): Standby / Lunch / Free time (not
+      billed) / "It was work: make it an entry" (wkAddEntry on the project before it, then the entry
+      sheet opens). Entry sheet: tap Started/Ended to type an exact time (wkTypers "etime").
+      wkLogAll caches the rows by somaGen + minute (page, totals and sheets share it); 7 days a page.
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
