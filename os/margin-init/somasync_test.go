@@ -157,7 +157,13 @@ func (f *fakeRelay) pcGet(t *testing.T, k *somaKeys, key string) (obj, string) {
 func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 	c := testConsole(t)
 	oldDir, oldSoma, oldClient := somaDir, soma, webClient
-	somaDir, soma = t.TempDir(), &somaStore{Recs: map[string]somaRec{}}
+	// Not t.TempDir: syncs started by the last edits can still save a moment after the test,
+	// and a folder that isn't empty then failed the test. This one goes when they're done.
+	dir, err := os.MkdirTemp("", "soma-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	somaDir, soma = dir, &somaStore{Recs: map[string]somaRec{}}
 	snaps.Lock()
 	snaps.shown, snaps.saved = nil, nil // a new tablet: no pictures of pages yet
 	snaps.Unlock()
@@ -185,7 +191,7 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 		// The records' write a moment after the last change: done before the folder goes.
 		for i := 0; i < 40; i++ {
 			st.mu.Lock()
-			p := st.savePending
+			p := st.savePending || st.running // a sync saves when it ends, too
 			st.mu.Unlock()
 			if !p {
 				break
@@ -196,6 +202,10 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 		st.saveMu.Unlock()
 		srv.Close()
 		somaDir, soma, webClient = oldDir, oldSoma, oldClient
+		go func() { // once the last syncs have given up on the closed relay
+			time.Sleep(3 * time.Second)
+			os.RemoveAll(dir)
+		}()
 	})
 	today := somaToday()
 	now := time.Now().UnixMilli() - 60000
