@@ -22,11 +22,10 @@ order, one merge per item, tests per item (TestNoDeadButtons for every new butto
 - Day templates ("Work day", "Study day") applied in one tap.
 - Calendar week view: 7 columns of blocks, practice and dated steps; an infinite strip that
   swipes smoothly at 60 fps (native, following the finger) in day, week and month alike.
-- Milestone countdown on each day's cell from 7 days before.
+- ~~Milestone countdown on each day's cell from 7 days before.~~ Done 2026-10-29.
 
 ## 3. Projects and overview
-- Step dependencies: "after: <step>", greyed as blocked until that one is ticked.
-- Checklist inside a step; the step ticks itself when all sub-items are done.
+- ~~Step dependencies~~ and ~~checklists inside a step~~: done 2026-10-29.
 - Rescue suggestions when a plan is behind near its deadline ("move these 3 steps?").
 - Overview: Today's 3 (picked automatically, swap one); a next-14-days strip (deadlines,
   milestones, practice end dates). Done: the Work / Plans switch on Projects (2026-10-29).

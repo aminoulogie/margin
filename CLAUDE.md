@@ -746,6 +746,12 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       time and minutes steppers, until (milestones / deadline), stop. Projects: a Work / Plans
       switch (two icons + a switch, workSel "projectswk:pk"). Test: work_practice_test.go.
       What the user picked next, in order: docs/SOMA-BACKLOG.md. **Not yet verified on the tablet.**
+- [x] **Steps: comes after, checklist; milestone countdowns** (2026-10-29, work_plans.go; from
+      docs/SOMA-BACKLOG.md): step.after (a step id; blocked = greyed "After: <step>", never
+      overdue, until that one is done), step.items [{id,text,done}] (sheet rows; all ticked ticks
+      the step, one unticked unticks it; "n/m" on the rows). From 7 days before an undone milestone
+      its countdown shows on the planner's month cells and the Calendar's future cells
+      (wkMilestoneSoon). Test: work_steps_test.go.
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

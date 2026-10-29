@@ -865,6 +865,9 @@ func (k *wk) stepList(p wkProject, y int, all bool, now time.Time) int {
 		case s.WorkMs > 0:
 			when = fmt.Sprintf("%.1f h", float64(s.WorkMs)/3.6e6)
 		}
+		if d, n := s.itemsDone(); n > 0 && !s.Done {
+			when = strings.TrimSpace(fmt.Sprintf("%s  %d/%d", when, d, n))
+		}
 		col := wkMuted
 		if when == "working…" {
 			col = wkGreen
@@ -1339,6 +1342,22 @@ func init() {
 				wkRow{id: "wk:smile:" + arg, label: "Milestone (a fixed date, not work)", icon: "flag", sel: s.Milestone},
 				wkRow{id: "wk:type-open:sphase:" + arg, label: "Phase", icon: "list-checks", detail: phase},
 				wkRow{id: "wk:type-open:swait:" + arg, label: "Waiting on", icon: "hourglass", detail: wait})
+			after := "Nothing"
+			for _, b := range p.Steps {
+				if b.ID == s.After {
+					after = b.Label
+				}
+			}
+			sh.rows = append(sh.rows, wkRow{id: "wk:sheet-open:safter:" + arg, label: "Comes after", icon: "arrow-right", detail: after})
+			anyDone := false
+			for _, it := range s.Items {
+				sh.rows = append(sh.rows, wkRow{id: "wk:sitem:" + arg + ":" + it.ID, label: it.Text, icon: map[bool]string{true: "circle-check", false: "circle"}[it.Done], sel: it.Done})
+				anyDone = anyDone || it.Done
+			}
+			sh.rows = append(sh.rows, wkRow{id: "wk:type-open:sitemadd:" + arg, label: "Add to its checklist", icon: "plus"})
+			if anyDone {
+				sh.rows = append(sh.rows, wkRow{id: "wk:sitemclear:" + arg, label: "Remove ticked items", icon: "trash-2"})
+			}
 			if open, isOpen := wkOpenStepWork(pid); isOpen && open == sid {
 				sh.rows = append(sh.rows, wkRow{id: "wk:stepwork:" + arg, label: "Stop working on it", icon: "square", col: wkRed})
 			} else if !s.Done {

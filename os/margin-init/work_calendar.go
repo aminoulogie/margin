@@ -109,6 +109,13 @@ func (k *wk) calendar() int {
 			if isRestDay(ds) {
 				ui.Circle(k.img, x0+cw-22, k.Y(y0+22), 6, rgb(0x38bdf8))
 			}
+			if ds > today && in { // from 7 days before a milestone, its countdown
+				if label, n, col, ok := wkMilestoneSoon(wkProjects(), ds); ok {
+					k.icon("flag", x0+cw/2, y0+70, 22, col)
+					k.textC(wkFont("bold", 22), x0+cw/2, y0+112, col, fmt.Sprintf("%d d", n))
+					k.textC(wkFont("regular", 15), x0+cw/2, y0+140, wkMuted, clip(wkFont("regular", 15), label, cw-20))
+				}
+			}
 			if ds <= today && in {
 				specs := somaRingSpecs(ds)
 				ringSet(k.img, x0+cw/2-44, k.Y(y0+42), 88, specs, ds != today && !ringsClosed(specs), false)
