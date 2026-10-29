@@ -61,8 +61,15 @@ func TestTerminalScrollSelectCopyPaste(t *testing.T) {
 	shot(t, c, "terminal-selection")
 	want := strings.TrimRight(cellsText(c.t.View(2, c.tu.back)), " ") + "\n" + cellsText(c.t.View(3, c.tu.back))[:7]
 	bar := c.accY() + accH/2
-	c.termTouch(TouchPoint{Down: true, X: c.offX + 10, Y: bar})
-	c.termTouch(TouchPoint{Up: true, X: kbPad + 10, Y: bar}) // Copy is first
+	copyX := -1
+	for x := kbPad; x < c.s.W; x += 10 {
+		if i := c.shortcutAt(x); i >= 0 && termShortcuts[i].label == "Copy" {
+			copyX = x
+			break
+		}
+	}
+	c.termTouch(TouchPoint{Down: true, X: copyX, Y: bar})
+	c.termTouch(TouchPoint{Up: true, X: copyX, Y: bar})
 	if c.tu.clip != want || c.tu.selOn {
 		t.Fatalf("copied %q, want %q (selection still on: %v)", c.tu.clip, want, c.tu.selOn)
 	}

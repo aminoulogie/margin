@@ -6,6 +6,17 @@ Wi-Fi, SSH and a console on its screen. Plan and what's next: `PLAN.md`. Everyth
 with sources: `docs/KNOWLEDGE.md` (read it before suggesting anything about OS options,
 firmware or flashing). **Start with "How the system works" below.**
 
+## Commands for the user go in CLIPBOARD.md (always, every model)
+The user can't type long commands on the tablet and can't paste into it. So **whenever you ask
+the user to run something on the tablet** (Shell tab, Claude tab), also add it to `CLIPBOARD.md`
+at the repo root and push it to `main` before you answer. The tablet's Terminal has a
+**Clipboard** button over the keyboard that fetches that file from GitHub; the user taps a
+command and it's typed for them (they press return). Format: newest first, a `## short plain
+title` line, then the command in a fenced block (multi-line is fine). Remove commands that are
+no longer useful so the list stays short. In your answer, tell the user to open
+Terminal > Clipboard and tap the command by its title, instead of asking them to type it.
+(clipboard.go; the file is cached on the tablet in /data/condor/clipboard.md for offline use.)
+
 ## Names (2026-10-27: the OS is Margin)
 The OS was called condor until 2026-10-27; it is **Margin** now (repo aminoulogie/margin;
 the PC tool `margin.exe`, the tablet program `margin-init`, the GPU helpers `os/margin-gl`
@@ -553,6 +564,12 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       up to half the panel (480p/576p) decode at half size, doubled on screen. Still open: whether
       plughw:4,0 (the chip's first device) makes sound at all needs the mixer controls from
       init.log ("sound card 4 controls: ...") to set the codec's speaker route.
+- [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
+      shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
+      fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
+      offline. Tap = typed into the tab on show, lines joined by returns, no final return. Pages of
+      5. Rows under the panel aren't drawn while it's open (render skips them). Tests:
+      clipboard_test.go (also checks CLIPBOARD.md parses).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

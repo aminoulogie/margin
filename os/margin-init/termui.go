@@ -18,13 +18,13 @@ type termShortcut struct{ label, out string }
 
 // termShortcuts: label and what it types ("" = Copy/Paste, handled apart).
 var termShortcuts = []termShortcut{
-	{"Copy", ""}, {"Paste", ""}, {"update", "update\r"}, {"clear", "clear\r"},
+	{"Clipboard", ""}, {"Copy", ""}, {"Paste", ""}, {"update", "update\r"}, {"clear", "clear\r"},
 	{"ls", "ls\r"}, {"cd ..", "cd ..\r"}, {"wifi", "wifi status\r"},
 }
 
 // claudeShortcuts are the Claude tab's: stop it (esc), and its commands.
 var claudeShortcuts = []termShortcut{
-	{"Copy", ""}, {"Paste", ""}, {"stop", "\x1b"}, {"/clear", "/clear\r"},
+	{"Clipboard", ""}, {"Copy", ""}, {"Paste", ""}, {"stop", "\x1b"}, {"/clear", "/clear\r"},
 	{"/model", "/model\r"}, {"/status", "/status\r"}, {"/help", "/help\r"},
 }
 
@@ -173,6 +173,11 @@ func (c *console) drawShortcuts() {
 		r := image.Rect(x, 10, x+w, accH-8)
 		bg, fg := col.special, col.text
 		switch {
+		case sc.label == "Clipboard":
+			fg = rgb(0xffd60a) // commands from GitHub to type: yellow
+			if c.cb.open {
+				bg = col.active
+			}
 		case sc.label == "Copy" && c.tu.selOn:
 			bg = col.active
 		case sc.label == "Copy", sc.label == "Paste" && c.tu.clip == "":
@@ -187,6 +192,7 @@ func (c *console) drawShortcuts() {
 		x += w + 12
 	}
 	c.s.blitRGBA(img, 0, c.accY())
+	c.drawClipboard()
 }
 
 // shortcutAt is the shortcut under logical x on the bar, or -1.
@@ -206,6 +212,9 @@ func (c *console) shortcutAt(x int) int {
 func (c *console) shortcut(i int) {
 	sc := c.shortcuts()[i]
 	switch sc.label {
+	case "Clipboard":
+		c.toggleClipboard()
+		return
 	case "Copy":
 		if !c.tu.selOn {
 			return
@@ -239,6 +248,10 @@ func (c *console) goLive() {
 // termTouch handles a finger on the terminal outside the keyboard. Caller holds drawMu.
 func (c *console) termTouch(p TouchPoint) {
 	tu := &c.tu
+	if c.cb.open && p.Y >= c.cb.rect.Min.Y && p.Y < c.cb.rect.Max.Y {
+		c.clipboardTouch(p)
+		return
+	}
 	if p.Y >= c.accY() && p.Y < c.accY()+accH { // the shortcuts bar: acts on lift
 		if p.Up {
 			if i := c.shortcutAt(p.X); i >= 0 {

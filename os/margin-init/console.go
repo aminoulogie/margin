@@ -52,6 +52,7 @@ type console struct {
 	claudeOnce       sync.Once       // Claude starts the first time its tab opens
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
+	cb               clipState   // the Clipboard over the keyboard: commands from GitHub (clipboard.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
 	xapp             *xapp       // a desktop app open full screen (desktop.go)
 	locked           bool        // the lock screen is up (lock.go)
@@ -392,6 +393,9 @@ func (c *console) render() {
 		d.cells, d.cursor = cells, cursor
 		if a > b {
 			continue
+		}
+		if c.cb.open && c.offY+(y+1)*c.ch > c.cb.rect.Min.Y {
+			continue // under the Clipboard: drawn again when it closes
 		}
 		line := image.NewRGBA(image.Rect(0, 0, (b-a+1)*c.cw, c.ch))
 		for x := a; x <= b; x++ {
