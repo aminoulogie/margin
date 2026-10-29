@@ -538,6 +538,21 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       tiers), an exercise's page. Health: Log today (sleep ± and quality, naps, creatine, weight,
       measurements) as the phone's Body tab. Icons added to icons/lucide.png with the same Chromium
       method (lucide-static SVGs, 96 px). **Not yet verified on the tablet.**
+- [x] **Playbox sound and speed fixes** (2026-10-29, video.go, video_fast.go, playbox.go, sound_test.go).
+      User report: films slow even at 480p, sound mostly silent; testing outputs one by one in
+      Playbox > Settings got stuck at 4,1 ("Voice"), and a film with 4,4 (VOIP) chosen played a
+      moment of sound then froze. Causes: (1) the sound is the film's clock (bytes handed to aplay),
+      so an output that stops taking sound froze the picture forever; the call outputs (cloverview
+      Voice/VOIP/BTSCO/IFX/virtual-stream/CTP Probe, IntelALSASSP, IntelALSAIFX, Loopback) are
+      clocked by the modem or a headset that isn't there and block, possibly in the driver
+      (unkillable), leaving the chip stuck until a restart. (2) ffmpeg scaled 480p up to 1920x1080:
+      8 MB a frame through the pipe. Fixes: soundWatch drops the sound when a write to aplay has
+      blocked for 4 s (film carries on, silent, wall clock, message in Settings); call outputs hidden
+      behind "Show N outputs for calls" (soundOut.call, callSoundRE) and a saved call output falls
+      back to Automatic; the chime test gives up after 6 s without waiting on a stuck aplay; films
+      up to half the panel (480p/576p) decode at half size, doubled on screen. Still open: whether
+      plughw:4,0 (the chip's first device) makes sound at all needs the mixer controls from
+      init.log ("sound card 4 controls: ...") to set the codec's speaker route.
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

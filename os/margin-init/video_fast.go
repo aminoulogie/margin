@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -186,7 +187,17 @@ func ensurePlayer(say func(string)) error {
 // pbLastProblem is what last went wrong playing (shown in Playbox > Settings).
 var pbLastProblem string
 
-type soundOut struct{ dev, name string }
+// soundOut is an ALSA playback device. call marks the ones that aren't for films: voice
+// calls, Bluetooth headsets, the modem, loopback and test devices. Their clock comes from the
+// modem or a headset that isn't there, so on this tablet a program writing to one blocks,
+// sometimes in the driver where it can't even be stopped, and the sound chip stays stuck
+// until a restart (a chime on 4,1 "Voice" froze it, 2026-10-29).
+type soundOut struct {
+	dev, name string
+	call      bool
+}
+
+var callSoundRE = regexp.MustCompile(`(?i)voice|voip|btsco|bt_device|builtin_device|ifx|modem|probe|dummy|loopback|vsp|virtual`)
 
 // soundOutputs lists the sound devices that can play ("card,device"), from /proc/asound.
 func soundOutputs() []soundOut {
@@ -223,16 +234,31 @@ func soundOutputs() []soundOut {
 		if cn := cards[card]; cn != "" {
 			name = cn + " · " + name
 		}
-		out = append(out, soundOut{card + "," + dev, name + " (" + card + "," + dev + ")"})
+		out = append(out, soundOut{card + "," + dev, name + " (" + card + "," + dev + ")", callSoundRE.MatchString(name)})
 	}
 	return out
 }
 
-// currentSoundDev is the output chosen by hand ("" = automatic).
+// currentSoundDev is the output chosen by hand ("" = automatic). A call output chosen
+// before they were told apart is dropped: films would freeze on it.
 func currentSoundDev() string {
 	b, err := os.ReadFile(marginHome + "/sounddev")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(b))
+	dev := strings.TrimSpace(string(b))
+	for _, o := range soundOutputs() {
+		if o.dev == dev && o.call && !callOutputsOK() {
+			log.Printf("playbox: sound output %s is for calls: back to automatic", dev)
+			os.Remove(marginHome + "/sounddev")
+			return ""
+		}
+	}
+	return dev
 }
+
+// callOutputsOK: the call outputs have been shown on purpose (Settings, "Show call outputs")
+// and one may be chosen.
+func callOutputsOK() bool { return pbShowCallOutputs }
+
+var pbShowCallOutputs bool

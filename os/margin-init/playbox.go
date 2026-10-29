@@ -1705,19 +1705,50 @@ func (c *console) pbSettingsPage() *page {
 	foot(note)
 
 	head("Sound output")
-	outs := soundOutputs()
 	cur := currentSoundDev()
-	rows = groupRows(img, mx, y, gw, len(outs)+1, 100)
-	for i, o := range append([]soundOut{{dev: "", name: "Automatic (the tablet's own chip)"}}, outs...) {
+	outs := []soundOut{{dev: "", name: "Automatic (the tablet's own chip)"}}
+	calls := 0
+	for _, o := range soundOutputs() {
+		if o.call {
+			calls++
+			if !pbShowCallOutputs {
+				continue
+			}
+			o.name += " · for calls"
+		}
+		outs = append(outs, o)
+	}
+	nrows := len(outs)
+	if calls > 0 {
+		nrows++
+	}
+	rows = groupRows(img, mx, y, gw, nrows, 100)
+	for i, o := range outs {
 		r := rows[i]
-		apText(img, f.body, r.Min.X+30, r.Min.Y+62, apLabel, clip(f.body, o.name, r.Dx()-200))
+		col := apLabel
+		if o.call {
+			col = apSecondary
+		}
+		apText(img, f.body, r.Min.X+30, r.Min.Y+62, col, clip(f.body, o.name, r.Dx()-200))
 		if o.dev == cur {
 			iconCheck(img, r.Max.X-70, (r.Min.Y+r.Max.Y)/2, apBlue)
 		}
 		p.buttons = append(p.buttons, button{"pb:snd:" + o.dev, r})
 	}
+	if calls > 0 {
+		r := rows[len(rows)-1]
+		label := fmt.Sprintf("Show %d outputs for calls", calls)
+		if pbShowCallOutputs {
+			label = "Hide the outputs for calls"
+		}
+		apText(img, f.body, r.Min.X+30, r.Min.Y+62, apBlue, label)
+		p.buttons = append(p.buttons, button{"pb:sndcalls", r})
+	}
 	y = rows[len(rows)-1].Max.Y
 	msg := "Tap an output: it's chosen and plays a chime. Pick the one you hear."
+	if pbShowCallOutputs {
+		msg = "Outputs for calls (voice, Bluetooth, the modem) can freeze the sound until the tablet restarts."
+	}
 	if pb.soundTest != "" {
 		msg = pb.soundTest
 	}
@@ -1964,6 +1995,8 @@ func (c *console) playboxTap(id string) bool {
 			pb.soundTest = msg
 			c.pbRedraw()
 		}()
+	case id == "pb:sndcalls":
+		pbShowCallOutputs = !pbShowCallOutputs
 	case id == "pb:soundtest":
 		pb.soundTest = "Playing…"
 		go func() {

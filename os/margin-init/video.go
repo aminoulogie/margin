@@ -327,8 +327,14 @@ type videoRun struct {
 	frames   int // shown, under drawMu
 	done     chan struct{}
 	soundErr string
-	soundEnd atomic.Bool // the sound's ffmpeg has finished (not an error)
+	soundEnd atomic.Bool  // the sound's ffmpeg has finished (not an error)
+	writing  atomic.Int64 // when the write to aplay now under way began (unix ns), 0 if none
 }
+
+// soundStuckAfter: a write to aplay blocked this long means the output has stopped taking
+// sound (a call output, a wedged driver). The first write waits for the device to open,
+// which can take a moment the first time (the sound DSP's firmware loads).
+var soundStuckAfter = 4 * time.Second // (tests make it shorter)
 
 type lineRing struct {
 	mu    sync.Mutex
@@ -487,7 +493,34 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		r.soundLost()
 	}()
 	go r.pumpSound()
+	go r.soundWatch()
 	go acmd.Wait()
+}
+
+// soundWatch drops the sound when the output stops taking it: the sound is the clock, so
+// a stuck output froze the film (2026-10-29). The film carries on silent, on the wall clock.
+func (r *videoRun) soundWatch() {
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	for range t.C {
+		if r.isKilled() || !r.audio.Load() || r.soundEnd.Load() {
+			return
+		}
+		w := r.writing.Load()
+		if w == 0 || time.Since(time.Unix(0, w)) < soundStuckAfter {
+			continue
+		}
+		log.Printf("playbox: %s stopped taking sound: carrying on without it", soundDev())
+		r.mu.Lock()
+		r.soundErr = "no sound: the output stopped taking sound (stuck); pick another in Playbox > Settings"
+		r.mu.Unlock()
+		r.soundLost()
+		if r.aplay != nil && r.aplay.Process != nil {
+			r.aplay.Process.Kill()
+		}
+		r.aplayW.Close() // the blocked write returns
+		return
+	}
 }
 
 // soundLost switches the clock from the sound to the wall, without a jump.
@@ -594,7 +627,10 @@ func (r *videoRun) pumpSound() {
 				}
 			}
 			if r.audio.Load() {
-				if _, werr := r.aplayW.Write(buf[:n]); werr != nil {
+				r.writing.Store(time.Now().UnixNano())
+				_, werr := r.aplayW.Write(buf[:n])
+				r.writing.Store(0)
+				if werr != nil {
 					r.soundLost()
 				}
 			}
@@ -723,6 +759,12 @@ func (c *console) videoPrepare(v *videoPlayer) {
 	}
 	v.url, v.probe = url, p
 	if p.h > 720 || strings.Contains(strings.ToLower(p.videoCodec), "hevc") {
+		v.light = true
+	}
+	// A film no bigger than half the panel (480p, 576p) is made at half size and doubled on
+	// the screen: the same picture for a quarter of the work (ffmpeg scaled 480p up to
+	// 1920x1080: 8 MB a frame through the pipe, too much for the Atom).
+	if dw := float64(p.w) * p.sar; dw > 0 && dw <= float64(c.s.fbW)/2*1.1 && p.h <= c.s.fbH/2 {
 		v.light = true
 	}
 	if p.duration > 0 && v.pos > p.duration-10 {
@@ -1756,10 +1798,8 @@ func soundCardNo() string {
 // tablet "Headset", which the speaker is routed from), with ALSA converting formats.
 // /data/condor/sounddev ("4,1": card,device) overrides it.
 func soundDev() string {
-	if b, err := os.ReadFile(marginHome + "/sounddev"); err == nil {
-		if s := strings.TrimSpace(string(b)); s != "" {
-			return "plughw:" + s
-		}
+	if d := currentSoundDev(); d != "" {
+		return "plughw:" + d
 	}
 	return "plughw:" + soundCardNo() + ",0"
 }
@@ -1818,7 +1858,9 @@ var (
 	soundSet   = map[string]bool{}
 )
 
-// testSound plays a short chime the way films play, and says how it went.
+// testSound plays a short chime the way films play, and says how it went. The chime lasts
+// about a second: an output still busy after 6 s is stuck (a call output), and is let go of
+// without waiting for it (a program blocked in the driver can't be stopped).
 func testSound() string {
 	if !aplayInstalled() {
 		out, err := apkOut("apk", "add", "alsa-utils")
@@ -1831,11 +1873,33 @@ func testSound() string {
 	if err := os.WriteFile(wav, alarmWAV(), 0o644); err != nil {
 		return err.Error()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := alpineCtxCmd(ctx, "/usr/bin/aplay", "-q", "-D", soundDev(), "/tmp/playbox-test.wav").CombinedOutput()
-	if err != nil {
-		return "No sound: " + lastLines(string(out), 1)
+	dev := soundDev()
+	cmd := alpineCtxCmd(context.Background(), "/usr/bin/aplay", "-q", "-D", dev, "/tmp/playbox-test.wav")
+	var out lineRing
+	ep, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		return "No sound: " + err.Error()
 	}
-	return "Played: did you hear a chime?"
+	go logLines(ep, "aplay (chime)", &out)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			why := out.last()
+			if why == "" {
+				why = err.Error()
+			}
+			return "No sound from " + dev + ": " + strings.TrimPrefix(why, "aplay: ")
+		}
+		return "Played on " + dev + ": did you hear a chime?"
+	case <-time.After(6 * time.Second):
+		cmd.Process.Kill()
+		log.Printf("playbox: %s got stuck playing the chime", dev)
+		if strings.TrimPrefix(dev, "plughw:") == currentSoundDev() {
+			os.Remove(marginHome + "/sounddev")
+		}
+		return dev + " got stuck: it's an output for calls, not for films. Back to Automatic. " +
+			"If nothing plays now, restart the tablet: a stuck output can hold the sound chip."
+	}
 }
