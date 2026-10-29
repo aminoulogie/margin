@@ -9,7 +9,7 @@ order, one merge per item, tests per item (TestNoDeadButtons for every new butto
   when training has stopped for a while (they forget for weeks). The tablet isn't at the gym:
   Training on the tablet is reports + the plan. Wanted on Soma iOS too (needs the Soma repo:
   ask before touching it). A deload feature was not wanted (a "volume up N weeks" note is enough).
-- **Evening check-in**, like Soma iOS's evening chat (used 20 min before bed): supplements taken
+- ~~**Evening check-in**~~ (done 2026-10-29), like Soma iOS's evening chat (used 20 min before bed): supplements taken
   (creatine, magnesium, ...), nutrients and macros of the day, and the journal (what went well,
   what to drop, tomorrow's one thing) inside it.
 - **Morning screen** every morning on first wake: today's blocks, practice, due steps.
