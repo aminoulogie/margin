@@ -470,6 +470,19 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       scan -m), tap to join, password on the keyboard (masked). Fields get a 5-row text
       keyboard (newTextKeyboard, follows dark/light); the Terminal keeps its own. Tests write
       settings to a temp file (settingsPath var). **Not yet verified on the tablet.**
+- [x] **Playbox tab** (2026-10-28, playbox*.go, video*.go, subtitles.go): the user's iPhone app
+      aminoulogie/playbox in Go. Stremio add-ons (Cinemeta, Torrentio, OpenSubtitles installed on
+      first run; /data/condor/playbox/), Discover/search/film+series pages, sources sorted by
+      seeders (Quick Play avoids 4K/HEVC), Library, downloads to /data/media/0/Movies. Torrents:
+      anacrolix/torrent (pure Go, builds 386 without cgo; first `update` compiles ~70 extra
+      modules, silent for a long while), streamed over a 127.0.0.1 media server (/t /r /f).
+      Player: ffmpeg + ffprobe from Alpine (apk add on first play), picture and sound from two
+      ffmpeg processes (one would deadlock), sound to aplay sets the clock, frames written in the
+      panel's native landscape (Screen.frame flush).
+- [x] **Browser tab** (2026-10-29, browser.go, browser_layout.go): Go HTML layout in Margin's
+      look (no JS/CSS), DuckDuckGo html search, links, images, forms (GET/POST), history,
+      favourites (/data/condor/browser.json), text size, long pages in 6500-row parts; videos and
+      magnets open in Playbox's player, EPUBs saved to Books. **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
