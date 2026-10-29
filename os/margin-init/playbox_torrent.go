@@ -205,6 +205,7 @@ func (e *torrentEngine) start(src *addonStream, download bool, name string, meta
 	e.jobs[hash] = j
 	e.mu.Unlock()
 	go e.run(j)
+	go boostTorrent(t, hash)
 	return j, nil
 }
 
