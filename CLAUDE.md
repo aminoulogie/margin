@@ -618,9 +618,15 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       /data/condor/views/<sha1>.view (gob meta + RGBA, at most every 30 s a view, 80 kept). Showing it
       again is a copy (~3 ms on the PC); when it may be stale (from disk, somaGen changed, older
       than 20 s) it's redrawn fresh once the finger has been still 700 ms (viewRefreshLater). The
-      keyboard keeps its drawn picture per look (Terminal 21 → 10 ms). Tests: views_test.go,
-      tabs_speed_test.go (MARGIN_SPEED=1). testConsole turns views off (views.off) unless a test
-      turns them on.
+      keyboard keeps its drawn picture per look (Terminal 21 → 10 ms). Redrawn the same = nothing
+      sent to the panel (Flush compares rows). Soma views are also made ready in the background
+      (viewPrepLoop every 2 s, viewPrepTick): a kept Soma view whose records changed (somaGen: an
+      edit, a sync from the phone) or whose 5-minute clock moved on is drawn again off screen once
+      the tablet is left alone 1.5 s, one at a time, the 10 most recently shown (state from the
+      entry's somaUI copy, screen made in s.buf and put back before any Flush), so opening it needs
+      no refresh. Tests: views_test.go (TestViewsReadyInBackground),
+      tabs_speed_test.go (MARGIN_SPEED=1). testConsole turns views off (views.off) and the
+      background drawing (views.noPrep) unless a test turns them on.
 - [x] **Time > Entries like the PC, with standby** (2026-10-29, work_timelog.go): each day as a table
       like TimePage.tsx (start – end, hours, type tag, what was done with project · step, billable
       money). Work log shifts (worklog.ts) are listed with the time entries (type "Work log"), so
