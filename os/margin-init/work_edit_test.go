@@ -297,3 +297,104 @@ func (c *console) sel(group string) int {
 	k := &wk{c: c}
 	return k.sel(group, 0)
 }
+
+func TestPlannerUsable(t *testing.T) {
+	c := workAt(t, "planner")
+	shot(t, c, "plan-week")
+	today := somaToday()
+
+	// A to-do at a time: tap the empty 10:00 today.
+	tapBtn(t, c, "wk:slotadd:"+today+":600")
+	typeIn(t, c, "Review rev B")
+	var id string
+	for _, td := range somaTodos() {
+		if td.Text == "Review rev B" {
+			id = td.ID
+			if td.SlotDate != today || td.SlotStart != 600 || td.SlotMins != 60 {
+				t.Fatalf("slot %+v", td)
+			}
+		}
+	}
+	c.showPage()
+	tapBtn(t, c, "wk:sheet-open:task:"+id)
+	shot(t, c, "plan-task-sheet")
+	tapBtn(t, c, "wk:tslot:"+id+":start:15")
+	tapBtn(t, c, "wk:tslot:"+id+":mins:-15")
+	tapBtn(t, c, "wk:tprio:"+id+":high")
+	tapBtn(t, c, "wk:tdue:"+id)
+	tapBtn(t, c, "wk:pickdate:"+wkAddDays(today, 1))
+	o := somaObj("todos#" + id)
+	s, _ := o["slot"].(obj)
+	if num(s["start"]) != 615 || num(s["mins"]) != 45 || str(o["priority"]) != "high" || str(o["due"]) != wkAddDays(today, 1) {
+		t.Fatalf("after edits %v", o)
+	}
+	tapBtn(t, c, "wk:type-open:trename:"+id)
+	typeIn(t, c, "Review rev B drawings")
+	tapBtn(t, c, "wk:ttomorrow:"+id)
+	if o := somaObj("todos#" + id); str(o["text"]) != "Review rev B drawings" || str(o["date"]) != wkAddDays(today, 1) {
+		t.Fatalf("rename/tomorrow %v", o)
+	}
+
+	// A plain to-do, then plan the day around it.
+	tapBtn(t, c, "wk:newtask")
+	typeIn(t, c, "Email the council")
+	tapBtn(t, c, "wk:planmyday")
+	planned := false
+	for _, td := range somaTodos() {
+		if td.Text == "Email the council" && td.SlotDate == today {
+			planned = true
+		}
+	}
+	if !planned && time.Now().In(displayZone).Hour() < 22 {
+		t.Fatal("plan my day didn't give it a time")
+	}
+
+	// Swipes: weeks, then a day, then a month.
+	swipeAcross(t, c, "plan:", 1)
+	if c.planDay().Format("2006-01-02") != wkAddDays(today, 7) {
+		t.Fatalf("week swipe: %v", c.planDay())
+	}
+	swipeAcross(t, c, "plan:", -1)
+	tapBtn(t, c, "wk:planday:"+today)
+	shot(t, c, "plan-day")
+	swipeAcross(t, c, "plan:", 1)
+	if c.planDay().Format("2006-01-02") != wkAddDays(today, 1) {
+		t.Fatalf("day swipe: %v", c.planDay())
+	}
+	tapBtn(t, c, "wk:plannav:0")
+	tapBtn(t, c, "wk:tab:2")
+	shot(t, c, "plan-month")
+	swipeAcross(t, c, "plan:", 1)
+	if c.planDay().Month() == time.Now().In(displayZone).Month() {
+		t.Fatal("month swipe")
+	}
+	tapBtn(t, c, "wk:plannav:0")
+	tapBtn(t, c, "wk:tab:3")
+	shot(t, c, "plan-board")
+	tapBtn(t, c, "wk:sheet-open:task:t2")
+	tapBtn(t, c, "wk:tdel:t2")
+	if somaObj("todos#t2") != nil {
+		t.Fatal("delete")
+	}
+	tapBtn(t, c, "wk:undo")
+	if somaObj("todos#t2") == nil {
+		t.Fatal("undo")
+	}
+
+	// Routines: one, with a step.
+	tapBtn(t, c, "wk:tab:4")
+	tapBtn(t, c, "wk:type-open:rtnew:")
+	typeIn(t, c, "Morning")
+	rs := wkRoutines()
+	if len(rs) != 1 {
+		t.Fatalf("routines %+v", rs)
+	}
+	tapBtn(t, c, "wk:type-open:rtstep:"+rs[0].ID)
+	typeIn(t, c, "Stretch 10")
+	c.somaUI.typing, c.skb.visible = false, false
+	c.showPage()
+	if rs = wkRoutines(); len(rs[0].Steps) != 1 || rs[0].Steps[0].Seconds != 600 || rs[0].Steps[0].Label != "Stretch" {
+		t.Fatalf("routine %+v", rs)
+	}
+	shot(t, c, "plan-routines")
+}

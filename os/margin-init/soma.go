@@ -59,6 +59,7 @@ type somaUI struct {
 	dateTitle  string
 	toTop      bool         // the tap being handled opened another page: scroll to its top
 	pf         wkProjFilter // how Projects are sorted and filtered
+	planDate   string       // the Planner's day (its week, its month); "" today
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {

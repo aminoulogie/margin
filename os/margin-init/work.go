@@ -577,14 +577,14 @@ func (c *console) workPage() *page {
 		}
 	}
 	k.rail(p.img.Rect.Dy(), map[string]int{"planner": planned, "findings": open})
-	if su.work != "reports" { // the report's buttons sit where it would
-		k.timerPill(min(p.img.Rect.Dy(), c.viewH()))
-	}
-	c.booksTabs(p, "tab:soma")
 	sy := 0
 	if p.img.Rect.Dy() > c.viewH() {
 		sy = min(max(c.scrollY(), 0), p.img.Rect.Dy()-c.viewH())
 	}
+	if su.work != "reports" { // the report's buttons sit where it would
+		k.timerPill(sy + min(p.img.Rect.Dy(), c.viewH())) // at the bottom of what's on screen
+	}
+	c.booksTabs(p, "tab:soma")
 	k.undoPill(sy + c.viewH())
 	k.drawSheet(p)
 	return p
