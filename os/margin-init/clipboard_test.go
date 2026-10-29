@@ -91,6 +91,9 @@ func TestClipboardSendsOutput(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("MARGIN_GITHUB_API", srv.URL)
 	t.Setenv("NO_PROXY", "*")
+	oldClient := webClient
+	webClient = func() *http.Client { return srv.Client() }
+	t.Cleanup(func() { webClient = oldClient })
 	ctx := context.Background()
 	if err := checkResultsRepo(ctx, "tok", "me/results"); err != nil {
 		t.Fatal(err)

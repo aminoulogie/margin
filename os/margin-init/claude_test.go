@@ -174,6 +174,9 @@ func TestClaudePublish(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("MARGIN_GITHUB_API", srv.URL)
 	t.Setenv("NO_PROXY", "*")
+	oldClient := webClient
+	webClient = func() *http.Client { return srv.Client() } // (margin-init's side goes through it)
+	t.Cleanup(func() { webClient = oldClient })
 	if _, err := publishFixes(context.Background(), "bad", "o/r", "main", src, "m"); err == nil {
 		t.Fatal("a refused token should fail")
 	}

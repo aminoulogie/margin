@@ -200,6 +200,13 @@ func publishFixes(ctx context.Context, token, repo, branch, src, message string)
 	return fmt.Sprintf("Published %s to %s@%s as %.7s: %s", plural(len(files), "file"), repo, branch, commit.SHA, list), nil
 }
 
+// insideAlpine: this process runs in Alpine's chroot (the Claude tab, cbsend), not as
+// margin-init on Android's side.
+func insideAlpine() bool {
+	_, err := os.Stat("/etc/alpine-release")
+	return err == nil
+}
+
 type ghClient struct {
 	ctx         context.Context
 	token, base string
@@ -207,13 +214,13 @@ type ghClient struct {
 
 func (g *ghClient) call(method, path string, body, out any) error {
 	var payload []byte
+	var err error
 	if body != nil {
-		var err error
 		if payload, err = json.Marshal(body); err != nil {
 			return err
 		}
 	}
-	resp, err := newClaudeNet().do(func() (*http.Request, error) {
+	mk := func() (*http.Request, error) {
 		r, err := http.NewRequestWithContext(g.ctx, method, g.base+path, bytes.NewReader(payload))
 		if err != nil {
 			return nil, err
@@ -225,7 +232,18 @@ func (g *ghClient) call(method, path string, body, out any) error {
 			r.Header.Set("Content-Type", "application/json")
 		}
 		return r, nil
-	})
+	}
+	var resp *http.Response
+	if insideAlpine() {
+		resp, err = newClaudeNet().do(mk) // Alpine has DNS and the proxy settings
+	} else {
+		// margin-init itself (the phone's Link GitHub): Android's side has no DNS setting, so
+		// through margin-init's proxy, like the rest of Margin.
+		var r *http.Request
+		if r, err = mk(); err == nil {
+			resp, err = webClient().Do(r)
+		}
+	}
 	if err != nil {
 		return err
 	}
