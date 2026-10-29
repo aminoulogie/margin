@@ -76,6 +76,7 @@ type pbDetail struct {
 	from    string // the view it was opened from
 	gen     int
 	seriesY int   // the series page's scroll, kept while an episode is open
+	warming bool  // pbPrewarm is starting it
 	warm    *tjob // the best torrent, connecting while the page is read (pbPrewarm)
 }
 
@@ -108,6 +109,8 @@ type pbSettings struct {
 	Sort       string `json:"sourceSort,omitempty"`
 	SortChosen bool   `json:"sourceSortChosen,omitempty"` // picked by hand since "Starts Fastest" came
 }
+
+var pbClientOnce sync.Once
 
 var (
 	pbCfgMu sync.Mutex
@@ -430,7 +433,7 @@ func (c *console) pbLoadSources(d *pbDetail, id string) {
 	pb := &c.pb
 	for _, a := range asks {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
 			var streams []*addonStream
 			var subs []addonSubtitle
@@ -565,6 +568,7 @@ func (c *console) playboxPage() *page {
 		c.pbRedraw()
 	}
 	pb.items = pb.items[:0]
+	pbClientOnce.Do(func() { go engine.client() }) // started early, never while the screen waits
 	if pb.sel != nil {
 		if pb.sel.episode != "" {
 			return c.pbEpisodePage()
@@ -2210,16 +2214,31 @@ func (c *console) pbWatchProgress(key string) {
 // details and first pieces arrive while the page is read, so Play starts at once. Caller
 // holds drawMu.
 func (c *console) pbPrewarm(d *pbDetail) {
-	if d.warm != nil || (d.item.Type == "series" && d.episode == "") {
+	if d.warm != nil || d.warming || (d.item.Type == "series" && d.episode == "") {
 		return
 	}
 	s := quickPick(d.streams)
 	if s == nil || s.playableURL() != "" || s.seeders() == 0 {
 		return
 	}
-	if j, err := engine.start(s, false, "", d.info()); err == nil {
+	d.warming = true
+	it := d.info()
+	// In the background: the torrent client can take a while to start, and the screen must
+	// not wait for it (holding drawMu here froze the page before its sources showed).
+	go func() {
+		j, err := engine.start(s, false, "", it)
+		drawMu.Lock()
+		defer drawMu.Unlock()
+		d.warming = false
+		if err != nil {
+			return
+		}
+		if c.pb.sel != d || d.warm != nil {
+			engine.stopPlay(j)
+			return
+		}
 		d.warm = j
-	}
+	}()
 }
 
 // pbDropWarm stops a page's background torrent when the page is left without playing.

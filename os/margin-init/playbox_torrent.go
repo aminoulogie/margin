@@ -45,6 +45,7 @@ const (
 )
 
 type torrentEngine struct {
+	clMu sync.Mutex // held while the client starts
 	mu   sync.Mutex
 	cl   *torrent.Client
 	jobs map[string]*tjob // by info hash
@@ -115,10 +116,15 @@ func onTablet() bool {
 
 // client starts the BitTorrent client the first time it's needed.
 func (e *torrentEngine) client() (*torrent.Client, error) {
+	// Its own lock: starting the client can take a while, and the screens ask the engine for
+	// jobs' states (e.mu) while they draw.
+	e.clMu.Lock()
+	defer e.clMu.Unlock()
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.cl != nil {
-		return e.cl, nil
+	cl0 := e.cl
+	e.mu.Unlock()
+	if cl0 != nil {
+		return cl0, nil
 	}
 	setupTabletNet()
 	if err := os.MkdirAll(torrentCacheDir, 0o755); err != nil {
@@ -156,7 +162,9 @@ func (e *torrentEngine) client() (*torrent.Client, error) {
 		return nil, fmt.Errorf("can't start the torrent client: %w", err)
 	}
 	log.Printf("playbox: torrent client listening on port %d", cl.LocalPort())
+	e.mu.Lock()
 	e.cl = cl
+	e.mu.Unlock()
 	return cl, nil
 }
 
