@@ -123,3 +123,26 @@ func TestCbrunScriptParses(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 }
+
+// The Clipboard asks GitHub's API (fresh) and falls back to the raw file (cached for minutes).
+func TestClipboardFetchUsesAPI(t *testing.T) {
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.Host+r.URL.Path+" "+r.Header.Get("Accept"))
+		w.Write([]byte("## Fresh\n```\necho new\n```\n"))
+	}))
+	defer srv.Close()
+	oldClient, oldAPI := webClient, clipboardAPI
+	webClient = func() *http.Client { return srv.Client() }
+	clipboardAPI = srv.URL + "/repos/aminoulogie/margin/contents/CLIPBOARD.md?ref=main"
+	t.Cleanup(func() { webClient, clipboardAPI = oldClient, oldAPI })
+	b, err := fetchClipboardAPI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := parseClipboard(string(b))
+	if len(items) != 1 || items[0].cmd != "echo new" || len(asked) != 1 ||
+		!strings.Contains(asked[0], "/repos/aminoulogie/margin/contents/CLIPBOARD.md") || !strings.Contains(asked[0], "vnd.github.raw") {
+		t.Fatalf("items %+v, asked %v", items, asked)
+	}
+}
