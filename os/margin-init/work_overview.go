@@ -444,7 +444,7 @@ func (k *wk) overview() int {
 	if len(dl) == 0 {
 		k.text(wkFont("regular", 20), 754, ry+54, wkMuted, "No deadlines set.")
 	}
-	return k.dueThisWeek(projects, max(na.Max.Y, dc.Max.Y)+30, now)
+	return k.weekGoals(projects, k.dueThisWeek(projects, max(na.Max.Y, dc.Max.Y)+30, now), now)
 }
 
 type wkAttn struct {

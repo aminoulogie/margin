@@ -58,6 +58,7 @@ type wkProject struct {
 	Created, Touched                                     time.Time
 	Steps                                                []wkStep
 	Practices                                            []wkPractice // daily practice until a date (work_practice.go)
+	WeekGoal                                             float64      // hours a week (weekGoalH, tablet only; 0 none)
 	Log                                                  []wkNote     // the project's running notes
 	order                                                int          // its place in Soma's list, for its colour and the charts' order
 }
@@ -251,6 +252,7 @@ func wkProjects() []wkProject {
 			p.Kind = "plan"
 		}
 		p.Practices = readPractices(o)
+		p.WeekGoal = num(o["weekGoalH"])
 		steps, _ := o["steps"].([]any)
 		for _, s := range steps {
 			so, ok := s.(obj)

@@ -752,6 +752,11 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       the step, one unticked unticks it; "n/m" on the rows). From 7 days before an undone milestone
       its countdown shows on the planner's month cells and the Calendar's future cells
       (wkMilestoneSoon). Test: work_steps_test.go.
+- [x] **Weekly hours goal + overnight timer** (2026-10-29, work_weekgoal.go): project.weekGoalH
+      (tablet only; project sheet stepper "Hours a week"): a "This week n of g h" card on the
+      project and "Weekly goals" on the Overview. A timer still running from an earlier day is
+      stopped at 23:59 of its day (wkOvernightCheck, each second) and the "ran past midnight" sheet
+      asks the real end (etime typer). Test: work_weekgoal_test.go.
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

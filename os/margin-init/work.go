@@ -593,6 +593,7 @@ func (c *console) startTimerTicks() {
 	go func() {
 		for range time.Tick(time.Second) {
 			drawMu.Lock()
+			c.wkOvernightCheck()
 			c.wkTimerTick()
 			drawMu.Unlock()
 		}
@@ -611,6 +612,9 @@ func (c *console) workPage() *page {
 		su.need = map[string]int{}
 	}
 	wkApplyAccent()
+	if wkOvernight != "" && su.sheet == "" && !su.typing { // a timer stopped at midnight: ask
+		su.sheet, wkOvernight = "overnight:"+wkOvernight, ""
+	}
 	if su.sheet == "" && su.sheetBack == "" { // (typing from a sheet keeps its way back)
 		su.sheetStack = nil
 	}
