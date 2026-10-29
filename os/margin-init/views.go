@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"hash/crc32"
 	"image"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -324,6 +327,52 @@ func cloneRGBA(img *image.RGBA) *image.RGBA {
 	return out
 }
 
+// --- drawing that gives way to the finger ---------------------------------------------------
+
+// A page takes the tablet's Atom up to half a second to draw, and a touch waits for the screen
+// while it does. Drawings nobody asked for at that moment (a kept view brought up to date, in
+// the background or a moment after it was opened) give way: a touch waiting for the screen
+// stops them at the next piece of text, card or icon (drawCheck), and they're tried again
+// once the tablet is left alone. Only the workstation's helpers check, and nothing they're
+// called under holds a lock that isn't released by a defer, so stopping there is safe.
+var drawYield struct {
+	on      atomic.Bool  // a drawing that may be stopped is under way
+	waiting atomic.Int32 // touches waiting for the screen
+}
+
+type drawStopped struct{}
+
+// drawCheck stops a drawing that may be stopped, if a touch is waiting.
+func drawCheck() {
+	if drawYield.on.Load() && drawYield.waiting.Load() > 0 {
+		panic(drawStopped{})
+	}
+}
+
+// yielding runs draw, which a touch may stop; false if one did. Caller holds drawMu.
+func yielding(draw func()) (done bool) {
+	drawYield.on.Store(true)
+	defer func() {
+		drawYield.on.Store(false)
+		if r := recover(); r != nil {
+			if _, ok := r.(drawStopped); !ok {
+				panic(r)
+			}
+			soma.tracked() // its notes of what it read are let go
+			done = false
+		}
+	}()
+	draw()
+	return true
+}
+
+// touchWaits marks a touch waiting for the screen until the returned func is called (once it
+// has it).
+func touchWaits() func() {
+	drawYield.waiting.Add(1)
+	return func() { drawYield.waiting.Add(-1) }
+}
+
 // viewRefreshLater draws view key fresh once the tablet has been left alone a moment.
 func (c *console) viewRefreshLater(key string) {
 	c.viewRefreshGen++
@@ -343,9 +392,15 @@ func (c *console) viewRefreshLater(key string) {
 			if c.viewKey() != key {
 				return
 			}
+			tabs, pg := c.tabsOn, c.page
 			c.viewFresh = true
-			c.showPage()
+			done := yielding(c.showPage)
 			c.viewFresh = false
+			if !done { // a touch came: what was kept stays on screen, drawn again later
+				c.tabsOn, c.page = tabs, pg
+				log.Printf("views: refresh gave way to a touch")
+				try()
+			}
 		})
 	}
 	try()
@@ -440,8 +495,15 @@ func (c *console) viewPrepare(e *viewEntry) {
 	c.somaUI, c.mode = su, modeSoma
 	c.sc.y[modeSoma] = e.scrollY
 	soma.track()
-	p := c.somaPage()
+	var p *page
+	start := time.Now()
+	if !yielding(func() { p = c.somaPage() }) {
+		return // a touch came: tried again once the tablet is left alone
+	}
 	fields := soma.tracked()
+	if d := time.Since(start); d > 150*time.Millisecond {
+		log.Printf("views: made %q ready in %v", e.su.work, d.Round(time.Millisecond))
+	}
 	if c.viewKeyOf() != e.key || p == nil || p.img == nil {
 		e.failed = true
 		return
@@ -735,4 +797,19 @@ func unpackRGBA(b []byte, pix []byte) error {
 		return errPacked
 	}
 	return nil
+}
+
+// memLog writes how much memory Margin holds to init.log every five minutes (the Clipboard's
+// "Freeze" check reads it back).
+func memLog() {
+	for {
+		time.Sleep(5 * time.Minute)
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		views.Lock()
+		n, b := len(views.m), views.bytes
+		views.Unlock()
+		log.Printf("memory: heap %d MB (in use %d MB), from the system %d MB, %d collections; views %d, %d MB",
+			ms.HeapAlloc>>20, ms.HeapInuse>>20, ms.Sys>>20, ms.NumGC, n, b>>20)
+	}
 }

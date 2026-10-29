@@ -119,6 +119,14 @@ func (c *console) somaPage() *page {
 		defer drawMu.Unlock()
 		// Drawn again only if what's on screen read something that changed (or a sheet is
 		// open over it): a pull that brought the phone's screen time leaves Projects be.
+		if c.mode == modeSoma && !c.somaUI.typing && c.somaUI.sheet == "" && c.viewOn != "" && c.viewKey() == c.viewOn {
+			// A kept view: brought up to date once the tablet is left alone, giving way to a
+			// touch (views.go), if what it read changed.
+			if c.viewNeedsDraw() {
+				c.viewRefreshLater(c.viewOn)
+			}
+			return
+		}
 		if c.mode == modeSoma && !c.somaUI.typing && (c.somaUI.sheet != "" || c.viewNeedsDraw()) {
 			c.redrawSoon(func() {
 				if c.mode == modeSoma && (c.somaUI.sheet != "" || c.viewNeedsDraw()) {
