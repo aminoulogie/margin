@@ -20,10 +20,10 @@ type wkStep struct {
 	At        time.Time // ticked
 	WorkMs    int64     // worked on it with ▶ (step-work.ts)
 	// For deadline-driven plans (all optional; ProjectStep in Soma's projects.ts):
-	Due       string // "YYYY-MM-DD"
-	Milestone bool   // a fixed-date event (an exam, an appointment), not work
-	Phase     string // steps are grouped by phase, in order of first appearance
-	WaitingOn string // blocked on someone else: "Waiting", never my overdue
+	Due       string   // "YYYY-MM-DD"
+	Milestone bool     // a fixed-date event (an exam, an appointment), not work
+	Phase     string   // steps are grouped by phase, in order of first appearance
+	WaitingOn string   // blocked on someone else: "Waiting", never my overdue
 	After     string   // a step that has to be done first (tablet only): blocked until it is
 	Items     []wkItem // a checklist inside the step (tablet only); all ticked ticks the step
 	blocked   bool     // (worked out on reading: After isn't done yet)
