@@ -14,10 +14,26 @@ import (
 
 const accH = 84 // the shortcuts bar
 
+type termShortcut struct{ label, out string }
+
 // termShortcuts: label and what it types ("" = Copy/Paste, handled apart).
-var termShortcuts = []struct{ label, out string }{
+var termShortcuts = []termShortcut{
 	{"Copy", ""}, {"Paste", ""}, {"update", "update\r"}, {"clear", "clear\r"},
 	{"ls", "ls\r"}, {"cd ..", "cd ..\r"}, {"wifi", "wifi status\r"},
+}
+
+// claudeShortcuts are the Claude tab's: stop it (esc), and its commands.
+var claudeShortcuts = []termShortcut{
+	{"Copy", ""}, {"Paste", ""}, {"stop", "\x1b"}, {"/clear", "/clear\r"},
+	{"/model", "/model\r"}, {"/status", "/status\r"}, {"/help", "/help\r"},
+}
+
+// shortcuts are the bar's buttons for the Terminal tab on show.
+func (c *console) shortcuts() []termShortcut {
+	if c.cur == termClaude {
+		return claudeShortcuts
+	}
+	return termShortcuts
 }
 
 // termPos is a place in the scrollback-plus-screen page: line (0 = the oldest kept) and column.
@@ -152,7 +168,7 @@ func (c *console) drawShortcuts() {
 	img := image.NewRGBA(image.Rect(0, 0, c.s.W, accH))
 	ui.Fill(img, img.Rect, col.bg)
 	x := kbPad
-	for _, sc := range termShortcuts {
+	for _, sc := range c.shortcuts() {
 		w := ui.TextWidth(f.callout, sc.label) + 44
 		r := image.Rect(x, 10, x+w, accH-8)
 		bg, fg := col.special, col.text
@@ -161,6 +177,8 @@ func (c *console) drawShortcuts() {
 			bg = col.active
 		case sc.label == "Copy", sc.label == "Paste" && c.tu.clip == "":
 			fg = rgb(0x8d8d93) // nothing to copy or paste yet
+		case sc.label == "stop":
+			fg = rgb(0xff6961) // stops Claude: red
 		case sc.out != "":
 			fg = rgb(0x64d2ff) // commands in blue
 		}
@@ -175,7 +193,7 @@ func (c *console) drawShortcuts() {
 func (c *console) shortcutAt(x int) int {
 	f := apple()
 	x0 := kbPad
-	for i, sc := range termShortcuts {
+	for i, sc := range c.shortcuts() {
 		w := ui.TextWidth(f.callout, sc.label) + 44
 		if x >= x0 && x < x0+w+12 {
 			return i
@@ -186,7 +204,7 @@ func (c *console) shortcutAt(x int) int {
 }
 
 func (c *console) shortcut(i int) {
-	sc := termShortcuts[i]
+	sc := c.shortcuts()[i]
 	switch sc.label {
 	case "Copy":
 		if !c.tu.selOn {

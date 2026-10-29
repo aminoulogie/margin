@@ -51,6 +51,8 @@ export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy no_proxy=localhost,127.0.
 //go:embed update.sh
 var updateScript []byte
 
+const claudeWrapper = "#!/bin/sh\nexec /proc/1/root" + marginHome + "/condor-init claude \"$@\"\n"
+
 // configureAlpine writes alpineConfig and points apk at plain-http mirrors (packages are
 // signed, so http is safe, and a plain proxy request is simpler than a CONNECT tunnel).
 func configureAlpine() {
@@ -65,6 +67,10 @@ func configureAlpine() {
 	// script with CRLF line endings, and "#!/bin/sh\r" made the shell say "update: not found".
 	os.WriteFile(alpineRoot+"/usr/local/bin/update", bytes.ReplaceAll(updateScript, []byte("\r"), nil), 0o755)
 	os.Chmod(alpineRoot+"/usr/local/bin/update", 0o755)
+	// "claude" in Alpine's shell (over ssh, say) is the Terminal's Claude tab: margin-init
+	// itself, reached through init's root (the real /data/condor seen from the chroot).
+	os.WriteFile(alpineRoot+"/usr/local/bin/claude", []byte(claudeWrapper), 0o755)
+	os.Chmod(alpineRoot+"/usr/local/bin/claude", 0o755)
 	repos := alpineRoot + "/etc/apk/repositories"
 	if b, err := os.ReadFile(repos); err == nil {
 		os.WriteFile(repos, []byte(strings.ReplaceAll(string(b), "https://", "http://")), 0o644)
@@ -88,6 +94,13 @@ func alpineBoot() {
 	log.Printf("wifi boot done")
 	syncClock()
 	startSSHD()
+	// The code `update` downloaded, as a starting point for the Claude tab's fixes (claude_github.go),
+	// when an older update.sh (which didn't record one) fetched it.
+	if src := alpineRoot + marginSrc; fileExists(src+"/os/margin-init") && !fileExists(src+"/"+manifestName) {
+		if err := writeManifest(src); err != nil {
+			log.Printf("manifest of %s: %v", src, err)
+		}
+	}
 }
 
 // startSSHD starts Alpine's SSH server if it's installed (margin ssh setup installs it).

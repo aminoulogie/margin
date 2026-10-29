@@ -312,8 +312,8 @@ func ring(img *image.RGBA, cx, cy, rad, width int, frac float64, track, c color.
 
 // booksTabs is the floating tab bar of Apple Books on iPad, with the reading goal ring.
 // The tab bar, on every screen but a book: the main tabs in a floating capsule (Margin,
-// Soma, Playbox, Browser, Settings, Terminal) and, under Margin and Playbox, their own pages
-// as pills, with room between the two rows. The selected tab sits on a lighter pill; a
+// Soma, Playbox, Browser, Settings, Terminal) and, under Margin, Playbox and Terminal, their
+// own pages as pills, with room between the two rows. The selected tab sits on a lighter pill; a
 // finger on another tab slides that pill over to it at once (tabPress), before the page
 // behind is drawn, so a tap always shows where it's going.
 
@@ -334,6 +334,7 @@ func (c *console) tabLayout(on string) (main, sub []tabItem, mainOn, subOn int) 
 	f := apple()
 	margin := on == "tab:home" || on == "tab:library" || on == "tab:store" || on == "tab:words"
 	playbox := strings.HasPrefix(on, "pbt:")
+	terminal := strings.HasPrefix(on, "tt:")
 	tabs := []tabItem{{id: "tab:margin", label: "Margin"}, {id: "tab:soma", label: "Soma"}, {id: "tab:playbox", label: "Playbox"},
 		{id: "tab:browser", label: "Browser"}, {id: "tab:settings", label: "Settings"}, {id: "tab:terminal", label: "Terminal"}}
 	widths := make([]int, len(tabs))
@@ -352,7 +353,7 @@ func (c *console) tabLayout(on string) (main, sub []tabItem, mainOn, subOn int) 
 	mainOn, subOn = -1, -1
 	for i := range tabs {
 		tabs[i].r = image.Rect(x, tabBarTop+8, x+widths[i], tabBarBot-8)
-		if id := tabs[i].id; id == on || id == "tab:margin" && margin || id == "tab:playbox" && playbox {
+		if id := tabs[i].id; id == on || id == "tab:margin" && margin || id == "tab:playbox" && playbox || id == "tab:terminal" && terminal {
 			mainOn = i
 		}
 		x += widths[i]
@@ -366,6 +367,8 @@ func (c *console) tabLayout(on string) (main, sub []tabItem, mainOn, subOn int) 
 	case playbox:
 		names = []tabItem{{id: "pbt:discover", label: "Discover"}, {id: "pbt:library", label: "Library"}, {id: "pbt:addons", label: "Add-ons"}, {id: "pbt:settings", label: "Settings"}}
 		search = "pb:search"
+	case terminal: // the Terminal's two tabs (termtabs.go)
+		names = []tabItem{{id: termTabIDs[termShell], label: "Shell"}, {id: termTabIDs[termClaude], label: "Claude"}}
 	}
 	sx := 48
 	for _, t := range names {
@@ -523,6 +526,10 @@ func (c *console) booksTap(id string) bool {
 		c.setMode(modeBrowser)
 	case "tab:terminal":
 		c.setMode(modeTerminal)
+	case "tt:shell":
+		c.switchTerm(termShell)
+	case "tt:claude":
+		c.switchTerm(termClaude)
 	case "tab:settings":
 		c.setMode(modeSettings)
 	default:

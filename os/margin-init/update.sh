@@ -11,6 +11,11 @@
 # The tablet keeps the names its /system startup hook uses: margin-init is installed as
 # /data/condor/condor-init (and so runs as "condor-init"). Renaming those means rewriting the
 # hook, which needs the PC (margin takeover install-hook), so they stay.
+#
+#   update           get the latest code from GitHub, build it, install it
+#   update --local   build and install the code already in /root/margin-src as it is (fixes
+#                    made on the tablet, by the Terminal's Claude tab, say)
+#   update --force   get GitHub's code even over changes made here that aren't on GitHub
 REPO=aminoulogie/margin
 BRANCH=main
 SRC=/root/margin-src
@@ -18,6 +23,15 @@ D=/proc/1/root/data/condor # /data/condor as init sees it (we're in Alpine's chr
 
 say() { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31m%s\033[0m\n' "$*"; exit 1; }
+
+LOCAL=0 FORCE=0
+for a in "$@"; do
+	case $a in
+	--local) LOCAL=1 ;;
+	--force) FORCE=1 ;;
+	*) die "update: unknown option $a (update, update --local, update --force)" ;;
+	esac
+done
 
 [ "$(id -u)" = 0 ] || die "run it as root"
 [ -f $D/condor-init ] || die "can't see $D: run it on the tablet"
@@ -27,24 +41,35 @@ if ! command -v go >/dev/null || ! command -v curl >/dev/null; then
 	apk add go curl || die "apk failed: is Wi-Fi on?"
 fi
 
-say "getting the latest code"
-# fetch tries a few times, through margin-init's proxy and then straight out: a connection to
-# GitHub can drop for a minute after Wi-Fi joins, or on one route and not the other.
-fetch() {
-	for i in 1 2 3 4 5; do
-		curl -fsSL "$@" && return 0
-		curl -fsSL --noproxy '*' "$@" && return 0
-		echo "    retrying ($i)..." >&2; sleep 3
-	done
-	return 1
-}
-commit=$(fetch -H "Accept: application/vnd.github.sha" https://api.github.com/repos/$REPO/commits/$BRANCH 2>/dev/null)
-rm -rf $SRC.new /tmp/margin-src.tgz && mkdir -p $SRC.new
-fetch -o /tmp/margin-src.tgz https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH &&
-	tar -xzf /tmp/margin-src.tgz -C $SRC.new || die "download failed: is Wi-Fi on?"
-rm -f /tmp/margin-src.tgz
-rm -rf $SRC && mv $SRC.new/* $SRC && rm -rf $SRC.new || die "couldn't unpack the code"
-echo "    $BRANCH at ${commit:-?}"
+if [ $LOCAL = 1 ]; then
+	[ -d $SRC/os/margin-init ] || die "no code in $SRC yet: run update once (without --local)"
+	say "building the code in $SRC as it is (--local)"
+else
+	# The code here can hold fixes made on the tablet (the Claude tab) that aren't on GitHub:
+	# .margin-manifest has the md5 of every file as it was downloaded.
+	if [ $FORCE = 0 ] && [ -f $SRC/.margin-manifest ] && ! (cd $SRC && md5sum -c .margin-manifest >/dev/null 2>&1); then
+		die "$SRC has changes that aren't on GitHub (fixes from the Claude tab). Publish them from the Claude tab first, or: update --local (build them as they are), update --force (download over them)"
+	fi
+	say "getting the latest code"
+	# fetch tries a few times, through margin-init's proxy and then straight out: a connection to
+	# GitHub can drop for a minute after Wi-Fi joins, or on one route and not the other.
+	fetch() {
+		for i in 1 2 3 4 5; do
+			curl -fsSL "$@" && return 0
+			curl -fsSL --noproxy '*' "$@" && return 0
+			echo "    retrying ($i)..." >&2; sleep 3
+		done
+		return 1
+	}
+	commit=$(fetch -H "Accept: application/vnd.github.sha" https://api.github.com/repos/$REPO/commits/$BRANCH 2>/dev/null)
+	rm -rf $SRC.new /tmp/margin-src.tgz && mkdir -p $SRC.new
+	fetch -o /tmp/margin-src.tgz https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH &&
+		tar -xzf /tmp/margin-src.tgz -C $SRC.new || die "download failed: is Wi-Fi on?"
+	rm -f /tmp/margin-src.tgz
+	rm -rf $SRC && mv $SRC.new/* $SRC && rm -rf $SRC.new || die "couldn't unpack the code"
+	echo "    $BRANCH at ${commit:-?}"
+	(cd $SRC && find . -type f ! -name .margin-manifest -exec md5sum {} + >.margin-manifest)
+fi
 
 say "building margin-init (the first time takes several minutes)"
 mkdir -p /root/.cache/gotmp
@@ -91,6 +116,8 @@ sleep 10
 if pidof condor-init >/dev/null; then log "ROLLED BACK: the old version is running again"; else
 	log "FAILED: nothing running. Plug in USB and run update.cmd on the PC"; fi
 EOF
+# Run by Claude (the Claude tab): the restarted Margin opens that tab again, to carry on.
+[ -n "$MARGIN_FROM_CLAUDE" ] && touch $D/claude-reopen
 say "installing: the screen restarts in a few seconds"
 echo "    afterwards, in Terminal: cat /tmp/margin-update.log"
 sleep 2

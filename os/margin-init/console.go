@@ -46,7 +46,10 @@ type console struct {
 	cw, ch, asc      int // cell width, cell height, baseline offset
 	offX, offY       int // grid origin, centring the grid on the screen
 	mu               sync.Mutex
-	master           *os.File // the shell's pty, nil between shells
+	master           *os.File        // the pty of the Terminal tab on show (termtabs.go), nil between programs
+	terms            [2]*termSession // the Terminal's tabs: Shell and Claude
+	cur              int             // the tab on show
+	claudeOnce       sync.Once       // Claude starts the first time its tab opens
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
@@ -170,9 +173,8 @@ func newConsole(s *Screen) (*console, error) {
 	c.rf = c.readerFontsNow()
 	c.words = loadWords()
 	cols, rows := (s.W-2*consolePad)/c.cw, c.rowsFor(s.H-kbHeight-accH)
-	c.offX, c.offY = (s.W-cols*c.cw)/2, c.barH+tabsH+consolePad/2
-	c.t = vt.New(cols, rows)
-	c.t.Reply = c.input
+	c.offX, c.offY = (s.W-cols*c.cw)/2, c.barH+termTabsH+consolePad/2
+	c.newTermSessions(cols, rows)
 	if c.kb, err = newKeyboard(s, c.input, c.keyboardShown); err != nil {
 		return nil, err
 	}
@@ -216,15 +218,21 @@ func newConsole(s *Screen) (*console, error) {
 const consolePad = 16
 
 // rowsFor is how many text rows fit in a console area h pixels tall.
-func (c *console) rowsFor(h int) int { return (h - c.barH - tabsH - consolePad) / c.ch }
+func (c *console) rowsFor(h int) int { return (h - c.barH - termTabsH - consolePad) / c.ch }
 
 // keyboardShown resizes the console around the on-screen keyboard (shown or hidden): the
-// grid, the shell's window size (programs get SIGWINCH), and a full redraw.
-// Caller holds drawMu (the keyboard calls it from a touch).
+// grid of both Terminal tabs, their programs' window size (they get SIGWINCH), and a full
+// redraw. Caller holds drawMu (the keyboard calls it from a touch).
 func (c *console) keyboardShown(visible bool) {
-	c.t.Resize(c.t.Cols, c.rowsFor(c.termAreaH()))
+	rows := c.rowsFor(c.termAreaH())
 	c.mu.Lock()
-	if c.master != nil {
+	for _, s := range c.terms {
+		s.t.Resize(s.t.Cols, rows)
+		if s.master != nil {
+			setWinsize(s.master, s.t.Cols, s.t.Rows)
+		}
+	}
+	if c.master != nil && c.master != c.terms[c.cur].master {
 		setWinsize(c.master, c.t.Cols, c.t.Rows)
 	}
 	c.mu.Unlock()
@@ -298,7 +306,7 @@ func (c *console) touchLoop() {
 					}
 				}
 				switch {
-				case c.mode == modeTerminal && (p.Down && p.Y < c.barH+tabsH || !p.Down && c.sc.drag && c.page == c.termBar):
+				case c.mode == modeTerminal && (p.Down && p.Y < c.barH+termTabsH || !p.Down && c.sc.drag && c.page == c.termBar):
 					c.pageTouch(p) // the tab bar above the shell
 				case c.mode == modeTerminal && c.kb.visible && p.Y >= c.kb.y0:
 					c.kb.touch(p)
@@ -400,24 +408,7 @@ func (c *console) render() {
 	}
 }
 
-// output shows shell output on the screen and copies it to connected PCs.
-func (c *console) output(p []byte) {
-	c.t.Write(p)
-	drawMu.Lock()
-	c.render()
-	drawMu.Unlock()
-	c.mu.Lock()
-	for conn := range c.clients {
-		conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		if _, err := conn.Write(p); err != nil {
-			conn.Close()
-			delete(c.clients, conn)
-		}
-	}
-	c.mu.Unlock()
-}
-
-// input types p into the shell.
+// input types p into the Terminal tab on show (the keyboard, the shortcuts bar).
 func (c *console) input(p []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -437,38 +428,9 @@ func banner() string {
 		system, strings.TrimSpace(string(rel)))
 }
 
-// runConsole keeps a shell running on the screen, starting a new one whenever it exits.
-// It doesn't return.
+// run keeps the Shell tab's shell running (termtabs.go: runSession). It doesn't return.
 func (c *console) run() {
-	c.output([]byte(banner()))
-	for {
-		m, wait, err := startShell(c.t.Cols, c.t.Rows)
-		if err != nil {
-			c.output([]byte("margin: can't start a shell: " + err.Error() + "\r\n"))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		c.mu.Lock()
-		c.master = m
-		c.mu.Unlock()
-		buf := make([]byte, 4096)
-		for {
-			n, err := m.Read(buf)
-			if n > 0 {
-				c.output(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-		c.mu.Lock()
-		c.master = nil
-		c.mu.Unlock()
-		m.Close()
-		wait()
-		c.output([]byte("\r\n[shell exited; starting a new one]\r\n"))
-		time.Sleep(time.Second)
-	}
+	c.runSession(c.terms[termShell], startShell, banner())
 }
 
 // serve accepts `margin term` connections and joins them to the screen's session.
@@ -490,13 +452,13 @@ func (c *console) serve() {
 			c.mu.Lock()
 			c.clients[conn] = true
 			c.mu.Unlock()
-			c.input([]byte("\n")) // fresh prompt for the newcomer
+			c.inputTo(c.terms[termShell], []byte("\n")) // fresh prompt for the newcomer
 			go func() {
 				buf := make([]byte, 1024)
 				for {
 					n, err := conn.Read(buf)
 					if n > 0 {
-						c.input(buf[:n])
+						c.inputTo(c.terms[termShell], buf[:n]) // the PC shares the Shell tab
 					}
 					if err != nil {
 						break

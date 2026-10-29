@@ -24,7 +24,7 @@ func TestConsoleRunsAShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("grid %dx%d, cell %dx%d", c.t.Cols, c.t.Rows, c.cw, c.ch)
-	if c.t.Cols < 60 || c.t.Rows < 30 {
+	if c.t.Cols < 60 || c.t.Rows < 28 { // 29 rows over the keyboard, under the Shell | Claude pills
 		t.Fatalf("grid too small: %dx%d", c.t.Cols, c.t.Rows)
 	}
 	c.drawBar()

@@ -60,6 +60,8 @@ power on → signed kernel + ramdisk (stock, can't change) → Android init
 .\dev.cmd           build margin-init for linux/386, push + restart (or arm + reboot)
 wifi-update.cmd <ip>  same over Wi-Fi, no USB (IP remembered after the first time)
 update  (in the tablet's Terminal tab)  the tablet fetches, builds and installs it by itself
+update --local                   same, from /root/margin-src as it is (fixes made on the tablet)
+Terminal > Claude tab            Claude fixes Margin on the tablet (API key asked once)
 margin term                      the tablet's console from the PC (Ctrl+] leaves)
 ssh root@<tablet ip> / margin ssh  same over Wi-Fi (keys set up by margin ssh setup)
 margin alpine run <cmd>          run one command inside Alpine (exit code checked)
@@ -498,6 +500,23 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Time/Money/Reports/Work log/Findings/Nutrition/Mind tabs all real; Settings > accent colour
       (settings.accent, shared with the phone). TestNoDeadButtons fails on any button with no
       handler. somaFieldsVersion 8 (dayRoutines, logOverrides, restDays).
+- [x] **Claude tab in the Terminal** (2026-10-29, claude.go, claude_api.go, claude_tools.go,
+      claude_github.go, termtabs.go): the Terminal has two tabs as pills under the tab bar, Shell and
+      Claude, each a program on its own pty with its own vt screen (termSession; c.t/c.master/c.tu =
+      the one on show; `margin term` stays on Shell). Claude = margin-init itself run as
+      `margin-init claude` (/proc/self/exe, chrooted into Alpine like the shell; also
+      /usr/local/bin/claude in Alpine for ssh), started the first time its tab opens. It looks like
+      Claude Code (welcome box, ● tool calls with └ results, spinner, input between two rules) and
+      streams the Messages API (key asked once, kept 0600 with the conversation in
+      /root/.margin-claude; /model opus|sonnet|haiku, default claude-sonnet-5-5). Tools: bash, read_file,
+      write_file, edit_file, publish_to_github. Fix flow: edit /root/margin-src, then `update --local`
+      (update.sh: build what's there, no download) restarts Margin; update.sh leaves
+      /data/condor/claude-reopen (MARGIN_FROM_CLAUDE set), Margin reopens the Claude tab, and the
+      saved conversation resumes with the pending tool call answered "Margin restarted". Publishing:
+      GitHub's git data API (blobs, tree, commit, ref), one commit of the files changed since
+      download, found against /root/margin-src/.margin-manifest (md5 list written by update.sh, or at
+      boot if missing); plain `update` refuses while there are unpublished changes (`--force`
+      overrides). Tests: claude_test.go, termtabs_linux_test.go. **Not yet run on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

@@ -66,6 +66,8 @@ func main() {
 			}
 			fmt.Printf("alpine-run: exit %d\n", code)
 			os.Exit(code)
+		case "claude": // the Terminal's Claude tab (claude.go); also /usr/local/bin/claude in Alpine
+			os.Exit(runClaude())
 		case "untar": // margin-init untar <file.tar.gz> <dir>  (Android has no tar)
 			if len(os.Args) != 4 {
 				fmt.Fprintln(os.Stderr, "usage: margin-init untar <file.tar.gz> <dir>")
@@ -113,6 +115,7 @@ func main() {
 			setBacklight(c.cfg.Brightness)
 			drawMu.Lock()
 			c.redrawAll()
+			c.reopenClaude() // Claude restarted Margin (update --local): back to its tab
 			drawMu.Unlock()
 			go c.run()
 			go c.serve()
