@@ -62,9 +62,19 @@ func (k *wk) planner() int {
 	now := time.Now().In(displayZone)
 	today := dayStart(now)
 	pd := k.c.planDay()
-	todos := somaTodos()
 	tab := k.sel("tab", 0)
 	mon := weekStart(pd)
+	// The projects' daily practice, as timed blocks among the to-dos (from the month's first
+	// week to its last).
+	first := weekStart(time.Date(pd.Year(), pd.Month(), 1, 0, 0, 0, 0, displayZone))
+	from, to := first, first.AddDate(0, 0, 42)
+	if mon.Before(from) {
+		from = mon
+	}
+	if end := mon.AddDate(0, 0, 7); end.After(to) {
+		to = end
+	}
+	todos := append(somaTodos(), wkPracticeTodos(wkProjects(), somaDate(from), somaDate(to))...)
 
 	booked := 0
 	for _, t := range todos {
@@ -224,7 +234,7 @@ func (k *wk) planWeek(mon, pd time.Time, todos []somaTodo, now time.Time) int {
 		if ty+4 < r.Max.Y {
 			apText(k.img, wkFont("regular", 15), r.Min.X+12, ty, wkMuted, clockOf(float64(t.SlotStart)/60))
 		}
-		k.btn("wk:sheet-open:task:"+t.ID, r)
+		k.btn(todoTapID(t), r)
 	}
 	for i := range 7 {
 		k.slotButtons(mon.AddDate(0, 0, i).Format("2006-01-02"), x0+i*colW, x0+(i+1)*colW, top, firstH, lastH, pxH)
@@ -309,7 +319,7 @@ func (k *wk) todoRows(list []somaTodo, ry int, day string) {
 		ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
 		cy := ry + 42
 		k.checkbox(188, cy, t.Done)
-		k.btn("wk:todo:"+t.ID, k.R(wkX0, ry, 236, ry+83))
+		k.btn(todoTickID(t), k.R(wkX0, ry, 236, ry+83))
 		ui.RoundRect(k.img, k.R(241, cy-7, 255, cy+7), 3, todoCol(t))
 		k.struck(273, cy+8, t.Text, t.Done, 620)
 		var when []string
@@ -332,7 +342,7 @@ func (k *wk) todoRows(list []somaTodo, ry int, day string) {
 			k.icon("flag", 1100, cy, 24, rgb(0xf06a8a))
 		}
 		k.icon("ellipsis", 1124, cy, 22, wkFaint)
-		k.btn("wk:sheet-open:task:"+t.ID, k.R(236, ry, wkX1, ry+83))
+		k.btn(todoTapID(t), k.R(236, ry, wkX1, ry+83))
 		ry += 83
 	}
 }
@@ -427,7 +437,7 @@ func (k *wk) planDayView(day time.Time, todos []somaTodo, now time.Time) int {
 			apText(k.img, wkFont("regular", 18), r.Min.X+20, r.Min.Y+56, wkMuted,
 				clockOf(float64(t.SlotStart)/60)+" – "+clockOf(float64(t.SlotStart+t.SlotMins)/60))
 		}
-		k.btn("wk:sheet-open:task:"+t.ID, r)
+		k.btn(todoTapID(t), r)
 	}
 	k.slotButtons(ds, x0, x1, top, firstH, lastH, pxH)
 	k.dropHours(ds, x0, x1, top, bot, firstH, pxH)
