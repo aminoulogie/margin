@@ -398,3 +398,111 @@ func TestPlannerUsable(t *testing.T) {
 	}
 	shot(t, c, "plan-routines")
 }
+
+func TestHabitsUsable(t *testing.T) {
+	c := workAt(t, "habits")
+	today := somaToday()
+	shot(t, c, "habits-empty")
+
+	tapBtn(t, c, "wk:type-open:newhabit:")
+	typeIn(t, c, "Floss")
+	byName := func(n string) somaHabit {
+		for _, h := range somaHabits() {
+			if h.Name == n {
+				return h
+			}
+		}
+		t.Fatalf("no habit %q", n)
+		return somaHabit{}
+	}
+	h := byName("Floss")
+	if str(h.o["since"]) != today || num(h.o["goalDaysPerWeek"]) != 7 || !strings.HasPrefix(h.ID, "habit-") {
+		t.Fatalf("new habit %+v", h)
+	}
+	id := h.ID
+	c.showPage()
+	tapBtn(t, c, "wk:htick:"+id)
+	if !byName("Floss").done(today) {
+		t.Fatal("tick")
+	}
+	// A checklist and a ramp from the ready-made ones.
+	tapBtn(t, c, "wk:hpreset:0") // Brush teeth
+	tapBtn(t, c, "wk:hpreset:0") // Skincare, first of what's left
+	brush, ramp := byName("Brush teeth"), byName("Skincare")
+	if len(brush.steps()) != 2 || len(ramp.steps()) != 3 {
+		t.Fatalf("presets %+v %+v", brush.o, ramp.o)
+	}
+	c.showPage()
+	for _, s := range brush.steps() {
+		tapBtn(t, c, "wk:hstep:"+brush.ID+":"+s.ID)
+	}
+	for _, h := range somaHabits() {
+		if h.ID == brush.ID && !h.done(today) {
+			t.Fatalf("both steps done but the day isn't: %v", h.o)
+		}
+	}
+	tapBtn(t, c, "wk:hpreset:0") // now Read: a ramp
+	var read somaHabit
+	for _, h := range somaHabits() {
+		if h.Name == "Read" {
+			read = h
+		}
+	}
+	if read.rampOf() == nil {
+		t.Fatalf("ramp %v", read.o)
+	}
+	c.showPage()
+	shot(t, c, "habits-today")
+	tapBtn(t, c, "wk:hamt:"+read.ID+":5")
+	tapBtn(t, c, "wk:hamt:"+read.ID+":5")
+	for _, h := range somaHabits() {
+		if h.ID == read.ID {
+			if l, rung, _ := h.amount(today); l != 10 || !h.done(today) || rung != 10 {
+				t.Fatalf("ramp logged %v of %v done %v", l, rung, h.done(today))
+			}
+		}
+	}
+
+	// Its sheet: colour, days, importance, when, a step.
+	tapBtn(t, c, "wk:habit:"+id)
+	shot(t, c, "habit-page")
+	tapBtn(t, c, "wk:sheet-open:habit:"+id)
+	tapBtn(t, c, "wk:hset:"+id+":goal:-1")
+	tapBtn(t, c, "wk:hset:"+id+":coef:4")
+	tapBtn(t, c, "wk:hset:"+id+":time:morning")
+	tapBtn(t, c, "wk:hset:"+id+":color:#ff5c8a")
+	shot(t, c, "habit-sheet")
+	tapBtn(t, c, "wk:type-open:hrename:"+id)
+	typeIn(t, c, "Floss twice")
+	o := somaObj("habits#" + id)
+	if num(o["goalDaysPerWeek"]) != 6 || num(o["coef"]) != 4 || str(o["time"]) != "morning" || str(o["color"]) != "#ff5c8a" || str(o["name"]) != "Floss twice" {
+		t.Fatalf("edited habit %v", o)
+	}
+	tapBtn(t, c, "wk:sheet:close")
+	tapBtn(t, c, "wk:type-open:hnote:"+id)
+	typeIn(t, c, "Easier after a walk")
+	if notes, _ := somaObj("habits#" + id)["notes"].([]any); len(notes) != 1 {
+		t.Fatal("note")
+	}
+	tapBtn(t, c, "wk:back")
+	for i := 1; i <= 3; i++ {
+		tapBtn(t, c, "wk:tab:"+string(rune('0'+i)))
+		shot(t, c, "habits-tab"+string(rune('0'+i)))
+	}
+	tapBtn(t, c, "wk:tab:1")
+	swipeAcross(t, c, "hweek:", -1)
+	if c.sel("week") != -1 {
+		t.Fatal("week swipe")
+	}
+	tapBtn(t, c, "wk:tab:0")
+	tapBtn(t, c, "wk:habit:"+id)
+	tapBtn(t, c, "wk:sheet-open:habit:"+id)
+	tapBtn(t, c, "wk:hdel:"+id)
+	if somaObj("habits#"+id) != nil || c.somaUI.workSub != "" {
+		t.Fatal("delete")
+	}
+	tapBtn(t, c, "wk:undo")
+	if somaObj("habits#"+id) == nil {
+		t.Fatal("undo")
+	}
+}
