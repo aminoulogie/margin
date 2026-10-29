@@ -1208,14 +1208,14 @@ func (k *wk) habitRowH(h somaHabit) int {
 func (k *wk) habitHeat(hs []somaHabit, today string, y int) int {
 	t, _ := time.ParseInLocation("2006-01-02", today, displayZone)
 	start := weekStart(t).AddDate(0, 0, -28)
-	const cell, gap = 66, 10
+	const cell, gap = 40, 7
 	h := 106 + 5*(cell+gap) + 26
 	cr := image.Rect(wkX0, y, wkX1, y+h)
 	k.card(cr)
 	k.cardHead(wkX0+28, y+48, "calendar-days", "Last 5 weeks", "· each day's score")
 	x0 := wkX0 + 28
 	for i, d := range []string{"M", "T", "W", "T", "F", "S", "S"} {
-		k.textC(wkFont("semi", 16), x0+i*(cell+gap)+cell/2, y+96, wkFaint, d)
+		k.textC(wkFont("semi", 14), x0+i*(cell+gap)+cell/2, y+96, wkFaint, d)
 	}
 	base := rgb(0x1e2027)
 	kept, scored, sum := 0, 0, 0
@@ -1225,7 +1225,7 @@ func (k *wk) habitHeat(hs []somaHabit, today string, y int) int {
 			ds := day.Format("2006-01-02")
 			r := k.R(x0+d*(cell+gap), y+110+w*(cell+gap), x0+d*(cell+gap)+cell, y+110+w*(cell+gap)+cell)
 			if ds > today {
-				ui.RoundRect(k.img, r, 16, rgb(0x17181e))
+				ui.RoundRect(k.img, r, 10, rgb(0x17181e))
 				continue
 			}
 			sc := habitScore(hs, ds, today)
@@ -1245,15 +1245,15 @@ func (k *wk) habitHeat(hs []somaHabit, today string, y int) int {
 				}
 			}
 			if ds == today {
-				ui.RoundRect(k.img, r.Inset(-4), 20, wkFG)
-				ui.RoundRect(k.img, r.Inset(-1), 17, wkCard)
+				ui.RoundRect(k.img, r.Inset(-3), 13, wkFG)
+				ui.RoundRect(k.img, r.Inset(-1), 11, wkCard)
 			}
-			ui.RoundRect(k.img, r, 16, c)
-			apTextCenter(k.img, wkFont("semi", 19), (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, fg, day.Format("2"))
+			ui.RoundRect(k.img, r, 10, c)
+			apTextCenter(k.img, wkFont("semi", 15), (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, fg, day.Format("2"))
 		}
 	}
 	// Those weeks in figures, and the key.
-	sx := x0 + 7*(cell+gap) + 40
+	sx := x0 + 7*(cell+gap) + 56
 	avg := "–"
 	if scored > 0 {
 		avg = fmt.Sprintf("%d%%", sum/scored)
@@ -1264,10 +1264,10 @@ func (k *wk) habitHeat(hs []somaHabit, today string, y int) int {
 		{"Streak", fmt.Sprintf("%d days", habitStreak(hs, today)), "kept in a row"},
 	}
 	for i, f := range figs {
-		fy := y + 140 + i*104
-		k.text(wkFont("regular", 18), sx, fy, wkFaint, f.l)
-		k.text(wkFont("bold", 32), sx, fy+40, wkFG, f.v)
-		k.text(wkFont("regular", 17), sx, fy+66, wkFaint, f.s)
+		fx, fy := sx+i*210, y+150 // side by side, beside the squares
+		k.text(wkFont("regular", 18), fx, fy, wkFaint, f.l)
+		k.text(wkFont("bold", 30), fx, fy+38, wkFG, f.v)
+		k.text(wkFont("regular", 16), fx, fy+64, wkFaint, clip(wkFont("regular", 16), f.s, 196))
 	}
 	ky := cr.Max.Y - 40
 	k.text(wkFont("regular", 16), sx, ky+6, wkFaint, "Less")
