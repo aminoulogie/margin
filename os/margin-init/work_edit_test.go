@@ -2,6 +2,10 @@ package main
 
 import (
 	"image"
+	"io"
+	"math"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -505,4 +509,114 @@ func TestHabitsUsable(t *testing.T) {
 	if somaObj("habits#"+id) == nil {
 		t.Fatal("undo")
 	}
+}
+
+// A small sheet like Soma's training-seed.json.
+const testSeed = `{"version":1,"records":4,"exercises":[
+ {"name":"Seated Cable Row","key":"upper_back","group":"Back","days":{"2025-11-05":[[60.0,8,0],[55.0,10,0]],"2026-01-18":[[70.0,6,0],[60.0,10,0]]}},
+ {"name":"Dips","key":"triceps","group":"Triceps","bw":true,"days":{"2026-02-01":[[5.0,9,0]]}},
+ {"name":"Incline Pressing","key":"upper_chest","group":"Chest","days":{"2026-02-01":[[50.0,10,0]]}}]}`
+
+func TestTrainingUsable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, testSeed) }))
+	defer srv.Close()
+	old := trainingSeedURL
+	trainingSeedURL = srv.URL
+	trainingSeed.Lock()
+	trainingSeed.data, trainingSeed.tried = nil, time.Time{}
+	trainingSeed.Unlock()
+	t.Cleanup(func() {
+		trainingSeedURL = old
+		trainingSeed.Lock()
+		trainingSeed.data, trainingSeed.tried = nil, time.Time{}
+		trainingSeed.Unlock()
+	})
+	c := workFixture(t)
+	webClient = func() *http.Client { return srv.Client() } // the sheet from the fake (the relay isn't asked here)
+	loadSeed()
+	waitFor(t, "the sheet", func() bool {
+		trainingSeed.Lock()
+		defer trainingSeed.Unlock()
+		return trainingSeed.data != nil
+	})
+	drawMu.Lock()
+	t.Cleanup(drawMu.Unlock)
+	c.setMode(modeSoma)
+	c.somaUI.work = "training"
+	c.showPage()
+	shot(t, c, "train-overview")
+
+	log := trainingLog()
+	row := log[exerciseKey("Seated Cable Row")]
+	if row == nil || len(row.Days) != 2 || !row.Imp["2026-01-18"] {
+		t.Fatalf("sheet row %+v", row)
+	}
+	if b, _ := row.best(); math.Abs(b-84) > 0.01 { // 70 × (1 + 6/30)
+		t.Fatalf("best %v", b)
+	}
+	// The fixture's sessions (kg-style sets) join their movement.
+	if inc := log[exerciseKey("Incline pressing")]; inc == nil || len(inc.Days) < 10 || !inc.Imp["2026-02-01"] {
+		t.Fatalf("incline %+v", inc)
+	}
+
+	// Movements, one opened, a sheet day corrected.
+	tapBtn(t, c, "wk:tab:1")
+	shot(t, c, "train-movements")
+	key := exerciseKey("Seated Cable Row")
+	tapBtn(t, c, "wk:move:"+key)
+	shot(t, c, "train-movement")
+	tapBtn(t, c, "wk:sheet-open:lday:"+key+"|2026-01-18")
+	tapBtn(t, c, "wk:ldayv:"+key+"|2026-01-18|0|w|2.5")
+	tapBtn(t, c, "wk:ldayv:"+key+"|2026-01-18|0|r|1")
+	if d := trainingLog()[key].Days["2026-01-18"]; d[0].W != 72.5 || d[0].Reps != 7 {
+		t.Fatalf("corrected day %+v", d)
+	}
+	ov := somaObj("logOverrides/" + key)
+	if arr, _ := ov["2026-01-18"].([]any); len(arr) != 2 {
+		t.Fatalf("override record %v", ov)
+	}
+	tapBtn(t, c, "wk:ldaydel:"+key+"|2026-01-18")
+	if _, ok := trainingLog()[key].Days["2026-01-18"]; ok {
+		t.Fatal("day not deleted")
+	}
+
+	// A new session: named, an exercise (from what was done before), sets edited.
+	tapBtn(t, c, "wk:back")
+	tapBtn(t, c, "wk:logsession")
+	today := somaToday()
+	if somaObj("history/"+today) != nil { // the fixture trains on even days
+		tapBtn(t, c, "wk:sheet-open:sess:"+today)
+		tapBtn(t, c, "wk:sdel:"+today)
+		tapBtn(t, c, "wk:logsession")
+	}
+	typeIn(t, c, "Pull B")
+	typeIn(t, c, "Seated Cable Rows")
+	c.somaUI.typing, c.skb.visible = false, false
+	c.showPage()
+	shot(t, c, "train-session")
+	s := parseSession(today, somaObj("history/"+today))
+	if s.Split != "Pull B" || len(s.Ex) != 1 || s.Ex[0].Muscle != "Back" || len(s.Ex[0].Sets) != 1 || s.Ex[0].Sets[0].W != 60 {
+		t.Fatalf("new session %+v", s)
+	}
+	tapBtn(t, c, "wk:addset:"+today+":0")
+	tapBtn(t, c, "wk:sheet-open:hset:"+today+":0:1")
+	tapBtn(t, c, "wk:hsetv:"+today+":0:1:weight:2.5")
+	tapBtn(t, c, "wk:hsetv:"+today+":0:1:reps:-1")
+	tapBtn(t, c, "wk:hsetv:"+today+":0:1:type:warmup")
+	tapBtn(t, c, "wk:sheet:close")
+	o := somaObj("history/" + today)
+	if num(o["totalSets"]) != 1 || num(o["totalVol"]) != 60*8 { // the warm-up doesn't count
+		t.Fatalf("totals %v / %v", o["totalSets"], o["totalVol"])
+	}
+	tapBtn(t, c, "wk:sheet-open:sess:"+today)
+	tapBtn(t, c, "wk:sdur:"+today+":5")
+	if str(somaObj("history/"+today)["durationFormatted"]) != "5:00" {
+		t.Fatal("duration")
+	}
+	tapBtn(t, c, "wk:sheet:close")
+	tapBtn(t, c, "wk:back")
+	tapBtn(t, c, "wk:tab:2")
+	shot(t, c, "train-sessions")
+	tapBtn(t, c, "wk:sess:2026-02-01")
+	shot(t, c, "train-sheet-day")
 }
