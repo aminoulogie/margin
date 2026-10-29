@@ -672,7 +672,7 @@ func (k *wk) project() int {
 		switch tab {
 		case 0:
 			k.planHero(p, now)
-			return k.practiceCard(p, k.planSteps(p, 674, now)+24, now)
+			return k.weekGoalCard(p, k.practiceCard(p, k.planSteps(p, 674, now)+24, now), now)
 		case 1:
 			return k.planSteps(p, 312, now)
 		}
@@ -765,6 +765,7 @@ func (k *wk) project() int {
 	if len(p.Practices) > 0 { // (a client project without any looks as it did)
 		y = k.practiceCard(p, y+24, now)
 	}
+	y = k.weekGoalCard(p, y, now)
 
 	// Hours against plan, and the latest time.
 	y += 24
@@ -1209,6 +1210,7 @@ func init() {
 				wkRow{id: "wk:pdue:" + id, label: "Deadline", icon: "calendar-clock", detail: due},
 				wkRow{id: "wk:type-open:pplan:" + id, label: "Paste plan", icon: "file-text", detail: "date | phase | step | flags"},
 				wkRow{id: "wk:padd:" + id, label: "Add daily practice", icon: "repeat", detail: "every day until a date"},
+				wkRow{kind: "stepper", label: "Hours a week (goal)", detail: map[bool]string{true: "none", false: strconv.FormatFloat(p.WeekGoal, 'f', -1, 64)}[p.WeekGoal == 0], minus: "wk:pgoal:" + id + ":-1", plus: "wk:pgoal:" + id + ":1"},
 				wkRow{id: "wk:type-open:pbrief:" + id, label: "Brief", icon: "file-text", detail: clip(wkFont("regular", 21), p.Note, 280)},
 				wkRow{kind: "swatches", opts: sw},
 				wkRow{id: "wk:pdelete:" + id, label: "Delete project", icon: "trash-2", danger: true})
@@ -1223,6 +1225,7 @@ func init() {
 			wkRow{id: "wk:type-open:pbrief:" + id, label: "Brief", icon: "file-text", detail: clip(wkFont("regular", 21), p.Note, 280)},
 			wkRow{kind: "swatches", opts: sw},
 			wkRow{id: "wk:padd:" + id, label: "Add daily practice", icon: "repeat", detail: "every day until a date"},
+			wkRow{kind: "stepper", label: "Hours a week (goal)", detail: map[bool]string{true: "none", false: strconv.FormatFloat(p.WeekGoal, 'f', -1, 64)}[p.WeekGoal == 0], minus: "wk:pgoal:" + id + ":-1", plus: "wk:pgoal:" + id + ":1"},
 			wkRow{id: "wk:pdelete:" + id, label: "Delete project", icon: "trash-2", danger: true},
 		)
 		return sh

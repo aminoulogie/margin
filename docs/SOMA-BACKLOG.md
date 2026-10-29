@@ -33,8 +33,7 @@ order, one merge per item, tests per item (TestNoDeadButtons for every new butto
 ## 4. Habits, time, money, reports, nutrition
 - Habits: pause with an end date (streak and score untouched); a time of day = a calendar block;
   link a habit to a goal; finished temporary habits move to "Finished" (done 2026-10-29).
-- Time: stop a timer left running overnight and ask the real end; weekly hours goal per project
-  (ring on the project and the Overview). Practice ticks log internal time (done 2026-10-29).
+- ~~Time: overnight timer, weekly hours goal per project~~: done 2026-10-29. Practice ticks log internal time (done 2026-10-29).
 - Money: monthly budget per category, red when nearly spent.
 - Reports: automatic monthly report saved to notes on the 1st.
 - Nutrition: plan the week's meals (one tap logs them when eaten) and log as you eat; planned
