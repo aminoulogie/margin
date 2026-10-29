@@ -404,7 +404,7 @@ func (k *wk) donut(cx, cy, rad, w int, parts []float64, cols []color.RGBA) {
 // --- the rail ---------------------------------------------------------------------------------
 
 var wkPersonal = []struct{ id, label, icon string }{
-	{"habits", "Habits", "circle-check"}, {"health", "Health", "heart-pulse"}, {"training", "Training", "dumbbell"},
+	{"calendar", "Calendar", "calendar"}, {"habits", "Habits", "circle-check"}, {"health", "Health", "heart-pulse"}, {"training", "Training", "dumbbell"},
 	{"nutrition", "Nutrition", "utensils"}, {"mind", "Mind", "brain-circuit"}, {"stats", "Stats", "trending-up"},
 }
 
@@ -549,6 +549,8 @@ func (c *console) workPage() *page {
 		end = k.stats()
 	case "habits":
 		end = k.habits()
+	case "calendar":
+		end = k.calendar()
 	case "settings":
 		end = k.settingsPage()
 	default:

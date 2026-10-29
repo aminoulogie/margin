@@ -106,7 +106,7 @@ func somaDayScore(date string) (score int, lines []scoreLine) {
 	if s := somaTraining(date); s != nil {
 		add("Workout", 40, 1, true)
 	} else {
-		add("Workout", 40, 0, false)
+		add("Workout", 40, 0, false) // not logged, or a rest day: not counted either way
 	}
 	add("Protein", 18, n.P/max(n.GoalP, 1), n.Logged)
 	add("Calories", 13, n.Cals/max(n.GoalCals, 1), n.Logged)
@@ -114,13 +114,8 @@ func somaDayScore(date string) (score int, lines []scoreLine) {
 	add("Sleep", 13, num(sl["hours"])/8, num(sl["hours"]) > 0)
 	add("Creatine", 8, num(day["creatine"])/5, day != nil)
 	hs := somaHabits()
-	done := 0
-	for _, h := range hs {
-		if h.done(date) {
-			done++
-		}
-	}
-	add("Habits", 15, float64(done)/float64(max(len(hs), 1)), len(hs) > 0)
+	hsc := habitScore(hs, date, somaToday()) // weighted by how much each matters (habit-score.ts)
+	add("Habits", 15, float64(hsc)/100, hsc >= 0)
 	earned, tracked := 0.0, 0.0
 	for _, l := range lines {
 		if l.tracked {

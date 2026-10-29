@@ -65,6 +65,8 @@ type somaUI struct {
 	breakProj  string          // the project the timer ran on before a break
 	nutDate    string          // the day Nutrition's log shows ("" today)
 	noteQuery  string          // what the notes are searched for
+	calDay     string          // the Calendar's chosen day ("" today)
+	calOff     int             // and its month, from this one
 	planDate   string          // the Planner's day (its week, its month); "" today
 }
 

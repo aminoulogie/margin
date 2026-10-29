@@ -802,3 +802,34 @@ func TestOtherPagesUsable(t *testing.T) {
 	go2("overview")
 	shot(t, c, "overview-violet")
 }
+
+func TestCalendarUsable(t *testing.T) {
+	c := workAt(t, "calendar")
+	shot(t, c, "calendar")
+	today := somaToday()
+	yday := wkAddDays(today, -1) // the fixture trains on even days back: yesterday is free
+	tapBtn(t, c, "wk:calday:"+yday)
+	if c.somaUI.calDay != yday {
+		t.Fatal("pick a day")
+	}
+	tapBtn(t, c, "wk:restday:"+yday)
+	if !isRestDay(yday) {
+		t.Fatal("rest day")
+	}
+	shot(t, c, "calendar-day")
+	tapBtn(t, c, "wk:restday:"+yday)
+	tapBtn(t, c, "wk:logon:"+yday)
+	typeIn(t, c, "Legs")
+	c.somaUI.typing, c.skb.visible = false, false
+	o := somaObj("history/" + yday)
+	if str(o["split"]) != "Legs" || somaDate(msTime(o["timestamp"])) != yday {
+		t.Fatalf("session logged on the day %v", o)
+	}
+	tapBtn(t, c, "wk:go:calendar")
+	month := c.somaUI.calOff
+	swipeAcross(t, c, "calm:", -1)
+	if c.somaUI.calOff != month-1 {
+		t.Fatal("swipe to last month")
+	}
+	tapBtn(t, c, "wk:calnavm:0")
+}
