@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -159,29 +160,31 @@ func textLayout() [2][][]*kbKey {
 
 // keyboard state. Methods that draw expect the caller to hold drawMu.
 type keyboard struct {
-	mu       sync.Mutex
-	s        *Screen
-	y0       int // top of the keyboard on the logical screen
-	layers   [2][][]*kbKey
-	layer    int
-	shift    bool // one-shot
-	ctrl     bool // one-shot
-	alt      bool // one-shot
-	visible  bool
-	pressed  map[int]*kbKey // touch slot -> key under it
-	repeats  map[int]chan struct{}
-	repeated map[int]bool
-	track    map[int]int // slot -> x where the space bar's trackpad last moved the cursor
-	downX    map[int]int
-	tracked  map[int]bool
-	typed    map[int]bool // fingers whose key already typed, on touching it
-	send     func([]byte)
-	onHide   func(visible bool) // console relayout
-	big      font.Face
-	small    font.Face
-	dark     bool // iPadOS's dark keyboard (the terminal)
-	themed   bool // dark in Dark Mode, light in Light Mode (the fields' keyboard)
-	height   int  // from y0 to the screen's bottom
+	mu        sync.Mutex
+	s         *Screen
+	y0        int // top of the keyboard on the logical screen
+	layers    [2][][]*kbKey
+	layer     int
+	shift     bool // one-shot
+	ctrl      bool // one-shot
+	alt       bool // one-shot
+	visible   bool
+	pressed   map[int]*kbKey // touch slot -> key under it
+	repeats   map[int]chan struct{}
+	repeated  map[int]bool
+	track     map[int]int // slot -> x where the space bar's trackpad last moved the cursor
+	downX     map[int]int
+	tracked   map[int]bool
+	typed     map[int]bool // fingers whose key already typed, on touching it
+	send      func([]byte)
+	onHide    func(visible bool) // console relayout
+	big       font.Face
+	small     font.Face
+	dark      bool     // iPadOS's dark keyboard (the terminal)
+	themed    bool     // dark in Dark Mode, light in Light Mode (the fields' keyboard)
+	height    int      // from y0 to the screen's bottom
+	drawn     []uint32 // the keyboard as last drawn, a column of the screen at a time
+	drawnLook string   // and the look it was drawn in
 }
 
 // newKeyboard is the terminal's keyboard (esc, tab, ctrl, alt, arrows).
@@ -319,6 +322,21 @@ func (kb *keyboard) draw() {
 	if !kb.visible {
 		return
 	}
+	// Drawn once per look (layer, shift, ctrl, alt, colours): then it's put back as it was
+	// sent to the panel, one copy per screen column, instead of every key drawn again.
+	s := kb.s
+	look := fmt.Sprint(kb.layer, kb.shift, kb.ctrl, kb.alt, kb.colours().bg, kb.y0, kb.height, s.W, s.fbW, s.fbH)
+	cacheable := s.rot == Rot90 && s.bpp == 32 && s.W == s.fbH && kb.y0+kb.height <= s.fbW
+	if cacheable && kb.drawn != nil && kb.drawnLook == look {
+		h := kb.height
+		for x := 0; x < s.W; x++ {
+			fy := s.fbH - 1 - x
+			copy(words(s.buf[fy*s.stride:])[kb.y0:kb.y0+h], kb.drawn[x*h:(x+1)*h])
+		}
+		s.markRows(0, s.fbH-1)
+		s.Flush()
+		return
+	}
 	bg := image.NewRGBA(image.Rect(0, 0, kb.s.W, kb.height))
 	ui.Fill(bg, bg.Rect, kb.colours().bg)
 	kb.s.blitRGBA(bg, 0, kb.y0)
@@ -326,6 +344,17 @@ func (kb *keyboard) draw() {
 		for _, key := range keys {
 			kb.drawKey(key, false)
 		}
+	}
+	if cacheable {
+		h := kb.height
+		if len(kb.drawn) != s.W*h {
+			kb.drawn = make([]uint32, s.W*h)
+		}
+		for x := 0; x < s.W; x++ {
+			fy := s.fbH - 1 - x
+			copy(kb.drawn[x*h:(x+1)*h], words(s.buf[fy*s.stride:])[kb.y0:kb.y0+h])
+		}
+		kb.drawnLook = look
 	}
 	kb.s.Flush()
 }

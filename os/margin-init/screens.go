@@ -89,7 +89,11 @@ func (c *console) showPage() {
 			log.Printf("slow page: mode %d drawn in %v", c.mode, d.Round(time.Millisecond))
 		}
 	}()
+	// Going to another view: what was kept of it, at once (views.go).
+	vkey := c.viewKey()
+	shown := vkey != "" && vkey != c.viewOn && !c.viewFresh && c.viewShow(vkey)
 	switch {
+	case shown:
 	case c.mode == modeSettings:
 		c.page = c.settingsPage()
 	case c.mode == modeBooks:
@@ -109,7 +113,16 @@ func (c *console) showPage() {
 	default:
 		c.page = c.booksHomePage()
 	}
-	c.blitPage() // the window of a tall page that's scrolled to
+	if !shown {
+		c.blitPage() // the window of a tall page that's scrolled to
+		// Named as it is now (drawing may have settled the page's defaults), and kept for the
+		// next time it's opened, before toasts and keyboards. A view drawn under a sheet or
+		// while typing isn't kept, but stays the one on screen: back from it is drawn fresh.
+		if vkey = c.viewKey(); vkey != "" {
+			c.viewOn = vkey
+			c.viewKeep(vkey)
+		}
+	}
 	c.prefetchPage()
 	c.prefetchTurn()
 	if c.mode != modeReader { // the reader draws its own, under its overlays
@@ -128,7 +141,7 @@ func (c *console) setMode(m mode) {
 	if m != modeVideo && c.vid != nil {
 		c.stopVideo() // the film stops when something else takes the screen (the alarm)
 	}
-	c.mode, c.confirm = m, ""
+	c.mode, c.confirm, c.viewOn = m, "", ""
 	if m == modeBooksHome || m == modeBooks || m == modeStore || m == modeWords {
 		c.lastMargin = m // the Margin tab goes back to it
 	}

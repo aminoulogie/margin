@@ -164,10 +164,6 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 		t.Fatal(err)
 	}
 	somaDir, soma = dir, &somaStore{Recs: map[string]somaRec{}}
-	snaps.Lock()
-	snaps.shown, snaps.saved = nil, nil // a new tablet: no pictures of pages yet
-	snaps.Unlock()
-	snapAsync = false
 	k, _ := somaKeysFor(somaSecret(somaVecCode))
 	relay := &fakeRelay{token: k.token, recs: map[string]struct {
 		seq  int64
@@ -187,7 +183,7 @@ func somaTestLink(t *testing.T) (*console, *fakeRelay, *somaKeys) {
 		if locked {
 			defer drawMu.Unlock()
 		}
-		snapWrites.Wait()
+		views.writes.Wait()
 		// The records' write a moment after the last change: done before the folder goes.
 		for i := 0; i < 40; i++ {
 			st.mu.Lock()
