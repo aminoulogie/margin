@@ -757,6 +757,14 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       project and "Weekly goals" on the Overview. A timer still running from an earlier day is
       stopped at 23:59 of its day (wkOvernightCheck, each second) and the "ran past midnight" sheet
       asks the real end (etime typer). Test: work_weekgoal_test.go.
+- [x] **Evening check-in** (2026-10-29, work_evening.go; rail Personal > Evening): for the 20 min
+      before bed, like Soma iOS's checkin.ts. Body (sleep ±0.5, weight ±0.1, creatine +5 g /
+      clear, reusing bsleep/fweight/bcrea), Supplements (the list in /data/condor/supplements.json,
+      add/edit; taken today = nutrition/<date>.supplementsTaken, a list the phone keeps), Food today
+      (cal/protein/carbs/fat vs goals, planned-not-eaten count), Still open (habits not ticked, today's
+      practice), Journal (What went well / What to drop / Tomorrow's one thing → note
+      "Journal/<date>.md", so on the phone; the one thing also becomes a high-priority to-do
+      tomorrow). Test: work_evening_test.go.
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.
