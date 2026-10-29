@@ -632,6 +632,13 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       lunch isn't standby). Sync fix (somasync.go pull): a newer record from the relay is no longer
       skipped because the tablet has an unsent change to it (the pull position moved past it, so
       the tablet stayed stale for good). **Not yet verified on the tablet.**
+      2026-10-29 follow-up (user: standby showed 0, cards only this week, standby missing from
+      reports): a work log shift with time entries inside is now "On duty" (its empty parts are
+      standby, not work); breaks logged in the work log are lunch rows. Period chips Week · Month ·
+      All · Custom (two dates, saved as _from/_to in standby.json). Standby (wkStandby, cached by
+      somaGen + minute) is added to wkValue (every billable value: Overview, Timesheet, Reports,
+      clients), to the invoices (per client-month, "standby" in the line) and to Reports (Hours
+      label + the saved timesheet text).
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

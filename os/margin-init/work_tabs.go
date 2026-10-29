@@ -267,7 +267,7 @@ func (k *wk) timeTab(tab int) int {
 	y := 312
 	switch tab {
 	case 1: // every entry by day, as on the PC, with the standby between
-		return k.timeEntriesTab(entries, byID, now, y)
+		return k.timeEntriesTab(entries, projects, now, y)
 	case 2: // rates
 		cr := image.Rect(wkX0, y, wkX1, y+90+84*max(len(projects), 1))
 		k.card(cr)

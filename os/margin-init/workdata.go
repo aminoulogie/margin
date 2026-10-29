@@ -217,6 +217,9 @@ func wkValue(entries []wkEntry, projects []wkProject, from, to, now time.Time) (
 			value += d.Hours() * rate[e.ProjectID]
 		}
 	}
+	// Standby (waiting on the client between pieces of work) at half the rate (work_timelog.go).
+	_, sv := wkStandbyIn(projects, from, to, now)
+	value += sv
 	return
 }
 

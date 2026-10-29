@@ -57,6 +57,23 @@ func wkInvoices(projects []wkProject, entries []wkEntry, now time.Time) []wkInvo
 		}
 		what[k][shortName(p.Name)] += e.dur(now).Hours()
 	}
+	// Standby at half the rate, on the bill of the client it was spent waiting on.
+	for _, sb := range wkStandby(now) {
+		client := sb.client
+		if p, ok := byID[sb.project]; ok && p.Client != "" {
+			client = p.Client
+		}
+		if sb.rate <= 0 || client == "" {
+			continue
+		}
+		s := sb.start.In(displayZone)
+		k := key{client, time.Date(s.Year(), s.Month(), 1, 0, 0, 0, 0, displayZone)}
+		amt[k] += sb.end.Sub(sb.start).Hours() * sb.rate * wkStandbyShare
+		if what[k] == nil {
+			what[k] = map[string]float64{}
+		}
+		what[k]["standby"] += sb.end.Sub(sb.start).Hours() * wkStandbyShare
+	}
 	paid := map[string]bool{}
 	for _, l := range somaLedger() {
 		if l.Kind == "income" {

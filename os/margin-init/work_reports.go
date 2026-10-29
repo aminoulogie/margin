@@ -48,6 +48,7 @@ type report struct {
 	title, who, label, scope string
 	from, to, pfrom          time.Time
 	projects                 []wkProject
+	standby                  time.Duration // waiting on the client, in the value at half
 	hours, phours, val, pval float64
 	steps                    int
 	stepProjects             int
@@ -93,6 +94,7 @@ func buildReport(tab int, client, projectID string, per, back int) report {
 	v, _, a := wkValue(entries, r.projects, r.from, r.to, now)
 	pv, _, pa := wkValue(entries, r.projects, r.pfrom, r.from, now)
 	r.val, r.hours, r.pval, r.phours = v, a.Hours(), pv, pa.Hours()
+	r.standby, _ = wkStandbyIn(r.projects, r.from, r.to, now)
 	moved := map[string]bool{}
 	for _, p := range r.projects {
 		for _, s := range p.Steps {
@@ -162,7 +164,7 @@ func (r report) markdown(off map[string]bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Report · %s · %s\n\n%s\n\n", r.title, r.label, r.who)
 	if !off["Summary"] {
-		fmt.Fprintf(&b, "- Hours: %.1f h\n- Value: %s\n- Steps done: %d\n", r.hours, wkMoney(r.val), r.steps)
+		fmt.Fprintf(&b, "- Hours: %.1f h\n- Standby: %.1f h (billed at half, in the value)\n- Value: %s\n- Steps done: %d\n", r.hours, r.standby.Hours(), wkMoney(r.val), r.steps)
 		if r.items > 0 {
 			fmt.Fprintf(&b, "- Deadlines on time: %d of %d\n", r.items-r.late, r.items)
 		}
@@ -355,7 +357,11 @@ func (k *wk) reportPage(r report, off map[string]bool, y0 int) int {
 		}
 		t1, c1 := trend(r.phours, r.hours)
 		t2, c2 := trend(r.pval, r.val)
-		stat(0, "Hours", fmt.Sprintf("%.1f h", r.hours), t1, c1)
+		hl := "Hours"
+		if r.standby > 0 {
+			hl = fmt.Sprintf("Hours · %.1f h standby", r.standby.Hours())
+		}
+		stat(0, hl, fmt.Sprintf("%.1f h", r.hours), t1, c1)
 		stat(1, "Value", wkMoney(r.val), t2, c2)
 		stat(2, "Steps done", fmt.Sprint(r.steps), fmt.Sprintf("%d projects", r.stepProjects), green)
 		ontime, note := 100.0, "nothing late"
