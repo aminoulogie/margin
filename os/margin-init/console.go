@@ -82,6 +82,7 @@ type console struct {
 	tapFrom          image.Rectangle          // the button being tapped, on the screen (a book opens out of it)
 	wifi             wifiUI                   // Settings > Wi-Fi: networks around, a password being typed (wifiui.go)
 	tabsOn           string                   // the selected tab of the page on screen ("" if it has no tab bar)
+	drag             dragState                // a to-do being dragged (work_drag.go)
 	termBar          *page                    // the tab bar over the terminal, as a page (its taps)
 	glyphs           map[glyphKey]*image.RGBA // rendered cells, reused (fonts are slow to rasterize)
 	barH             int                      // status bar height at the top

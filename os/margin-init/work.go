@@ -101,28 +101,63 @@ func (k *wk) cardIn(r image.Rectangle, fill color.RGBA) {
 	ui.RoundRect(k.img, r, 20, wkRim)
 	in := r.Inset(2)
 	ui.RoundRect(k.img, in, 18, fill)
+	// The sheen: on a flat fill each row is one colour, so the row's middle is a fill and
+	// only its anti-aliased ends are blended (blending every pixel cost a tenth of a page).
 	top := blend(fill, rgb(0xffffff), 0.035)
 	for y := in.Min.Y; y < in.Min.Y+min(120, in.Dy()); y++ {
+		if y < k.img.Rect.Min.Y || y >= k.img.Rect.Max.Y {
+			continue
+		}
 		t := 1 - float64(y-in.Min.Y)/120
-		glass(k.img, roundedRow(in, 18, y), 0, top, t)
+		row := roundedRow(in, 18, y)
+		if row.Dx() <= 6 {
+			glass(k.img, row, 0, top, t)
+			continue
+		}
+		mid := image.Rect(row.Min.X+3, y, row.Max.X-3, y+1)
+		ui.Fill(k.img, mid, blend(fill, top, t))
+		glass(k.img, image.Rect(row.Min.X, y, mid.Min.X, y+1), 0, top, t)
+		glass(k.img, image.Rect(mid.Max.X, y, row.Max.X, y+1), 0, top, t)
 	}
+}
+
+// wkGlowCache is the header's haze drawn once over the page colour: each page copies it.
+var wkGlowCache struct {
+	key [3]any
+	img *image.RGBA
 }
 
 // glow is the lime haze behind a page's header.
 func (k *wk) glow() {
 	cx, cy, rx, ry := 700.0, 110.0, 560.0, 230.0
-	for y := max(k.Y(0), 0); y < k.Y(360); y++ {
-		for x := wkSideW; x < k.c.s.W; x++ {
-			d := math.Hypot((float64(x)-cx)/rx, (float64(y+k.oy)-cy)/ry)
-			if d >= 1 {
-				continue
+	y0, y1 := max(k.Y(0), 0), min(k.Y(360), k.img.Rect.Dy())
+	w := k.c.s.W
+	if y1 <= y0 || w <= wkSideW {
+		return
+	}
+	key := [3]any{k.oy, wkLime, wkBG}
+	g := wkGlowCache.img
+	if g == nil || wkGlowCache.key != key || g.Rect.Dx() != w-wkSideW || g.Rect.Dy() != y1-y0 {
+		g = image.NewRGBA(image.Rect(0, 0, w-wkSideW, y1-y0))
+		ui.Fill(g, g.Rect, wkBG)
+		for y := y0; y < y1; y++ {
+			for x := wkSideW; x < w; x++ {
+				d := math.Hypot((float64(x)-cx)/rx, (float64(y+k.oy)-cy)/ry)
+				if d >= 1 {
+					continue
+				}
+				a := 0.07 * (1 - d) * (1 - d)
+				o := g.PixOffset(x-wkSideW, y-y0)
+				g.Pix[o] = uint8(float64(g.Pix[o])*(1-a) + float64(wkLime.R)*a)
+				g.Pix[o+1] = uint8(float64(g.Pix[o+1])*(1-a) + float64(wkLime.G)*a)
+				g.Pix[o+2] = uint8(float64(g.Pix[o+2])*(1-a) + float64(wkLime.B)*a)
 			}
-			a := 0.07 * (1 - d) * (1 - d)
-			o := k.img.PixOffset(x, y)
-			k.img.Pix[o] = uint8(float64(k.img.Pix[o])*(1-a) + float64(wkLime.R)*a)
-			k.img.Pix[o+1] = uint8(float64(k.img.Pix[o+1])*(1-a) + float64(wkLime.G)*a)
-			k.img.Pix[o+2] = uint8(float64(k.img.Pix[o+2])*(1-a) + float64(wkLime.B)*a)
 		}
+		wkGlowCache.key, wkGlowCache.img = key, g
+	}
+	n := 4 * g.Rect.Dx()
+	for y := y0; y < y1; y++ {
+		copy(k.img.Pix[k.img.PixOffset(wkSideW, y):][:n], g.Pix[(y-y0)*g.Stride:][:n])
 	}
 }
 
@@ -465,11 +500,20 @@ func wkInitials(name string) string {
 // timerPill is the running timer, floating at the bottom: the project, the clock, what it's
 // worth, a break and a stop.
 func (k *wk) timerPill(h int) {
+	if k.c.somaUI.work == "training" && k.restPill(h) {
+		return
+	}
 	entries := wkEntries()
 	e, ok := wkRunning(entries)
 	if !ok {
 		return
 	}
+	// The band it floats in, the page's last rows: fixed at the screen's bottom (the footer),
+	// so it stays as the page scrolls, and it ticks on its own (wkTimerTick).
+	ui.Fill(k.img, image.Rect(wkSideW+1, h-wkTimerH, k.c.s.W, h), wkBG)
+	ui.Fill(k.img, image.Rect(0, h-wkTimerH, wkSideW-1, h), wkSide)
+	ui.Fill(k.img, image.Rect(wkSideW-1, h-wkTimerH, wkSideW+1, h), rgb(0x1a1b1f))
+	k.p.footer = wkTimerH
 	now := time.Now()
 	p, _ := wkProjectByID(e.ProjectID)
 	cx := 660
@@ -498,6 +542,48 @@ func (k *wk) timerPill(h int) {
 	k.btn("wk:stop", image.Rect(r.Max.X-82, r.Min.Y, r.Max.X, r.Max.Y))
 }
 
+// wkTimerH is the band at the bottom the running timer floats in.
+const wkTimerH = 140
+
+// wkTimerTick keeps the running timer's clock going: once a second, only its band is drawn
+// again and sent to the screen (the page isn't). Caller holds drawMu.
+func (c *console) wkTimerTick() {
+	if c.mode != modeSoma || c.page == nil || !c.screenOn || c.somaUI.typing || c.somaUI.sheet != "" ||
+		c.sc.drag || c.sc.cpuOn || c.page.footer != wkTimerH || c.somaUI.work == "reports" {
+		return
+	}
+	if c.somaUI.work == "training" && !c.somaUI.restEnd.After(time.Now()) {
+		if _, ok := wkRunning(wkEntries()); !ok {
+			return // rest over: startRest's own redraw takes the band away
+		}
+	}
+	img := c.page.img
+	ih := img.Rect.Dy()
+	k := &wk{c: c, p: &page{img: img}, img: img, oy: c.barH - (tabsH - 24)}
+	k.timerPill(ih)
+	// Its buttons are the page's already (the page keeps the ones it was drawn with).
+	vh := c.viewH()
+	c.pagePainted(ih-wkTimerH, ih)
+	band := img.SubImage(image.Rect(0, ih-wkTimerH, img.Rect.Dx(), ih)).(*image.RGBA)
+	if ih > vh {
+		c.s.blitRGBA(band, 0, c.barH+vh-wkTimerH)
+	} else {
+		c.s.blitRGBA(band, 0, c.barH+ih-wkTimerH)
+	}
+	c.s.Flush()
+}
+
+// startTimerTicks runs wkTimerTick every second, for as long as Margin runs.
+func (c *console) startTimerTicks() {
+	go func() {
+		for range time.Tick(time.Second) {
+			drawMu.Lock()
+			c.wkTimerTick()
+			drawMu.Unlock()
+		}
+	}()
+}
+
 // --- the page --------------------------------------------------------------------------------
 
 // workPage draws the Work tab. Caller holds drawMu.
@@ -513,7 +599,14 @@ func (c *console) workPage() *page {
 	w := c.s.W
 	needKey := "work:" + su.work + "/" + su.workSub
 	h := max(c.viewH(), su.need[needKey])
-	img := canvas(w, h)
+	// A page drawn before, with nothing it shows changed since: shown as it was (switching
+	// between the rail's pages, or back to one, is then a copy, not a drawing).
+	key := c.workKey()
+	if e := wkPageCache.find(key); e != nil {
+		c.tabsOn = e.tabsOn
+		return e.p
+	}
+	img := wkPageCache.canvas(w, h)
 	ui.Fill(img, img.Rect, wkBG)
 	p := &page{img: img, header: tabsH}
 	// Margin's tab bar stays at the top: the pages sit under it.
@@ -560,6 +653,10 @@ func (c *console) workPage() *page {
 	k.oy = c.barH - (tabsH - 24) // a page may have moved its lower part down
 	if end > h {
 		su.need[needKey] = end
+		if wkPageCache.next != nil { // drawn again, taller: this picture is free
+			wkPageCache.spare = append(wkPageCache.spare, wkPageCache.next)
+			wkPageCache.next = nil
+		}
 		return c.workPage()
 	}
 	if end < h && h > c.viewH() {
@@ -580,17 +677,132 @@ func (c *console) workPage() *page {
 		}
 	}
 	k.rail(p.img.Rect.Dy(), map[string]int{"planner": planned, "findings": open})
+	p.left = wkSideW // the rail stays put as the page scrolls
 	sy := 0
 	if p.img.Rect.Dy() > c.viewH() {
 		sy = min(max(c.scrollY(), 0), p.img.Rect.Dy()-c.viewH())
 	}
 	if su.work != "reports" { // the report's buttons sit where it would
-		k.timerPill(sy + min(p.img.Rect.Dy(), c.viewH())) // at the bottom of what's on screen
+		k.timerPill(p.img.Rect.Dy()) // in the fixed band at the bottom
 	}
 	c.booksTabs(p, "tab:soma")
 	k.undoPill(sy + c.viewH())
 	k.drawSheet(p)
+	wkPageCache.keep(key, p, c.tabsOn)
 	return p
+}
+
+// wkPageCache keeps the last few workstation pages drawn, each in its own picture.
+var wkPageCache wkPages_
+
+type wkCached struct {
+	key    string
+	p      *page
+	tabsOn string
+	used   int
+}
+
+type wkPages_ struct {
+	list  []*wkCached
+	spare []*image.RGBA // pictures of pages dropped, drawn into again
+	clock int
+	next  *image.RGBA // the picture the page being drawn is in
+}
+
+const wkCacheN = 5
+
+func (pc *wkPages_) find(key string) *wkCached {
+	if key == "" {
+		return nil
+	}
+	for _, e := range pc.list {
+		if e.key == key {
+			pc.clock++
+			e.used = pc.clock
+			return e
+		}
+	}
+	return nil
+}
+
+// canvas is a picture for a page about to be drawn: not one a kept page is in.
+func (pc *wkPages_) canvas(w, h int) *image.RGBA {
+	for i, im := range pc.spare {
+		if im.Rect.Dx() == w && cap(im.Pix) >= 4*w*h {
+			pc.spare = append(pc.spare[:i], pc.spare[i+1:]...)
+			im = &image.RGBA{Pix: im.Pix[:4*w*h], Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
+			pc.next = im
+			return im
+		}
+	}
+	pc.next = image.NewRGBA(image.Rect(0, 0, w, h))
+	return pc.next
+}
+
+// keep remembers the page just drawn (key "": not kept, its picture is drawn into next time).
+func (pc *wkPages_) keep(key string, p *page, tabsOn string) {
+	im := pc.next
+	pc.next = nil
+	if im == nil {
+		return
+	}
+	for i, e := range pc.list { // the same page drawn again: the old one goes
+		if e.key == key {
+			pc.spare = append(pc.spare, e.p.img)
+			pc.list = append(pc.list[:i], pc.list[i+1:]...)
+			break
+		}
+	}
+	if key == "" {
+		pc.spare = append(pc.spare[:0], im)
+		return
+	}
+	if len(pc.list) >= wkCacheN {
+		old := 0
+		for i, e := range pc.list {
+			if e.used < pc.list[old].used {
+				old = i
+			}
+		}
+		pc.spare = append(pc.spare, pc.list[old].p.img)
+		pc.list = append(pc.list[:old], pc.list[old+1:]...)
+	}
+	if len(pc.spare) > 2 {
+		pc.spare = pc.spare[len(pc.spare)-2:]
+	}
+	pc.clock++
+	pc.list = append(pc.list, &wkCached{key: key, p: p, tabsOn: tabsOn, used: pc.clock})
+}
+
+// drop forgets every kept page (what they show has changed in a way the key can't see).
+func (pc *wkPages_) drop() {
+	for _, e := range pc.list {
+		pc.spare = append(pc.spare, e.p.img)
+	}
+	pc.list = nil
+	if len(pc.spare) > 2 {
+		pc.spare = pc.spare[len(pc.spare)-2:]
+	}
+}
+
+// workKey is everything a workstation page shows that can change: the records, the page and
+// its choices, the minute, where it's scrolled to (the pills and sheets sit on the screen).
+// "" while typing: that page is drawn each time.
+func (c *console) workKey() string {
+	su := c.somaUI
+	if su.typing {
+		return ""
+	}
+	su.need, su.keep, su.toTop = nil, false, false
+	var undo string
+	if su.undo != nil {
+		undo = su.undo.label + su.undo.until.String()
+	}
+	su.undo = nil
+	now := time.Now().In(displayZone)
+	seeded := loadSeed() != nil
+	return fmt.Sprintf("%v|%s|%d|%s|%d|%v|%v|%v|%d", su, undo, somaGen.Load(), now.Format("2006-01-02 15:")+fmt.Sprint(now.Minute()/5),
+		c.scrollY(), c.cfg.SomaHidden, wkLime, seeded, c.barH)
 }
 
 // workTap handles the Work tab's buttons: "wk:<action>:<arg>", an action registered in
@@ -630,7 +842,7 @@ func wkHandled(id string) bool {
 	if wkActions[name] != nil {
 		return true
 	}
-	for _, p := range []string{"go", "proj", "back", "stop", "clockout", "finding", "water", "start", "tab", "chip", "seg", "week", "client", "step", "todo"} {
+	for _, p := range []string{"go", "proj", "back", "stop", "clockout", "finding", "water", "start", "tab", "chip", "seg", "week", "client", "step", "todo", "lib"} {
 		if name == p {
 			return true
 		}
@@ -664,7 +876,7 @@ func (c *console) workTapPage(id string) bool {
 		somaAddWater(float64(ml))
 	case strings.HasPrefix(id, "wk:start:"):
 		wkStartTimer(strings.TrimPrefix(id, "wk:start:"))
-	case strings.HasPrefix(id, "wk:tab:"), strings.HasPrefix(id, "wk:chip:"), strings.HasPrefix(id, "wk:seg:"), strings.HasPrefix(id, "wk:week:"), strings.HasPrefix(id, "wk:client:"):
+	case strings.HasPrefix(id, "wk:tab:"), strings.HasPrefix(id, "wk:chip:"), strings.HasPrefix(id, "wk:seg:"), strings.HasPrefix(id, "wk:week:"), strings.HasPrefix(id, "wk:client:"), strings.HasPrefix(id, "wk:lib:"):
 		if su.workSel == nil {
 			su.workSel = map[string]string{}
 		}

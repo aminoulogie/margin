@@ -34,8 +34,8 @@ func TestTabBarEverywhere(t *testing.T) {
 	y := c.barH + (tabBarTop+tabBarBot)/2
 	before := animFrames
 	c.pageTouch(TouchPoint{Down: true, X: x, Y: y})
-	if !c.press.on || animFrames == before {
-		t.Fatal("touching a tab should slide its pill there at once")
+	if animFrames == before || c.mode != modeSettings {
+		t.Fatal("touching a tab should slide its pill there and open it at once")
 	}
 	shot(t, c, "tabs-press")
 	drawMu.Unlock()

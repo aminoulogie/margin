@@ -54,6 +54,8 @@ func (c *console) onScreen(r image.Rectangle, y int) (scr, src image.Rectangle) 
 		area, shift = image.Rect(0, vh-fh, c.s.W, vh), vh-ih
 	case tall && vy < hh:
 		area = image.Rect(0, 0, c.s.W, hh)
+	case tall && r.Max.X <= c.page.left && vy < vh-fh:
+		area = image.Rect(0, hh, c.page.left, vh-fh)
 	case tall:
 		area, shift = image.Rect(0, hh, c.s.W, vh-fh), -c.scrollY()
 	default:
@@ -72,7 +74,7 @@ func (c *console) pressShow(x, y int) {
 	if c.press.on || c.page == nil || c.sc.gpuOn || c.sc.cpuOn || !c.screenOn {
 		return
 	}
-	id, r := c.page.hitRect(x, c.pageY(y))
+	id, r := c.page.hitRect(x, c.pageYAt(x, y))
 	if id == "" {
 		return
 	}

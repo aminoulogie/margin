@@ -120,6 +120,7 @@ func main() {
 			go c.run()
 			go c.serve()
 			go c.touchLoop()
+			c.startTimerTicks()
 			go c.statusLoop()
 			go c.keysLoop("mid_powerbtn")
 			go c.keysLoop("gpio-keys")

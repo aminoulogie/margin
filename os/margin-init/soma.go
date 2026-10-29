@@ -74,6 +74,14 @@ type somaUI struct {
 	portionAmt  float64         // its amount (grams, ml or servings)
 	portionMeal string          // and meal
 	portionMode string          // "add" or "edit:<list>:<i>"
+	cmp         taskComposer    // a new to-do's day, time, length and priority (work_compose.go)
+	cmpPicking  bool            // ...its day being picked from the date sheet
+	cmpField    string          // and the field and text to go back to after
+	cmpText     string
+	cmpKeep     bool          // typing again after picking: the composer keeps what it had
+	libQuery    string        // what the exercise library is searched for
+	restEnd     time.Time     // the rest timer runs until then (work_library.go)
+	restTotal   time.Duration // and was this long
 }
 
 func somaColour(hex string, def color.RGBA) color.RGBA {

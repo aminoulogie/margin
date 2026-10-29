@@ -140,7 +140,7 @@ func (c *console) pageTap(x, y int) {
 	if c.page == nil {
 		return
 	}
-	if id, r := c.page.hitRect(x, c.pageY(y)); id != "" {
+	if id, r := c.page.hitRect(x, c.pageYAt(x, y)); id != "" {
 		c.tapFrom, _ = c.onScreen(r, y)
 		c.tapID(id)
 		c.tapFrom = image.Rectangle{}

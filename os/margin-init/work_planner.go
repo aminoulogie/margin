@@ -180,6 +180,8 @@ func (k *wk) planWeek(mon, pd time.Time, todos []somaTodo, now time.Time) int {
 		k.hBar(k.R(cx-31, 431, cx+31, 437), frac, col)
 		ui.Fill(k.img, k.R(x0+i*colW, top, x0+i*colW+1, bot), wkLine)
 		k.btn("wk:planday:"+ds, k.R(x0+i*colW, 320, x0+(i+1)*colW, 450))
+		k.dropDay(ds, k.R(x0+i*colW, 320, x0+(i+1)*colW, 450))
+		k.dropHours(ds, x0+i*colW, x0+(i+1)*colW, top, bot, firstH, pxH)
 	}
 	for h := firstH; h <= lastH; h++ {
 		y := top + int(float64(h-firstH)*pxH)
@@ -423,6 +425,7 @@ func (k *wk) planDayView(day time.Time, todos []somaTodo, now time.Time) int {
 		k.btn("wk:sheet-open:task:"+t.ID, r)
 	}
 	k.slotButtons(ds, x0, x1, top, firstH, lastH, pxH)
+	k.dropHours(ds, x0, x1, top, bot, firstH, pxH)
 	if day.Equal(dayStart(now)) {
 		hh := float64(now.Hour()) + float64(now.Minute())/60
 		if hh >= float64(firstH) && hh <= float64(lastH) {
@@ -431,7 +434,7 @@ func (k *wk) planDayView(day time.Time, todos []somaTodo, now time.Time) int {
 			ui.Circle(k.img, x0-6, y, 7, wkRed)
 		}
 	}
-	k.text(wkFont("regular", 18), wkX0+4, cr.Max.Y+36, wkFaint, "Tap an empty time to add a to-do there. Swipe for the next day.")
+	k.text(wkFont("regular", 18), wkX0+4, cr.Max.Y+36, wkFaint, "Tap an empty time to add a to-do. Hold one to drag it to another time. Swipe for the next day.")
 	return k.dayList(day, todos, now, cr.Max.Y+64)
 }
 
@@ -799,29 +802,14 @@ func init() {
 		d := c.planDay().Format("2006-01-02")
 		c.wkType("newtask:"+d, "A to-do for "+map[bool]string{true: "today", false: wkDate(d)}[d == somaToday()], "")
 	}
-	wkTypers["newtask"] = func(c *console, date, text string) {
-		if date == "" {
-			date = somaToday()
-		}
-		somaAddTodo(text, "day", date)
-	}
-	wkTypers["newweek"] = func(c *console, mon, text string) {
-		date := somaToday()
-		if mondayOf(date) != mon {
-			date = mon
-		}
-		somaAddTodo(text, "week", date)
-	}
+	wkTypers["newtask"] = func(c *console, date, text string) { c.composerAdd(text) }
+	wkTypers["newweek"] = func(c *console, mon, text string) { c.composerAdd(text) }
 	wkActions["slotadd"] = func(c *console, arg string) {
 		date, m, _ := strings.Cut(arg, ":")
 		mins, _ := strconv.Atoi(m)
 		c.wkType("slotadd:"+arg, fmt.Sprintf("A to-do at %s, %s", clockOf(float64(mins)/60), wkDate(date)), "")
 	}
-	wkTypers["slotadd"] = func(c *console, arg, text string) {
-		date, m, _ := strings.Cut(arg, ":")
-		mins, _ := strconv.Atoi(m)
-		somaAddTodoAt(text, date, mins, 60)
-	}
+	wkTypers["slotadd"] = func(c *console, arg, text string) { c.composerAdd(text) }
 	wkPrompts["newtask"] = func(date string) (string, string) { return "A to-do for " + wkDate(date), "" }
 	wkPrompts["newweek"] = func(string) (string, string) { return "A to-do for this week", "" }
 	wkPrompts["trename"] = func(id string) (string, string) { return "The to-do", str(somaObj("todos#" + id)["text"]) }

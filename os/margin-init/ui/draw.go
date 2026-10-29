@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sync"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
@@ -121,17 +122,54 @@ func RoundRect(dst *image.RGBA, r image.Rectangle, rad int, c color.RGBA) {
 		image.Rect(r.Min.X, r.Max.Y-rad, r.Min.X+rad, r.Max.Y),
 		image.Rect(r.Max.X-rad, r.Max.Y-rad, r.Max.X, r.Max.Y),
 	}
-	for _, q := range corners {
+	cov := cornerCover(rad)
+	for qi, q := range corners {
 		for y := q.Min.Y; y < q.Max.Y; y++ {
+			// Rows and columns counted from the corner's outer edge (0 = the outermost).
+			dy := y - q.Min.Y
+			if qi >= 2 {
+				dy = q.Max.Y - 1 - y
+			}
+			row := cov[dy*rad : dy*rad+rad]
 			for x := q.Min.X; x < q.Max.X; x++ {
-				// Distance from the pixel centre to the corner circle's centre.
-				cx, cy := float64(x)+0.5, float64(y)+0.5
-				ccx := math.Max(float64(r.Min.X+rad), math.Min(cx, float64(r.Max.X-rad)))
-				ccy := math.Max(float64(r.Min.Y+rad), math.Min(cy, float64(r.Max.Y-rad)))
-				blend(dst, x, y, c, float64(rad)+0.5-math.Hypot(cx-ccx, cy-ccy))
+				dx := x - q.Min.X
+				if qi == 1 || qi == 3 {
+					dx = q.Max.X - 1 - x
+				}
+				blend(dst, x, y, c, row[dx])
 			}
 		}
 	}
+}
+
+// cornerCover is how much of each pixel of a rounded corner of radius rad the shape covers,
+// row by row from the corner's outer edge: the same sums RoundRect did per pixel, done once
+// per radius (a page draws thousands of corners of a dozen sizes).
+var corners struct {
+	sync.Mutex
+	m map[int][]float64
+}
+
+func cornerCover(rad int) []float64 {
+	corners.Lock()
+	defer corners.Unlock()
+	if t, ok := corners.m[rad]; ok {
+		return t
+	}
+	if corners.m == nil {
+		corners.m = map[int][]float64{}
+	}
+	t := make([]float64, rad*rad)
+	for dy := range rad {
+		for dx := range rad {
+			// As for the top-left corner: the circle's centre is at (rad, rad).
+			cx, cy := float64(dx)+0.5, float64(dy)+0.5
+			ccx, ccy := math.Max(float64(rad), cx), math.Max(float64(rad), cy)
+			t[dy*rad+dx] = float64(rad) + 0.5 - math.Hypot(cx-ccx, cy-ccy)
+		}
+	}
+	corners.m[rad] = t
+	return t
 }
 
 // Circle paints a filled, anti-aliased circle.

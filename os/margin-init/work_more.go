@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -548,7 +549,175 @@ func (k *wk) health() int {
 	if len(ss) == 0 {
 		k.text(wkFont("regular", 20), 188, ry+44, wkMuted, "No sessions in this range.")
 	}
-	return tc.Max.Y
+	return k.bodyLog(tc.Max.Y + 20)
+}
+
+// bodyLog is the phone's Body tab for today: sleep and how it was, naps, creatine, the
+// scale and the tape measure, each logged with a tap or two.
+func (k *wk) bodyLog(y int) int {
+	date := somaToday()
+	day := foodDay(date)
+	sl, _ := day["sleep"].(obj)
+	cr := image.Rect(wkX0, y, wkX1, y+590)
+	k.card(cr)
+	k.cardHead(wkX0+28, y+48, "activity", "Log today", "")
+	k.textR(wkFont("regular", 17), 1136, y+48, wkFaint, "as Soma's Body tab")
+	row := func(ry int, icon, label, value string) {
+		ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
+		k.icon(icon, 204, ry+46, 26, wkMuted)
+		k.text(wkFont("semi", 22), 240, ry+54, wkFG, label)
+		k.text(wkFont("regular", 20), 420, ry+54, wkText2, value)
+	}
+	// Sleep: hours, a step at a time, and how well.
+	ry := y + 80
+	h := num(sl["hours"])
+	hs := "not logged"
+	if h > 0 {
+		hs = fmt.Sprintf("%.1f h", h)
+	}
+	row(ry, "bed", "Sleep", hs)
+	k.iconBtn("wk:bsleep:-0.5", "minus", 690, ry+46, 26, rgb(0x20222a), wkFG)
+	k.iconBtn("wk:bsleep:0.5", "plus", 750, ry+46, 26, rgb(0x20222a), wkFG)
+	q := int(num(sl["quality"]))
+	for i := 1; i <= 5; i++ {
+		r := k.R(800+(i-1)*68, ry+20, 860+(i-1)*68, ry+72)
+		bg, fg := rgb(0x20222a), wkText2
+		if q == i {
+			bg, fg = wkLime, wkOnLime
+		}
+		ui.RoundRect(k.img, r, 14, bg)
+		apTextCenter(k.img, wkFont("semi", 20), (r.Min.X+r.Max.X)/2, (r.Min.Y+r.Max.Y)/2, fg, fmt.Sprint(i))
+		k.btn(fmt.Sprintf("wk:bsleepq:%d", i), r)
+	}
+	// Naps.
+	ry += 96
+	nm := 0.0
+	naps, _ := day["naps"].([]any)
+	for _, n := range naps {
+		no, _ := n.(obj)
+		nm += num(no["minutes"])
+	}
+	ns := "none"
+	if len(naps) > 0 {
+		ns = fmt.Sprintf("%d · %.0f min", len(naps), nm)
+	}
+	row(ry, "moon", "Naps", ns)
+	k.outline("wk:bnap:20", "plus", "20 min", 976, ry+20, 52)
+	k.outline("wk:bnap:45", "plus", "45 min", 1136, ry+20, 52)
+	// Creatine.
+	ry += 96
+	row(ry, "pill", "Creatine", fmt.Sprintf("%.0f g", num(day["creatine"])))
+	k.outline("wk:bcrea:5", "plus", "5 g", 1136, ry+20, 52)
+	k.outline("wk:bcrea:0", "rotate-ccw", "", 1010, ry+20, 52)
+	// Weight.
+	ry += 96
+	ws := "not weighed"
+	if w := num(day["bodyWeight"]); w > 0 {
+		ws = fmt.Sprintf("%.1f kg", w)
+	}
+	row(ry, "weight", "Weight", ws)
+	k.outline("wk:type-open:bweight:", "pencil", "Weigh in", 1136, ry+20, 52)
+	// Measurements.
+	ry += 96
+	ms, _ := day["measurements"].(obj)
+	var parts []string
+	for _, kk := range []string{"waist", "chest", "hips", "arm", "thigh", "neck"} {
+		if v := num(ms[kk]); v > 0 {
+			parts = append(parts, fmt.Sprintf("%s %.1f", kk, v))
+		}
+	}
+	mstr := "none today"
+	if len(parts) > 0 {
+		mstr = strings.Join(parts, " · ")
+	}
+	row(ry, "ruler", "Measures", clip(wkFont("regular", 20), mstr, 500))
+	k.outline("wk:type-open:bmeas:", "pencil", "Measure", 1136, ry+20, 52)
+	return cr.Max.Y
+}
+
+func init() {
+	wkActions["bsleep"] = func(c *console, arg string) {
+		d, _ := strconv.ParseFloat(arg, 64)
+		patchFoodDay(somaToday(), func(day obj) {
+			sl, _ := day["sleep"].(obj)
+			if sl == nil {
+				sl = obj{"hours": 7.5}
+				d = 0
+			}
+			sl["hours"] = min(max(num(sl["hours"])+d, 0), 16)
+			day["sleep"] = sl
+		})
+	}
+	wkActions["bsleepq"] = func(c *console, arg string) {
+		q, _ := strconv.Atoi(arg)
+		patchFoodDay(somaToday(), func(day obj) {
+			sl, _ := day["sleep"].(obj)
+			if sl == nil {
+				sl = obj{"hours": 7.5}
+			}
+			sl["quality"] = q
+			day["sleep"] = sl
+		})
+	}
+	wkActions["bnap"] = func(c *console, arg string) {
+		m, _ := strconv.Atoi(arg)
+		patchFoodDay(somaToday(), func(day obj) {
+			naps, _ := day["naps"].([]any)
+			day["naps"] = append(naps, obj{"id": "nap-" + somaNewID(), "minutes": m, "at": nowMs()})
+		})
+	}
+	wkActions["bcrea"] = func(c *console, arg string) {
+		g, _ := strconv.ParseFloat(arg, 64)
+		var was float64
+		patchFoodDay(somaToday(), func(day obj) {
+			was = num(day["creatine"])
+			if g == 0 {
+				day["creatine"] = 0
+			} else {
+				day["creatine"] = was + g
+			}
+		})
+		// The stash in settings, as Soma keeps it.
+		if st := num(jsonValue(soma.get("settings.creatineStashGrams"))); st > 0 || g == 0 {
+			if g == 0 {
+				somaPut("settings.creatineStashGrams", st+was)
+			} else {
+				somaPut("settings.creatineStashGrams", max(st-g, 0))
+			}
+		}
+	}
+	wkPrompts["bweight"] = func(string) (string, string) {
+		if w := num(foodDay(somaToday())["bodyWeight"]); w > 0 {
+			return "Your weight in kg", fmt.Sprintf("%.1f", w)
+		}
+		return "Your weight in kg, e.g. 78.4", ""
+	}
+	wkTypers["bweight"] = func(c *console, _, text string) {
+		if v, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(text), ",", "."), 64); err == nil && v > 20 && v < 400 {
+			patchFoodDay(somaToday(), func(day obj) { day["bodyWeight"] = round1(v) })
+		}
+	}
+	wkPrompts["bmeas"] = func(string) (string, string) { return "e.g. waist 82 chest 104 arm 38 (cm)", "" }
+	wkTypers["bmeas"] = func(c *console, _, text string) {
+		f := strings.Fields(strings.ToLower(strings.NewReplacer(",", " ", ":", " ", "=", " ").Replace(text)))
+		m := obj{}
+		for i := 0; i+1 < len(f); i += 2 {
+			if v, err := strconv.ParseFloat(f[i+1], 64); err == nil && v > 0 {
+				m[f[i]] = v
+			}
+		}
+		if len(m) > 0 {
+			patchFoodDay(somaToday(), func(day obj) {
+				old, _ := day["measurements"].(obj)
+				for kk, v := range old {
+					if _, ok := m[kk]; !ok {
+						m[kk] = v
+					}
+				}
+				day["measurements"] = m
+			})
+		}
+	}
 }
 
 // --- mind -----------------------------------------------------------------------------------------
