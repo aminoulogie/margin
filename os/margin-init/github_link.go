@@ -86,8 +86,8 @@ func sendCmdResult(ctx context.Context, l githubLink, title, cmd, out string, co
 	if l.Token == "" {
 		return "", fmt.Errorf("the tablet isn't linked to GitHub yet: on your phone, open the Send to Books page (its address is in Library) and use Link GitHub")
 	}
-	if len(out) > 200<<10 {
-		out = out[:60<<10] + "\n[… cut …]\n" + out[len(out)-140<<10:]
+	if len(out) > 4<<20 {
+		out = out[:1<<20] + "\n[… cut …]\n" + out[len(out)-3<<20:]
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\nRun on the tablet %s, exit code %d.\n\n## Command\n```\n%s\n```\n\n## Output\n```\n%s\n```\n",

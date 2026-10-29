@@ -579,6 +579,16 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       vs kernel 3.4), so setupSound never set anything (its log lines list no controls). Next: the
       Clipboard's "Sound 1-4" checks (kernel messages, `amixer controls`, Android's own sound tools and
       parameter-framework route files, whether the PCM's hw_ptr moves).
+      Results (margin-results 13:09): hw_ptr stops at 6000 (one period) and never moves: the DSP takes
+      one period then stalls (no route). Card 4 controls are the cs42l73 codec + Intel LPE/SST:
+      'LPE IHF mixer' (76), 'LPE headset mixer' (77), 'SPK-ASP Mux' (85), 'SPK Amp Switch' (81),
+      'IHFAMP_SD_N Switch' (98), 'Speakerphone Digital Playback Switch/Volume' (15/9), 'HP Amp Switch'
+      (83), 'Headphone Analog Playback Switch/Volume' (11/1), 'HL-ASP Volume' (63), 'SSP * Master Mode'.
+      Alpine's alsa-lib can list but not read/write them (ELEM_READ → ENOTTY: its time64 struct vs
+      kernel 3.4); Android's /system/bin/alsa_amixer, alsa_aplay, alsa_ctl exist and match the kernel.
+      Android's routes: /system/etc/parameter-framework (Settings/Audio/AudioConfigurableDomains.xml,
+      Structure/Audio/CirrusLogicSubsystem.xml, LPEMixerSubsystem.xml). Next: copy Android's "media to
+      IHF/headset" settings and set them with alsa_amixer in setupSound.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
