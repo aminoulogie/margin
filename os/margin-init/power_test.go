@@ -32,6 +32,10 @@ func testConsole(t *testing.T) *console {
 		coverDir, covers = oldCovDir, oldCovers
 		c.screenOn = false // a toast's timer left running draws nothing after the test
 	})
+	// Home's kept rows in a temp file, written at once.
+	oldLists := homeListsPath
+	homeListsPath, homeSaveAsync = filepath.Join(t.TempDir(), "home-lists.json"), false
+	t.Cleanup(func() { homeListsPath = oldLists })
 	// Nothing from Home in the background (not put back: stray arrivals read them later).
 	backgroundRedraws, homeLoads, turnAhead, wifiAutoScan = false, false, false, false
 	// Views drawn every time (tests check what a drawing shows), kept in a temp folder.

@@ -120,7 +120,9 @@ type console struct {
 	homePop          []*storeItem // Home: Gutenberg\'s most read
 	homePopLoading   bool
 	homePopErr       time.Time
+	homePopAt        time.Time               // when homePop was fetched (kept on the tablet: homekeep.go)
 	homeShelf        map[int]*homeShelfState // Home's store rows (bookshome.go)
+	homeKept         bool                    // the kept rows have been read back (homeRestore)
 	arrived          map[string]bool         // covers loaded since Home's rows were last repainted
 	arrivedQueued    bool
 	redrawQueued     bool // a redraw for arrivals (redrawSoon) is coming

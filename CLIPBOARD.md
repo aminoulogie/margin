@@ -4,7 +4,19 @@ Commands to type on the tablet. Open **Terminal > Clipboard** (over the keyboard
 check it, then press return. Margin fetches this file from GitHub each time the Clipboard opens.
 
 For whoever adds commands (people and AI models, see CLAUDE.md): newest first; each one is a
-`## Soma: add the Campus France plan
+`## title` line followed by a fenced block. Keep titles short and plain. Open the fence with
+` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
+`cbrun`, which sends the output to the private repo aminoulogie/margin-results.
+
+## Covers: kept Home rows and covers read ahead
+```send
+L=/proc/1/root/data/condor/init.log
+grep -E "home: |store: cover" $L | tail -20
+ls -la /proc/1/root/data/condor/home-lists.json
+echo "covers on the tablet: $(ls /proc/1/root/data/condor/covers/s | wc -l) scaled, $(ls /proc/1/root/data/condor/covers | grep -c none) without a cover"
+```
+
+## Soma: add the Campus France plan
 ```send
 /proc/1/root/data/condor/condor-init soma-plan "Campus France" 2026-11-30 <<'EOF'
 2026-10-31 | Documents | Create / open Études en France account |
@@ -26,10 +38,6 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 2027-03-15 | After | Campus France interview (deadline) | milestone
 EOF
 ```
-
-## title` line followed by a fenced block. Keep titles short and plain. Open the fence with
-` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
-`cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
 ## Time: yesterday's hours, tablet vs Soma's sync
 ```send
