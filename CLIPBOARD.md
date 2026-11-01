@@ -8,6 +8,17 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Playbox: why video stops after the sound error
+```send
+L=/proc/1/root/data/condor/init.log
+grep -E "playbox:|sound card|flush:" $L | tail -40
+echo "--- programs still holding the sound (stat D = stuck in the driver)"
+ps -o pid,stat,args | grep -E "aplay|ffmpeg|alsa" | grep -v grep
+echo "--- sound chip"
+cat /proc/asound/card4/pcm0p/sub0/status 2>&1
+cat /proc/asound/card4/pcm0p/sub0/hw_params 2>&1
+```
+
 ## Covers: kept Home rows and covers read ahead
 ```send
 L=/proc/1/root/data/condor/init.log

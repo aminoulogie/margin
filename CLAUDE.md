@@ -780,7 +780,9 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       hid that command from the tablet; TestClipboard now checks every fence has a title the
       tablet sees. TestDragTodo failed on Sundays (its to-do is "tomorrow" = next week).
       **Not yet verified on the tablet.**
-- [ ] microSD bind into Alpine
+- [-] microSD bind into Alpine: dropped (2026-11-01, the user doesn't use the microSD).
+
+**What's next: `docs/MARGIN-BACKLOG.md`** (the user's 20 answers of 2026-11-01, in batches).
 
 Update this checklist as things are done.
 
@@ -808,3 +810,6 @@ Update this checklist as things are done.
   (`GOARCH=386 go test ./...`), merge the branch or pull request into `main` right away (e.g.
   `gh api -X PUT repos/aminoulogie/margin/pulls/<n>/merge -f merge_method=merge`), then tell the
   user it's merged and that `update` on the tablet installs it. Don't ask the user to merge.
+  **Since 2026-11-01 the user wants bigger batches**: put several items of a batch in one merge
+  (docs/MARGIN-BACKLOG.md) rather than one merge per item. Small doc/Clipboard changes can
+  still go in at once (Clipboard commands must be on `main` before asking the user to run them).
