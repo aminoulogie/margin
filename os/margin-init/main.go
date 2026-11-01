@@ -131,6 +131,7 @@ func main() {
 		} else {
 			setBacklight(c.cfg.Brightness)
 			drawMu.Lock()
+			c.homeRestore() // Home's rows from last time, and their covers read ahead
 			c.redrawAll()
 			c.reopenClaude() // Claude restarted Margin (update --local): back to its tab
 			drawMu.Unlock()

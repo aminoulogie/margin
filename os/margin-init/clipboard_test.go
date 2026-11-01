@@ -27,8 +27,23 @@ func TestClipboardParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parseClipboard(string(b))) == 0 {
+	items = parseClipboard(string(b))
+	if len(items) == 0 {
 		t.Fatal("CLIPBOARD.md has no commands in the format the tablet reads")
+	}
+	// Every fenced command after the header has a "## title" line the tablet sees (one
+	// inserted into the header's sentence once hid a command: its title began with a backtick).
+	fences, in := 0, false
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "```") {
+			if !in {
+				fences++
+			}
+			in = !in
+		}
+	}
+	if fences != len(items) {
+		t.Fatalf("CLIPBOARD.md has %d commands but the tablet shows %d: a title line is broken", fences, len(items))
 	}
 }
 

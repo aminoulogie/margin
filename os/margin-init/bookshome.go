@@ -49,6 +49,23 @@ func coverTint(img *image.RGBA, url string) color.RGBA {
 	return t
 }
 
+// wantToRead is the order of Home's Want to Read row: started books first, then new ones
+// (finished ones aren't in it).
+func (c *console) wantToRead() []int {
+	order := make([]int, 0, len(c.shelf))
+	for i, b := range c.shelf {
+		if _, ok := c.lib.Progress[b.path]; ok && c.lib.Finished[b.path] == "" {
+			order = append(order, i)
+		}
+	}
+	for i, b := range c.shelf {
+		if _, ok := c.lib.Progress[b.path]; !ok {
+			order = append(order, i)
+		}
+	}
+	return order
+}
+
 // readingNow is the library's books in progress, most recently opened first.
 func (c *console) readingNow() []int {
 	var idx []int
@@ -63,8 +80,10 @@ func (c *console) readingNow() []int {
 	return idx
 }
 
+// loadPopular asks Gutenberg for its most read books, unless the list Home has (kept on the
+// tablet) is from the last day. Until the new list has come, the old one stays on show.
 func (c *console) loadPopular() {
-	if c.homePopLoading || len(c.homePop) > 0 || !homeLoads {
+	if c.homePopLoading || !homeLoads || len(c.homePop) > 0 && time.Since(c.homePopAt) < homeListsFresh {
 		return
 	}
 	c.homePopLoading = true
@@ -79,11 +98,15 @@ func (c *console) loadPopular() {
 		defer drawMu.Unlock()
 		c.homePopLoading = false
 		c.store.preferOPDS = pref
-		if err != nil {
+		if err != nil || len(res.items) == 0 {
 			c.homePopErr = time.Now()
+			if len(c.homePop) == 0 && c.mode == modeBooksHome { // "Loading…" becomes the message
+				c.homeRedrawSoon()
+			}
 			return
 		}
-		c.homePop = mergeItems(nil, res.items)
+		c.homePop, c.homePopAt = mergeItems(nil, res.items), time.Now()
+		c.saveHomeLists()
 		if c.mode == modeBooksHome {
 			c.showPage()
 		}
@@ -94,6 +117,7 @@ func (c *console) booksHomePage() *page {
 	f := apple()
 	mx := 48
 	c.shelf = findBooks()
+	c.homeRestore()
 	if time.Since(c.homePopErr) > time.Minute {
 		c.loadPopular()
 	}
@@ -162,17 +186,7 @@ func (c *console) booksHomePage() *page {
 	band := image.Rect(0, y, c.s.W, y+homeRowH+40)
 	ui.Fill(img, band, apBand)
 	c.rowTitle(p, y, "Want to Read", "Books you'd like to read next.", "tab:library")
-	order := make([]int, 0, len(c.shelf))
-	for i, b := range c.shelf { // started books first, then new ones; finished ones last
-		if _, ok := c.lib.Progress[b.path]; ok && c.lib.Finished[b.path] == "" {
-			order = append(order, i)
-		}
-	}
-	for i, b := range c.shelf {
-		if _, ok := c.lib.Progress[b.path]; !ok {
-			order = append(order, i)
-		}
-	}
+	order := c.wantToRead()
 	if len(c.shelf) == 0 {
 		apText(img, f.body, mx, y+230, apSecondary, "Your library is empty.")
 		r := image.Rect(mx, y+270, mx+340, y+360)
@@ -257,11 +271,14 @@ var homeShelves = []struct{ title, sub, topic, lang string }{
 
 type homeShelfState struct {
 	items   []*storeItem
+	at      time.Time // when items were fetched (they're kept on the tablet: homekeep.go)
 	loading bool
 	failed  time.Time
 }
 
-// loadShelves fetches the store rows that aren't loaded, two at a time. Caller holds drawMu.
+// loadShelves fetches the store rows that aren't loaded, or were last fetched more than a day
+// ago, two at a time. A row being fetched again keeps its books on show until the new ones
+// come (and keeps them if they don't). Caller holds drawMu.
 func (c *console) loadShelves() {
 	if c.homeShelf == nil {
 		c.homeShelf = map[int]*homeShelfState{}
@@ -280,11 +297,15 @@ func (c *console) loadShelves() {
 			return
 		}
 		st := c.homeShelf[si]
-		if st != nil && (st.loading || len(st.items) > 0 || time.Since(st.failed) < time.Minute) {
+		if st != nil && (st.loading || len(st.items) > 0 && time.Since(st.at) < homeListsFresh ||
+			time.Since(st.failed) < time.Minute) {
 			continue
 		}
-		st = &homeShelfState{loading: true}
-		c.homeShelf[si] = st
+		if st == nil {
+			st = &homeShelfState{}
+			c.homeShelf[si] = st
+		}
+		st.loading = true
 		busy++
 		sh := homeShelves[si]
 		pref := c.store.preferOPDS
@@ -298,13 +319,17 @@ func (c *console) loadShelves() {
 			defer drawMu.Unlock()
 			st.loading = false
 			c.store.preferOPDS = c.store.preferOPDS || pref
+			changed := len(st.items) == 0 // "Loading…" becomes the books, or the message
 			if err != nil || len(res.items) == 0 {
 				st.failed = time.Now()
 			} else {
-				st.items = mergeItems(nil, res.items)
+				st.items, st.at, changed = mergeItems(nil, res.items), time.Now(), true
+				c.saveHomeLists()
 			}
 			c.loadShelves() // the next ones
-			c.homeRedrawSoon()
+			if changed {
+				c.homeRedrawSoon()
+			}
 		}()
 	}
 }

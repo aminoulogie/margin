@@ -765,6 +765,21 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       practice), Journal (What went well / What to drop / Tomorrow's one thing → note
       "Journal/<date>.md", so on the phone; the one thing also becomes a high-priority to-do
       tomorrow). Test: work_evening_test.go.
+- [x] **Home's covers at power-on** (2026-11-01, homekeep.go, covers.go): Home's store rows
+      (Popular + the 13 topic rows) are kept in /data/condor/home-lists.json (by topic|lang, with
+      offers and summaries) and put back at start (homeRestore, before the first drawing), so
+      with no Wi-Fi yet they show last time's books and covers instead of "Loading…"; a row is
+      fetched again when older than a day (homeListsFresh), keeping its books on show until the
+      new list comes (and if it doesn't). At start the covers Home shows first (8 per row,
+      Continue's 3, Want to Read's 8) are read from the tablet into memory in the background
+      (covers.warm → keepCold: never pushes out a drawn cover). Covers that failed for want of
+      internet retry by themselves (1 min, doubling to 15 min, 10 tries) and appear when they
+      come; a 4xx (not 408/429) or a non-picture is "gone": noted as covers/<hash>.none for 30
+      days. init.log: "home: N of M covers on screen read ahead". Also fixed: CLIPBOARD.md's header
+      had a command inserted into its sentence ("`## Soma: add the Campus France plan"), which
+      hid that command from the tablet; TestClipboard now checks every fence has a title the
+      tablet sees. TestDragTodo failed on Sundays (its to-do is "tomorrow" = next week).
+      **Not yet verified on the tablet.**
 - [ ] microSD bind into Alpine
 
 Update this checklist as things are done.

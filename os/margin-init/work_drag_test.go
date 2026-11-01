@@ -30,6 +30,13 @@ func TestDragTodo(t *testing.T) {
 	c := workAt(t, "planner")
 	now := time.Now().In(displayZone)
 	mon := weekStart(dayStart(now))
+	// The fixture puts t4 tomorrow: on a Sunday that is next week, off this week's planner.
+	if !dayStart(now).AddDate(0, 0, 1).Before(mon.AddDate(0, 0, 7)) {
+		today := now.Format("2006-01-02")
+		somaPut("todos#t4", obj{"id": "t4", "text": "Call Northbank", "date": today, "done": false,
+			"slot": obj{"date": today, "start": 540, "mins": 60}})
+		c.showPage()
+	}
 	// Onto the week: Call Northbank, from its day at 9, to the week's first day at about 14:00.
 	var col *dropZone
 	for i := range c.page.drops {
