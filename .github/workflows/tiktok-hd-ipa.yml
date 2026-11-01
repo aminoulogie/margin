@@ -1,0 +1,39 @@
+name: TikTok HD iOS app (unsigned .ipa)
+
+on:
+  push:
+    paths:
+      - "tiktok-hd/**"
+      - ".github/workflows/tiktok-hd-ipa.yml"
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tiktok-hd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Build (no signing; Sideloadly signs it with your Apple ID)
+        run: |
+          set -o pipefail
+          xcodebuild -project TikTokHD.xcodeproj -scheme TikTokHD -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 80
+      - name: Package the .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/TikTokHD.app Payload/
+          zip -qry TikTokHD.ipa Payload
+          ls -la TikTokHD.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TikTokHD-ipa
+          path: tiktok-hd/TikTokHD.ipa
+          if-no-files-found: error
