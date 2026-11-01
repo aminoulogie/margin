@@ -36,22 +36,22 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     func start() {
         guard !started else { return }
         started = true
-        web.load(URLRequest(url: Self.home))
+        _ = web.load(URLRequest(url: Self.home))
     }
 
     func openStudio() {
         started = true
-        web.load(URLRequest(url: Self.studio))
+        _ = web.load(URLRequest(url: Self.studio))
     }
 
     func toggleDesktop() {
         forced = !desktop
-        web.reload()
+        _ = web.reload()
     }
 
     func automatic() {
         forced = nil
-        web.reload()
+        _ = web.reload()
     }
 
     private func wantsDesktop(_ url: URL?) -> Bool {
@@ -84,14 +84,14 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         canForward = web.canGoForward
         loading = web.isLoading
         if forced == nil, wantsDesktop(web.url) != desktop, !web.isLoading {
-            web.reload()
+            _ = web.reload()
         }
     }
 
     // Links that open a new window open here instead.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if action.targetFrame == nil { webView.load(action.request) }
+        if action.targetFrame == nil { _ = webView.load(action.request) }
         return nil
     }
 }
@@ -110,20 +110,20 @@ struct TikTokView: View {
         VStack(spacing: 0) {
             WebView(web: b.web)
             HStack(spacing: 22) {
-                Button { b.web.goBack() } label: { Image(systemName: "chevron.left") }.disabled(!b.canBack)
-                Button { b.web.goForward() } label: { Image(systemName: "chevron.right") }.disabled(!b.canForward)
-                Button { b.loading ? b.web.stopLoading() : b.web.reload() } label: {
+                Button { _ = b.web.goBack() } label: { Image(systemName: "chevron.left") }.disabled(!b.canBack)
+                Button { _ = b.web.goForward() } label: { Image(systemName: "chevron.right") }.disabled(!b.canForward)
+                Button { if b.loading { b.web.stopLoading() } else { _ = b.web.reload() } } label: {
                     Image(systemName: b.loading ? "xmark" : "arrow.clockwise")
                 }
                 Spacer()
-                Button { b.web.load(URLRequest(url: URL(string: "https://www.tiktok.com/")!)) } label: {
+                Button { _ = b.web.load(URLRequest(url: URL(string: "https://www.tiktok.com/")!)) } label: {
                     Image(systemName: "house")
                 }
                 Button { b.openStudio() } label: { Label("Upload", systemImage: "arrow.up.circle.fill").bold() }
                 Menu {
                     Button(b.desktop ? "Switch to mobile version" : "Switch to desktop version") { b.toggleDesktop() }
                     Button("Automatic (desktop only in Studio)") { b.automatic() }
-                    Button("Log in page") { b.web.load(URLRequest(url: Browser.home)) }
+                    Button("Log in page") { _ = b.web.load(URLRequest(url: Browser.home)) }
                 } label: {
                     Image(systemName: b.desktop ? "desktopcomputer" : "iphone")
                 }

@@ -167,7 +167,7 @@ struct PatchView: View {
     }
 }
 
-extension URL: Identifiable { public var id: String { absoluteString } }
+extension URL: @retroactive Identifiable { public var id: String { absoluteString } }
 
 /// Photos picker that hands over the ORIGINAL file (no HEVC→H.264 conversion).
 struct PhotoPicker: UIViewControllerRepresentable {
