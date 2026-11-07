@@ -8,6 +8,29 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Sound 12: Android's media route settings and the DSP side
+```send
+f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
+echo "--- Multimedia.IHF, Multimedia.Headset (lines 51-198)"
+sed -n '51,198p' $f | tr -s ' \t' ' '
+echo "--- AudioConfiguration (1165-1210)"
+sed -n '1165,1210p' $f | tr -s ' \t' ' '
+echo "--- LPE_Mixer + Ext_amp (2009-2110)"
+sed -n '2009,2110p' $f | tr -s ' \t' ' '
+mount -t debugfs none /sys/kernel/debug 2>/dev/null
+D=/sys/kernel/debug/asoc
+F=/tmp/t440.wav
+echo "--- debugfs top"
+ls /sys/kernel/debug | head -40
+(timeout 7 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
+sleep 3
+echo "--- DSP and DAI widgets while stalled"
+cd $D 2>/dev/null && grep -r -H "" platforms dais 2>/dev/null | grep -E ": On|: Off" | cut -c1-120 | head -60
+echo "--- kernel messages (no charger)"
+dmesg | grep -v smb347 | tail -30
+sleep 5
+```
+
 ## Sound 11: what is powered while the speaker stalls
 ```send
 F=/tmp/t440.wav
