@@ -625,6 +625,22 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       DSP/DAI widgets while stalled, kernel messages). Margin can't be fixed by changing the
       player: don't try another aplay. Probe results are cached per device (aplayTested), so a
       boot that probed while stalled keeps the long-buffer args until restart.
+- [x] **Playbox sound, Sound 12 result (2026-11-07 20:24, margin-results):** Android's media domains
+      do NOT explain the stall. Multimedia.IHF / .Headset.Selected only set DSP post-processing (SDRC
+      compressor, stereo EQ, mic EQ and gain). AudioConfiguration sets the default rate 48000 and makes
+      only SSP_VOIP and SSP_BT master (not the media SSP). Routing.Configure.LPE_Mixer.IHF / .HS set
+      INPUT_STREAM = MIX while HwCodecMedia is open (= our 'LPE IHF mixer' 3, already set).
+      Routing.Configure.Ext_amp.enable's settings were cut off at line 2110 (not read yet; probably the
+      IHFAMP_SD_N we already set). Two gaps: the widget grep over asoc platforms/ and dais/ printed
+      nothing (no ": On/Off" lines there), and the dmesg tail was full of penwell_otg USB-power chatter
+      and "SCU TRACE INFO" every 10 s, so SST messages from the stall weren't seen (filter dmesg for
+      sst|lpe|cs42|asoc|snd). New leads: /sys/kernel/debug also has `sst`, `regmap`, `regulator`,
+      `mid_pmu_states`, `pmu_sss_states`, `hsi0`, `remoteproc`. Hypotheses left: the audio engine (LPE)
+      is power-gated or loses its SSP clock after the first period, or its interrupts stop. Next:
+      Clipboard "Sound 13" (Ext_amp lines, asoc/sst names, power islands, regulator summary, sound
+      interrupt counts at 2 s and 4 s of the stall, sound-only kernel messages). Caution: only list
+      the `sst` debugfs files by name until we know what they are; reading a DSP dump while stalled
+      might hang (unconfirmed).
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
