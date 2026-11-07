@@ -829,6 +829,10 @@ Update this checklist as things are done.
 5. The user is a beginner-to-intermediate: short steps, exact commands, PowerShell syntax.
 
 ## Conventions
+- **Keep this file current** (the user asked, 2026-11-07): whenever you learn something new about
+  the tablet, the code or the user's preferences, add it here (a status bullet or a rule) in the
+  same session, and update the old bullet when a finding is replaced. Test results from
+  margin-results go in as findings with their date. Don't wait to be asked.
 - Go code in `cli/` (Windows tool) and `os/` (tablet userspace). `gofmt`, `go vet` before commit.
 - The tablet is **32-bit (386)**: before pushing margin-init, `GOOS=linux GOARCH=386 go build` and
   `GOARCH=386 go test ./...` (a 1<<62 constant once broke the tablet's own `update` build).
