@@ -2112,7 +2112,7 @@ func (c *console) pbKey(b []byte) {
 			defer drawMu.Unlock()
 			if pb.typing && pb.field == "search" && pb.editing == q && len([]rune(strings.TrimSpace(q))) >= 2 && q != pb.query {
 				c.pbSearch(q)
-				c.drawTypeBar()
+				c.pbRedraw()
 			}
 		})
 	}
