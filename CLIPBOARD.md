@@ -8,6 +8,27 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Sound 11: what is powered while the speaker stalls
+```send
+F=/tmp/t440.wav
+[ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
+mount -t debugfs none /sys/kernel/debug 2>&1 | tail -1
+D=/sys/kernel/debug/asoc
+echo "--- debugfs"
+ls $D 2>&1 | head -8
+echo "--- Android's route domains"
+f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
+grep -n "<ConfigurableDomain Name=" $f | cut -c1-110 | head -50
+(timeout 7 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
+sleep 3
+echo "--- chip while the tone is stalled"
+cat /proc/asound/card4/pcm0p/sub0/hw_params
+grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status
+echo "--- powered widgets"
+cd $D 2>/dev/null && grep -r -H "" . 2>/dev/null | grep "/dapm/" | grep -E ": On|: Off" | sed 's#^\./##' | cut -c1-110 | head -170
+sleep 5
+```
+
 ## Sound 10: Android's aplay against Alpine's, same tone
 ```send
 A=/system/bin/alsa_aplay
