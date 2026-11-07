@@ -764,7 +764,7 @@ func (c *console) pbDiscoverPage() *page {
 		p.buttons = append(p.buttons, button{"pb:clear", image.Rect(w-mx-200, 270, w-mx, 360)})
 	}
 	switch {
-	case pb.query != "" && pb.searching:
+	case pb.query != "" && pb.searching && len(secs) == 0:
 		apText(img, f.body, mx, y+60, apSecondary, "Searching…")
 	case pb.query != "" && pb.searchErr != "":
 		apText(img, f.title, mx, y+70, apLabel, "No Titles Found")
