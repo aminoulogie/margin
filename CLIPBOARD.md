@@ -8,6 +8,39 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Sound 13: is the audio engine alive (interrupts, power, sound messages)
+```send
+F=/tmp/t440.wav
+[ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
+mount -t debugfs none /sys/kernel/debug 2>/dev/null
+D=/sys/kernel/debug
+I='sst|lpe|dma|audio|ssp|cs42|ipc'
+f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
+echo "--- Ext_amp enable settings (2110-2135)"
+sed -n '2110,2135p' $f | tr -s ' \t' ' '
+echo "--- asoc and sst layout (names only)"
+ls -R $D/asoc 2>&1 | head -50
+ls -la $D/sst 2>&1 | head -30
+echo "--- power islands"
+head -c 2500 $D/pmu_sss_states 2>&1
+head -c 2500 $D/mid_pmu_states 2>&1
+echo "--- regulators"
+head -c 2500 $D/regulator/regulator_summary 2>&1
+echo "--- sound interrupts before"
+grep -i -E "$I" /proc/interrupts
+(timeout 7 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
+sleep 2
+echo "--- at 2 s of the stall"
+grep -i -E "$I" /proc/interrupts
+grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status
+sleep 2
+echo "--- at 4 s of the stall"
+grep -i -E "$I" /proc/interrupts
+echo "--- kernel messages about sound"
+dmesg | grep -i -E "sst|lpe|cs42|asoc|snd|ssp|dma|audio|cloverview|ipc" | tail -40
+sleep 4
+```
+
 ## Sound 12: Android's media route settings and the DSP side
 ```send
 f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
