@@ -2107,7 +2107,7 @@ func (c *console) pbKey(b []byte) {
 	c.fieldTyped()
 	if pb.field == "search" { // search as you type, after a pause (Playbox waits 350 ms)
 		q := pb.editing
-		time.AfterFunc(600*time.Millisecond, func() {
+		time.AfterFunc(400*time.Millisecond, func() {
 			drawMu.Lock()
 			defer drawMu.Unlock()
 			if pb.typing && pb.field == "search" && pb.editing == q && len([]rune(strings.TrimSpace(q))) >= 2 && q != pb.query {
