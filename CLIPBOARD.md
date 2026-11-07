@@ -8,40 +8,43 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Sound 14: the audio engine's own registers and notes while stalled
+## Sound 15: hold the audio clock on and play the tone three ways
 ```send
-L=/root/sound14.log
+L=/root/sound15.log
 D=/sys/kernel/debug
 S=$D/sst
 F=/tmp/t440.wav
 [ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
 mount -t debugfs none $D 2>/dev/null
-V() { timeout 3 head -c ${2:-2500} "$1" 2>&1 | tr -c '\11\12\40-\176' '.'; echo; }
+play() {
+  (timeout 6 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
+  sleep 2
+  grep -E "hw_ptr" /proc/asound/card4/pcm0p/sub0/status
+  grep -E "^ *(30|64):" /proc/interrupts
+  if grep -h "Audio ENGINE" $D/pmu_sss_states $D/mid_pmu_states 2>/dev/null | grep -q D0i0; then
+    grep -E "Reg: 0x8:" $S/fw_ssp_reg
+    grep -E "^(CTL1|CFG1|SAR1|DAR1):|Reg: 0x3a0:" $S/fw_dma_reg
+  fi
+  sleep 5
+}
 {
-echo "--- codec registers (idle)"
-V $D/asoc/cloverview_audio/cs42l73.1-004a/codec_reg 4000
-echo "--- sst README"
-V $S/README 3000
-(timeout 8 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
-sleep 2
-echo "--- at 2 s of the stall"
-grep -E "^ *(30|64|65|66):" /proc/interrupts
-grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status
-E=$(grep -h "Audio ENGINE" $D/pmu_sss_states $D/mid_pmu_states 2>&1 | head -2)
-echo "engine power: $E"
-echo "--- small sst files"
-for n in runtime_pm osc_clk0 lpe_log_enable fw_reset_state; do echo "# $n"; V $S/$n 300; done
-echo "--- mailboxes and firmware notes (SRAM)"
-for n in sram_ia_lpe_mailbox sram_lpe_ia_mailbox sram_lpe_checkpoint sram_lpe_debug; do echo "# $n"; V $S/$n 600; done
-case "$E" in
-*D0i0*)
-echo "--- engine awake: SSP, DMA and SHIM registers"
-for n in fw_ssp_reg fw_dma_reg shim_dump; do echo "# $n"; V $S/$n 2500; done;;
-*) echo "engine not awake (D0i3): register dumps skipped";;
-esac
-echo "--- kernel messages"
-dmesg | grep -v -E "penwell|SCU TRACE|smb347" | tail -12
-sleep 4
+echo "=== A: baseline"
+play
+echo "=== B: audio clock held on (osc_clk0)"
+echo "osc_clk0 before: $(cat $S/osc_clk0)"
+echo enable > $S/osc_clk0
+echo "osc_clk0 now: $(cat $S/osc_clk0)"
+play
+echo disable > $S/osc_clk0
+echo "=== C: sst runtime power management off"
+echo disable > $S/runtime_pm
+play
+echo enable > $S/runtime_pm
+echo "=== back to normal: runtime_pm $(cat $S/runtime_pm), osc_clk0 $(cat $S/osc_clk0)"
+echo "--- clock messages"
+dmesg | grep -E "set_clk0|OSC_CLK|snd_intel_sst" | tail -15
+echo "--- all sound card controls"
+/system/bin/alsa_amixer -c 4 controls 2>&1 | cut -c1-90
 } 2>&1 | tee $L
 ```
 
