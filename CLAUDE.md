@@ -597,6 +597,34 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       setupSound calls routeCloverview (video.go) before every sound, with Android's alsa_amixer run
       on Android's side; Playbox > Settings > Sound output: "Speaker" (default) and "Headphones (the
       jack)" (soundHeadphones). Jack detection not done yet.
+- [x] **Playbox search fixed** (2026-11-07, playbox.go; user: no suggestions while typing, search
+      slow, results not shown). Causes: pbRedraw skipped while typing (so results that came in
+      under the keyboard were never drawn); pbSearch waited for every source (30 s timeout) before
+      showing anything; each typing pause started another search without stopping the last. Now:
+      pbRedraw redraws while typing in the search field (then the type bar + Flush); results merge
+      and show as each source answers (pbRankSearch); a new search cancels the old (pb.searchStop);
+      15 s timeout; finished searches kept in pb.searchMemo (40, only ones that reached the
+      catalogs); Discover titles that match show at once as suggestions; search starts 400 ms after
+      the last key; return doesn't restart a search already running. **Written without Go on the
+      machine (not compiled or tested): if `update` fails to build, fix playbox.go first.**
+- [x] **Playbox sound, still silent (2026-11-07 findings, margin-results 20:15-20:19):**
+      the route fix works (all 8 controls read back as set) and the codec path is fully powered
+      while a tone plays (DAPM: ASP Playback/ASPIN/SPK Mixer/SPK DAC/SPK Amp/SPKLO Amp/IHFAMP_SD_N
+      On; headphone and mic parts Off), yet hw_ptr stops at 6000 (one period of 24000 buffer, state
+      RUNNING, appl_ptr 30000) every time. **Alpine's aplay and Android's own /system/bin/alsa_aplay
+      stall identically**, so it is not the player or alsa-lib. Even the 0.25 s silence probe
+      (probeAplay) hangs and is killed after 8 s ("can't open ... either way"). soundWatch then
+      drops the sound after 4 s ("no sound: the output stopped taking sound (stuck)") and the film
+      carries on silent. Nothing is left stuck afterwards (no D-state aplay, chip "closed").
+      Kernel log shows only SST driver 3.0.8 loading + "setting pp param" when a stream opens.
+      The chip's side is ready, so the missing piece is the DSP/SSP clock or data side or something
+      Android's parameter-framework sets (domains in AudioConfigurableDomains.xml: Multimedia.IHF
+      line 51, Multimedia.Headset 141, AudioConfiguration 1165, Routing.Configure.LPE_Mixer.IHF
+      2009 / .HS 2044, Ext_amp.enable 2084). debugfs mounts at /sys/kernel/debug (asoc/
+      cloverview_audio, codecs, dais, platforms). Next: Clipboard "Sound 12" (those domains' text,
+      DSP/DAI widgets while stalled, kernel messages). Margin can't be fixed by changing the
+      player: don't try another aplay. Probe results are cached per device (aplayTested), so a
+      boot that probed while stalled keeps the long-buffer args until restart.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
