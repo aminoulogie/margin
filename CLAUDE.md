@@ -666,6 +666,34 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       DMA and SHIM register dumps only if Lss08 shows D0i0 during the stall; output also saved in
       /root/sound14.log in case the tablet freezes). Don't write to runtime_pm or osc_clk0 before
       reading README.
+- [x] **Playbox sound, Sound 14 result (2026-11-07 20:29, margin-results): the stall is at the
+      media I2S port: its transmit FIFO fills and nothing drains it.** Read while the tone was stalled.
+      Audio ENGINE (Lss08) is D0i0 (awake) and sst runtime_pm is "enabled", so it is not power gating.
+      Stream setup reached the DSP intact: the IA→LPE mailbox holds 0xbb80 (48000 Hz), 0x5dc0 (24000
+      frames) and 0x17700 (96000 bytes); sram_lpe_checkpoint and sram_lpe_debug are all zero (no firmware
+      log; lpe_log_enable gives an I/O error).
+      My decodes (DesignWare DMA and PXA-style SSP layouts; likely but not verified): fw_dma_reg
+      DmaCfg 0x398 = 1, ChEnReg 0x3a0 = 2 (only channel 1 enabled), RawBlock 0x6 (channels 1 and 2 each
+      finished a block); channel 2 = 0xff1afd30 → 0xfffc0600 (host buffer → DSP memory); channel 1 =
+      0xfffc0240 → 0xffa23010 (DSP memory → what looks like an SSP data register: SSDR is offset 0x10),
+      its CFG low word 0xc0 (FIFO_EMPTY clear = data waiting, not suspended). fw_ssp_reg: SSCR0
+      0x817007b8 (SSE bit set = enabled, network mode), SSCR1 0xc0301ec3 (SCLKDIR/SFRMDIR clear = SSP
+      drives the clocks), SSSR 0xfedc (TX FIFO level 14 of 16, busy, RX overrun), SSPSP 0x180000,
+      TSA/RSA 3 (2 slots). Reading: SSP enabled, TX FIFO nearly full, the DMA waiting to refill it,
+      nothing draining it ⇒ **no bit clock / frame sync on the media I2S port**. Suspects: the audio
+      oscillator (OSC_CLK0 / OSC_CLK_AUDIO) feeding the SSP and the codec's MCLK is off or gated, or the
+      SHIM clock control (shim 0x00 = 04830001, 0x70 = 000700c2, 0x78 = 001f07ff, undecoded).
+      osc_clk0 reads 0x20 during the stall (README: "who is using it"); dmesg at the stream's end:
+      "set_clk0 request OFF for Mode 0x1000" twice, then "debugfs: SRAM emptry". codec_reg read empty.
+      **Correction to Sound 13:** irq 65/66 `i2s ssp` belong to the host-side BT/modem SSP driver
+      (mid_ssp), so their 0 says nothing about the DSP-owned media SSP; only the DMA/SSP registers do.
+      /sys/kernel/debug/sst README: `echo enable|disable > osc_clk0` (holds the input OSC clock on),
+      `echo enable|disable > runtime_pm`, `echo <addr> <value> > shim_dump` (SHIM write, 0x00-0x80 step
+      8), `echo <dbg_type> <module_id> <log_level> > lpe_log_enable`, fw_clear_context/fw_clear_cache/
+      fw_reset_state/fw_dwnld_mode flags, iram/dram dumps only after a recovery. Next: Clipboard
+      "Sound 15": the tone three times (baseline; osc_clk0 forced on; runtime_pm off) with hw_ptr, SSSR
+      and DMA state each time, both knobs put back afterwards (they also reset on restart), then all
+      card-4 controls. If a run plays, setupSound should do that step before every sound.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
