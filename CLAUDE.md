@@ -641,6 +641,31 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       interrupt counts at 2 s and 4 s of the stall, sound-only kernel messages). Caution: only list
       the `sst` debugfs files by name until we know what they are; reading a DSP dump while stalled
       might hang (unconfirmed).
+- [x] **Playbox sound, Sound 13 result (2026-11-07 20:27, margin-results; tablet had been restarted,
+      kernel up ~3 min):** the audio engine (DSP) is alive but no audio data ever moves.
+      Interrupts during the stalled tone: `intel_sst_driver` (irq 30) +8 in total at stream open, then
+      **none between 2 s and 4 s**; `INTEL_MID_DMAC1` (64) +1; `INTEL_MID_DMAC2` (49) and both
+      `i2s ssp` (65, 66) stay 0. So the DSP answers commands, but the audio DMA and the SSP
+      (I2S port to the codec) never run. hw_ptr again 6000, appl_ptr 30000, RUNNING.
+      Android's Ext_amp.enable domain only sets /Audio/CIRRUS/SOUND_CARD/OUTPUT/EXT_AMP = 1 (the
+      amp-enable we already do): nothing left to copy from the parameter-framework domains read so far.
+      Power table (read BEFORE the tone, so idle): Audio ENGINE (Lss08) and Audio DMA (Lss09) D0i3, the
+      SSP PCI device (lss:52) D0i3; their state DURING the stall is not known yet.
+      `/sys/kernel/debug/regulator/regulator_summary` doesn't exist on 3.4. dmesg: SSP PCI 8086:08f1
+      (ssp_fs_mode=1), machine driver `snd_soc_ctp_machine` (ctp_rhb_cs42l73), DAI maps incl.
+      `cs42l73-asp <-> Headset-cpu-dai` (the media path), "configuring OSC_CLK_AUDIO now" printed at
+      boot (twice) and at the first stream (16 s) but not on the 186 s run; a stream open prints only
+      "snd_intel_sst: setting pp param". `/sys/kernel/debug/sst` holds: README, dram_dump, iram_dump,
+      fw_clear_cache, fw_clear_context, fw_dma_reg, fw_ssp_reg, fw_dwnld_mode, fw_reset_state,
+      lpe_log_enable, osc_clk0 (rw), runtime_pm (rw), shim_dump, sram_ia_lpe_mailbox,
+      sram_lpe_ia_mailbox, sram_lpe_checkpoint, sram_lpe_debug, sram_lpe_scu_mailbox,
+      sram_scu_lpe_mailbox (all root-only, size 0 = generated on read).
+      Hypotheses left: the SSP/DMA never start (SSP clock or frame-sync config), the engine is
+      power-gated mid-stream (runtime PM), or the audio clock (osc_clk0) is off. Next: Clipboard
+      "Sound 14" (codec registers, README, small sst files, SRAM mailboxes and firmware notes; the SSP,
+      DMA and SHIM register dumps only if Lss08 shows D0i0 during the stall; output also saved in
+      /root/sound14.log in case the tablet freezes). Don't write to runtime_pm or osc_clk0 before
+      reading README.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
