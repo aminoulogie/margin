@@ -8,6 +8,24 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Sound 9: why the speaker stops taking sound
+```send
+L=/proc/1/root/data/condor/init.log
+echo "--- Margin's sound log"
+grep -E "playbox:.*(sound|route|stopped|aplay|mixer|chime)|aplay" $L | tail -30
+echo "--- sound programs (stat D = stuck in the driver)"
+ps -o pid,stat,args | grep -E "aplay|ffmpeg" | grep -v grep
+echo "--- chip state, twice, 2 s apart"
+cat /proc/asound/card4/pcm0p/sub0/status 2>&1
+sleep 2
+cat /proc/asound/card4/pcm0p/sub0/status 2>&1
+echo "--- route now"
+A=/system/bin/alsa_amixer
+for n in 'SPK Amp Switch' 'SPKLO Amp Switch' 'HP Amp Switch' 'LPE IHF mixer' 'ESL-ASP Mux' 'SPK-ASP Mux' 'IHFAMP_SD_N Switch'; do $A -c 4 cget name="$n" 2>&1 | grep -E "name=|: values="; done
+echo "--- kernel messages about sound"
+dmesg 2>&1 | grep -i -E "sst|lpe|cs42|snd|underrun|xrun|audio" | tail -25
+```
+
 ## Playbox: why video stops after the sound error
 ```send
 L=/proc/1/root/data/condor/init.log
