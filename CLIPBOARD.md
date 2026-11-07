@@ -8,6 +8,29 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Sound 10: Android's aplay against Alpine's, same tone
+```send
+A=/system/bin/alsa_aplay
+F=/tmp/t440.wav
+/usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
+ls -l $F
+echo "--- Android's aplay, 3 s tone"
+( sleep 1; echo "[1 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status; sleep 1; echo "[2 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status ) &
+timeout 8 $A -D plughw:4,0 $F >/tmp/a1.log 2>&1
+echo "android aplay exit $? (0 = played, 124 = hung)"
+tail -3 /tmp/a1.log
+wait
+echo "--- Alpine's aplay, same tone"
+( sleep 1; echo "[1 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status; sleep 1; echo "[2 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status ) &
+timeout 8 aplay -D plughw:4,0 $F >/tmp/a2.log 2>&1
+echo "alpine aplay exit $? (0 = played, 124 = hung)"
+tail -3 /tmp/a2.log
+wait
+echo "--- chip after"
+cat /proc/asound/card4/pcm0p/sub0/status
+dmesg | tail -8
+```
+
 ## Sound 9: why the speaker stops taking sound
 ```send
 L=/proc/1/root/data/condor/init.log
