@@ -243,13 +243,33 @@ func (c *console) pbSearch(q string) {
 	pb := &c.pb
 	q = strings.TrimSpace(q)
 	pb.query, pb.results, pb.searchErr = q, nil, ""
-	c.setScroll(modePlaybox, 0)
-	if q == "" {
-		return
+	if pb.searchStop != nil { // a newer search replaces the one still asking
+		pb.searchStop()
+		pb.searchStop = nil
 	}
-	pb.searching = true
 	pb.gen++
 	gen := pb.gen
+	c.setScroll(modePlaybox, 0)
+	if q == "" {
+		pb.searching = false
+		return
+	}
+	memoKey := strings.ToLower(q)
+	if memo, ok := pb.searchMemo[memoKey]; ok { // asked before: nothing to wait for
+		pb.searching, pb.results = false, memo
+		return
+	}
+	// Suggestions at once: titles already loaded on Discover that fit what's typed.
+	var local []metaItem
+	for _, s := range pb.disc {
+		for _, it := range s.items {
+			if relevance(it.Name, q) >= 40 {
+				local = append(local, it)
+			}
+		}
+	}
+	pb.results = pbRankSearch([][]metaItem{local}, q)
+	pb.searching = true
 	type src struct{ base, typ, id string }
 	srcs := []src{{cinemetaBase, "movie", "top"}, {cinemetaBase, "series", "top"}}
 	for _, a := range addons.all() {
