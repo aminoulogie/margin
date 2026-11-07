@@ -152,8 +152,12 @@ func (c *console) posterSize() (w, h, gap int) {
 // pbRedraw shows the Playbox page again if it's on screen (an answer came in). Caller holds
 // drawMu.
 func (c *console) pbRedraw() {
-	if c.mode == modePlaybox && c.screenOn && !c.locked && !c.pb.typing {
+	if c.mode == modePlaybox && c.screenOn && !c.locked && (!c.pb.typing || c.pb.field == "search") {
 		c.showPage()
+		if c.pb.typing { // keep the typed text bar above the keyboard
+			c.drawTypeBar()
+			c.s.Flush()
+		}
 	}
 }
 
