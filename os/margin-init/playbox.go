@@ -2126,7 +2126,7 @@ func (c *console) pbDone(enter bool) {
 	c.skb.visible = false
 	switch pb.field {
 	case "search":
-		if text != pb.query || enter {
+		if text != pb.query || (enter && !pb.searching) {
 			c.pbSearch(text)
 		}
 	case "addonurl":
