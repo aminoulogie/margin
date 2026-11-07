@@ -282,67 +282,87 @@ func (c *console) pbSearch(q string) {
 			}
 		}
 	}
-	go func() {
-		out := make([][]metaItem, len(srcs))
-		var wg sync.WaitGroup
-		for i, s := range srcs {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				out[i], _ = fetchSearch(ctx, s.base, s.typ, s.id, q)
-			}()
-		}
-		wg.Wait()
-		type ranked struct {
-			score, order int
-			it           metaItem
-		}
-		var all []ranked
-		seen := map[string]bool{}
-		for si, items := range out {
-			for k, it := range items {
-				if key := it.Type + ":" + it.ID; !seen[key] {
-					seen[key] = true
-					all = append(all, ranked{relevance(it.Name, q), si*1000 + k, it})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	pb.searchStop = cancel
+	var mu sync.Mutex
+	got := make([][]metaItem, len(srcs))
+	left, total := len(srcs), 0
+	for i, s := range srcs {
+		go func() {
+			items, _ := fetchSearch(ctx, s.base, s.typ, s.id, q)
+			mu.Lock()
+			got[i] = items
+			left--
+			total += len(items)
+			last, found := left == 0, total
+			snap := append([][]metaItem{local}, got...)
+			mu.Unlock()
+			res := pbRankSearch(snap, q) // what's in so far, best matches first
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if gen != pb.gen || pb.query != q {
+				return
+			}
+			pb.results = res
+			if last {
+				pb.searching = false
+				cancel()
+				pb.searchStop = nil
+				if len(res) == 0 {
+					pb.searchErr = "No matching titles were found for “" + q + "”."
+				} else if found > 0 { // a search that really reached the catalogs
+					if pb.searchMemo == nil || len(pb.searchMemo) > 40 {
+						pb.searchMemo = map[string][]pbSection{}
+					}
+					pb.searchMemo[memoKey] = res
 				}
 			}
-		}
-		sort.SliceStable(all, func(i, j int) bool {
-			if all[i].score != all[j].score {
-				return all[i].score > all[j].score
-			}
-			return all[i].order < all[j].order
-		})
-		var movies, series, other []metaItem
-		for _, r := range all {
-			switch r.it.Type {
-			case "movie":
-				movies = append(movies, r.it)
-			case "series":
-				series = append(series, r.it)
-			default:
-				other = append(other, r.it)
-			}
-		}
-		var res []pbSection
-		for _, s := range []pbSection{{"search-movie", "Movies", movies}, {"search-series", "Series", series}, {"search-other", "More Results", other}} {
-			if len(s.items) > 0 {
-				res = append(res, s)
+			c.pbRedraw()
+		}()
+	}
+}
+
+// pbRankSearch merges what the catalogs sent, drops repeats and ranks the titles by how well
+// they fit the search, as Movies, Series and More Results.
+func pbRankSearch(out [][]metaItem, q string) []pbSection {
+	type ranked struct {
+		score, order int
+		it           metaItem
+	}
+	var all []ranked
+	seen := map[string]bool{}
+	for si, items := range out {
+		for k, it := range items {
+			if key := it.Type + ":" + it.ID; !seen[key] {
+				seen[key] = true
+				all = append(all, ranked{relevance(it.Name, q), si*1000 + k, it})
 			}
 		}
-		drawMu.Lock()
-		defer drawMu.Unlock()
-		if gen != pb.gen || pb.query != q {
-			return
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].score != all[j].score {
+			return all[i].score > all[j].score
 		}
-		pb.searching, pb.results = false, res
-		if len(res) == 0 {
-			pb.searchErr = "No matching titles were found for “" + q + "”."
+		return all[i].order < all[j].order
+	})
+	var movies, series, other []metaItem
+	for _, r := range all {
+		switch r.it.Type {
+		case "movie":
+			movies = append(movies, r.it)
+		case "series":
+			series = append(series, r.it)
+		default:
+			other = append(other, r.it)
 		}
-		c.pbRedraw()
-	}()
+	}
+	var res []pbSection
+	for _, s := range []pbSection{{"search-movie", "Movies", movies}, {"search-series", "Series", series}, {"search-other", "More Results", other}} {
+		if len(s.items) > 0 {
+			res = append(res, s)
+		}
+	}
+	return res
 }
 
 // pbOpen opens a film's or series' page. Caller holds drawMu.
