@@ -645,8 +645,8 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       kernel up ~3 min):** the audio engine (DSP) is alive but no audio data ever moves.
       Interrupts during the stalled tone: `intel_sst_driver` (irq 30) +8 in total at stream open, then
       **none between 2 s and 4 s**; `INTEL_MID_DMAC1` (64) +1; `INTEL_MID_DMAC2` (49) and both
-      `i2s ssp` (65, 66) stay 0. So the DSP answers commands, but the audio DMA and the SSP
-      (I2S port to the codec) never run. hw_ptr again 6000, appl_ptr 30000, RUNNING.
+      `i2s ssp` (65, 66) stay 0. So the DSP answers commands but the audio DMA barely ran (the i2s ssp irqs are the host-side
+      BT/modem SSPs, so their 0 means nothing; see the Sound 14 correction). hw_ptr again 6000, appl_ptr 30000, RUNNING.
       Android's Ext_amp.enable domain only sets /Audio/CIRRUS/SOUND_CARD/OUTPUT/EXT_AMP = 1 (the
       amp-enable we already do): nothing left to copy from the parameter-framework domains read so far.
       Power table (read BEFORE the tone, so idle): Audio ENGINE (Lss08) and Audio DMA (Lss09) D0i3, the
