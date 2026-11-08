@@ -731,6 +731,33 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       ANDROID_PROPERTY_WORKSPACE from /proc/<condor-init>/environ + `chroot /proc/1/root
       /system/bin/setprop|getprop`. If stopping media fixes it, setupSound runs
       `/system/bin/setprop ctl.stop media` once (margin-init already runs setprop directly).
+- [x] **Playbox: smooth spinner, instant pause, faster picture (2026-11-08; user's photo: spinner
+      jumped ~5 spokes at a time and looked still; pause/play took ~1 s; an SD film at ~5 fps;
+      sound works with "Speaker (built in)" picked in Playbox > Settings).**
+      Spinner: every step redrew and sent all 1200 rows. Now videoRecompose(y0, y1, parts) rebuilds
+      and flushes only some rows (frame + black + the parts crossing them; blendPartRows), and
+      videoLoadingFrame redraws the spinner part alone each step (ovPart.spin) and the live parts
+      (ovPart.live: text) every 250 ms. 8 spokes (today's iOS), 125 ms a step, and spinNext moves
+      one spoke per redraw at most (slow redraw = slower, never a jump). 32-bit trap found by the
+      386 tests: UnixMilli()/125 % 8 must be done in int64 (int is 32 bits on the tablet).
+      Pause: the chip queues ~0.5 s (hw buffer 24000 frames whatever -B asks) + the 16 KB pipe, and
+      the clock assumed 0.3 s. Now the sound pump keeps the last 2 s in a ring (by stream offset:
+      read/written), watchChip reads hw_ptr from /proc/asound/cardC/pcmDp/sub0/status every 20 ms,
+      and the clock = aplayBase + hw_ptr*4 (+ wall time up to one period, chipPeriod 0.15 s, never
+      past written); without the status file, written - audioLatency as before. Pausing kills the
+      aplay (queue dropped at once), rewinds written to what was heard and freezes the clock
+      (pauseClock); playing starts a new aplay (openAplayLocked, aplayGen: the old one's end and
+      failed writes aren't taken for a failure) and resends the unheard bytes from the ring. Test:
+      sound_pause_test.go (fake aplay + status file).
+      Picture: each frame redrew the whole overlay (bars and round buttons: ovRound/ovCircle
+      compute a square root per pixel, ~0.5 M pixels with the controls up). Now kept by
+      videoOverlayKey (state, controls, the second shown, hud, cue, note, ...): 30 → 5.5 ms a frame
+      on the PC with the controls up (TestVideoOverlayKept, also checks the picture is identical).
+      init.log every 10 s while playing: "playbox: picture WxH [doubled] at N of R frames a second
+      (D dropped), redraw X ms, overlay drawn K times" — read it to see what still limits the
+      tablet (likely the 9 MB write of every frame to the panel).
+      Also fixed a test race: TestHomeOldRowsRefreshedInBackground closed its fake server while
+      holding drawMu (Close waits for a request that takes drawMu): it hung the suite now and then.
 - [x] **Freeze on removing an add-on FIXED (2026-11-08):** the pb:uninstall tap runs under drawMu;
       addons.remove → notify → the changed callback (playboxPage) took drawMu again = deadlock,
       Margin frozen for good (the remove itself was saved first). notify now runs the callback in
@@ -755,8 +782,16 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       requests hung (>20 s). Comet | ElfHosted: 403 even with a browser User-Agent; MediaFusion |
       ElfHosted: 200 with {"streams":[]}: both need a configured (personal) URL, so as installed
       they never give sources. thepiratebay-plus.strem.fun and torrentsdb.com: no answer;
-      knightcrawler/stremio-jackett on ElfHosted: redirects. Next: Clipboard "Playbox: how long
-      Torrentio takes to answer" (stream requests with a 60 s limit, browser UA, second try).
+      knightcrawler/stremio-jackett on ElfHosted: redirects.
+      Timing (margin-results 18:26): every Torrentio /stream request (3 films/series, browser UA,
+      a second try) ends HTTP 000 at exactly 33.0 s with curl -m 60: the connection is closed
+      with no answer while the manifest answers at once. margin-init's proxy has no timeout on
+      CONNECT tunnels, so it isn't Margin; it's on the way (Torrentio's origin or the network)
+      and can't be fixed on the tablet. Answer: add-ons set up on their own website (MediaFusion
+      P2P, no debrid: mediafusion.elfhosted.com/configure) give a long personal link; the phone
+      page (sendbooks.go) now has a "Playbox add-on" card: POST /playbox-addon {url} (same-origin
+      only) → addons.install (stremio:// ok; same manifest id replaces the installed one), toast
+      on the tablet, installed names listed on the card. Test: playbox_addon_phone_test.go.
 - [x] **Playbox faster + new loading screen (2026-11-08; user: "everything super fast, opening,
       ending, closing, double tapping, swiping; loading ring like the iPhone one, info updating
       every ms, no background behind the loading text, white on black, 20% smaller, more info").**

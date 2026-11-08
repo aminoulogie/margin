@@ -43,18 +43,42 @@ func loadingFonts() *loadFonts {
 	return loadFace
 }
 
-// spinnerStep is the lit spoke now: iOS's indicator goes round once a second, in 12 steps.
-func spinnerStep(now time.Time) int { return int(now.UnixMilli()/83) % 12 }
+// The spinner: 8 spokes as on today's iPhone; the lit one moves a spoke every spinStepEvery
+// (round once a second), and never more than one spoke a redraw, so on a slow redraw it slows
+// down instead of jumping spokes (2026-11-08: on the tablet it jumped ~5 at a time).
+const (
+	spinSpokes    = 8
+	spinStepEvery = 125 * time.Millisecond
+)
 
-// ovSpinner draws the iOS activity indicator centred on (cx, cy), outer radius r: 12 rounded
-// spokes, the lit one white and the ones behind it fading. halo draws a soft dark edge first,
-// for use over a picture.
+// spinnerStep: the step for wall time now (tests).
+func spinnerStep(now time.Time) int {
+	return int(now.UnixMilli() / spinStepEvery.Milliseconds() % spinSpokes) // 64-bit first: int is 32 bits on the tablet
+}
+
+// spinNext is the player's lit spoke for the redraw being made: one further once a step's time
+// has passed. Caller holds drawMu.
+func (c *console) spinNext() int {
+	v := c.vid
+	if v == nil {
+		return spinnerStep(time.Now())
+	}
+	if now := time.Now(); now.Sub(v.spinAt) >= spinStepEvery {
+		v.spinStep = (v.spinStep + 1) % spinSpokes
+		v.spinAt = now
+	}
+	return v.spinStep
+}
+
+// ovSpinner draws the iOS activity indicator centred on (cx, cy), outer radius r: 8 rounded
+// spokes, the lit one white and the ones behind it fading (iOS: about 1 down to 0.3).
+// halo draws a soft dark edge first, for use over a picture.
 func ovSpinner(img *image.RGBA, cx, cy, r float64, step int, halo bool) {
-	inner, width := r*0.44, r*0.22
-	for i := 0; i < 12; i++ {
-		behind := (step - i + 12) % 12
-		a := 1 - 0.78*float64(behind)/11
-		ang := float64(i)*math.Pi/6 - math.Pi/2
+	inner, width := r*0.42, r*0.26
+	for i := 0; i < spinSpokes; i++ {
+		behind := (step - i + spinSpokes) % spinSpokes
+		a := 1 - 0.72*float64(behind)/float64(spinSpokes-1)
+		ang := float64(i)*2*math.Pi/spinSpokes - math.Pi/2
 		ca, sa := math.Cos(ang), math.Sin(ang)
 		x0, y0 := cx+inner*ca, cy+inner*sa
 		x1, y1 := cx+(r-width/2)*ca, cy+(r-width/2)*sa
@@ -184,8 +208,20 @@ func (c *console) loadingInfo(now time.Time) (status, big string, lines []string
 	return
 }
 
-// videoLoadingCard: before the first frame, the spinner and what's happening, in white on the
-// black screen (no card behind it).
+// videoLoadingParts: before the first frame, the spinner and what's happening, in white on the
+// black screen (no card behind it), as two parts so the spinner can be redrawn alone.
+func (c *console) videoLoadingParts() []*ovPart {
+	p := c.videoLoadingCard()
+	if c.vid.state == "failed" {
+		return []*ovPart{p}
+	}
+	sp := c.videoSpinnerPartAt(p.x+p.img.Rect.Dx()/2, p.y+int(loadSpin)+2, true)
+	return []*ovPart{p, sp}
+}
+
+const loadSpin = 36.0 // the loading spinner's outer radius
+
+// videoLoadingCard is the loading screen's text and buttons (the spinner is its own part).
 func (c *console) videoLoadingCard() *ovPart {
 	v := c.vid
 	lf := loadingFonts()
@@ -198,7 +234,7 @@ func (c *console) videoLoadingCard() *ovPart {
 	for _, l := range lines {
 		wrapped = append(wrapped, wrapText(lf.line, l, textW)...)
 	}
-	const spin = 36.0 // the spinner's outer radius
+	const spin = loadSpin
 	lineH := lf.line.Metrics().Height.Ceil() + 8
 	h := int(2*spin) + 40 + 50
 	if big != "" {
@@ -211,11 +247,7 @@ func (c *console) videoLoadingCard() *ovPart {
 	p := newOvPart(pw, h, (W-pw)/2, (H-h)/2)
 	img := p.img
 	cx := pw / 2
-	y := 0
-	if v.state != "failed" {
-		ovSpinner(img, float64(cx), spin+2, spin, spinnerStep(now), false)
-	}
-	y = int(2*spin) + 40
+	y := int(2*spin) + 40
 	ovTextCenter(img, lf.status, cx, y+20, status)
 	y += 50
 	if big != "" {
@@ -247,6 +279,7 @@ func (c *console) videoLoadingCard() *ovPart {
 		ovTextCenter(img, lf.button, cx, y+30, "Close")
 		v.buttons = append(v.buttons, button{"v:close", br.Add(image.Pt(p.x, p.y)).Inset(-10)})
 	}
+	p.live = true
 	return p.seal()
 }
 
@@ -254,7 +287,15 @@ func (c *console) videoLoadingCard() *ovPart {
 // edge so it shows on bright frames.
 func (c *console) videoSpinnerPart() *ovPart {
 	W, H := c.s.fbW, c.s.fbH
-	sp := newOvPart(100, 100, W/2-50, H/2-50)
-	ovSpinner(sp.img, 50, 50, 36, spinnerStep(time.Now()), true)
+	return c.videoSpinnerPartAt(W/2, H/2, false)
+}
+
+// videoSpinnerPartAt is the spinner centred on (cx, cy): on black for the loading screen (live),
+// with a halo over a picture otherwise.
+func (c *console) videoSpinnerPartAt(cx, cy int, live bool) *ovPart {
+	n := int(2*loadSpin) + 12
+	sp := newOvPart(n, n, cx-n/2, cy-n/2)
+	ovSpinner(sp.img, float64(n)/2, float64(n)/2, loadSpin, c.spinNext(), !live)
+	sp.live, sp.spin = live, true
 	return sp.seal()
 }

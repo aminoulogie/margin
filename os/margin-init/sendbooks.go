@@ -43,6 +43,7 @@ func (c *console) serveBooks() {
 	mux.HandleFunc("/", c.sendPage)
 	mux.HandleFunc("/upload", c.sendUpload)
 	mux.HandleFunc("/soma-link", c.somaLinkPost)
+	mux.HandleFunc("/playbox-addon", c.playboxAddonPost)
 	mux.HandleFunc("/github-link", c.githubLinkPost)
 	mux.HandleFunc("/claude", c.claudePost)
 	srv := &http.Server{Handler: localOnly(mux)}
@@ -240,6 +241,62 @@ func (c *console) somaLinkPost(w http.ResponseWriter, r *http.Request) {
 	reply(http.StatusOK, map[string]any{"ok": true})
 }
 
+// playboxAddonPost installs a Playbox add-on from a phone: add-ons set up on their own website
+// (MediaFusion, Comet...) give a long personal link nobody can type on the tablet. The phone
+// pastes it here; the tablet fetches the manifest and keeps it (an add-on with the same id is
+// replaced). Only the page itself may send it.
+func (c *console) playboxAddonPost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	reply := func(code int, v map[string]any) {
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(v)
+	}
+	if r.Method != http.MethodPost {
+		reply(http.StatusMethodNotAllowed, map[string]any{"error": "POST the add-on link here"})
+		return
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+		reply(http.StatusForbidden, map[string]any{"error": "only this page can add an add-on"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16384)
+	if err := r.ParseForm(); err != nil {
+		reply(http.StatusBadRequest, map[string]any{"error": "bad form"})
+		return
+	}
+	addons.load()
+	if err := addons.install(r.PostForm.Get("url")); err != nil {
+		reply(http.StatusOK, map[string]any{"error": "The tablet couldn't add it: " + shortErr(err)})
+		return
+	}
+	name := ""
+	for _, a := range addons.all() {
+		if a.Base == addonBase(r.PostForm.Get("url")) {
+			name = a.Manifest.Name
+		}
+	}
+	log.Printf("playbox: add-on %q added from %s", name, r.RemoteAddr)
+	go func() {
+		drawMu.Lock()
+		defer drawMu.Unlock()
+		c.toastMsg("Playbox: " + name + " added")
+	}()
+	reply(http.StatusOK, map[string]any{"ok": true, "name": name})
+}
+
+// playboxAddonList is the installed add-ons, for the phone page.
+func playboxAddonList() string {
+	addons.load()
+	var names []string
+	for _, a := range addons.all() {
+		names = append(names, a.Manifest.Name)
+	}
+	if len(names) == 0 {
+		return "none yet"
+	}
+	return strings.Join(names, ", ")
+}
+
 func (c *console) sendPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -256,6 +313,7 @@ func (c *console) sendPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := strings.Replace(sendHTML, "<!--BOOKS-->", list.String(), 1)
 	page = strings.Replace(page, "<!--SOMA-->", html.EscapeString(status), 1)
+	page = strings.Replace(page, "<!--ADDONS-->", html.EscapeString(playboxAddonList()), 1)
 	io.WriteString(w, strings.Replace(page, "<!--GITHUB-->", html.EscapeString(githubLinkStatus()), 1))
 }
 
@@ -305,6 +363,12 @@ input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-
 <input id="scode" type="password" placeholder="Recovery code" autocapitalize="characters" autocorrect="off" spellcheck="false" autocomplete="off">
 <button id="slink">Link Soma</button>
 <div id="smsg"></div>
+</div>
+<div class="card" id="addon"><h2>Playbox add-on</h2>
+<p class="sub" style="margin-bottom:12px">Sources for films come from add-ons. Some only work once set up on their own website, which gives you a long personal link. Set it up on this phone, copy the link (it ends in manifest.json, or starts with stremio://) and paste it here. For example MediaFusion: open <b>mediafusion.elfhosted.com/configure</b>, choose torrents without a debrid service (P2P), then copy the install link. On the tablet now: <span><!--ADDONS--></span>.</p>
+<input id="aurl" type="url" placeholder="Add-on link (…/manifest.json or stremio://…)" autocapitalize="off" autocorrect="off" spellcheck="false">
+<button id="aadd">Add to Playbox</button>
+<div id="amsg"></div>
 </div>
 <div class="card" id="github"><h2>Link GitHub</h2>
 <p class="sub" style="margin-bottom:12px">So the tablet can send the output of Clipboard commands to a <b>private</b> repo the AI can read. On github.com: create a private repo (default <b>aminoulogie/margin-results</b>, tick "Add a README"), then Settings &rsaquo; Developer settings &rsaquo; Fine-grained tokens: give it that repo (and margin, to publish fixes) with Contents: read and write. Paste the token here. <span><!--GITHUB--></span></p>
@@ -365,6 +429,19 @@ sl.onclick=function(){
     else{sm.textContent=r.error||'Linking failed.';sm.className='err'}};
   x.onerror=function(){sl.disabled=false;sm.textContent='Is the phone on the same Wi-Fi as the tablet?';sm.className='err'};
   x.send('url='+encodeURIComponent(u)+'&code='+encodeURIComponent(k))};
+var aa=document.getElementById('aadd'),am=document.getElementById('amsg');
+aa.onclick=function(){
+  var u=document.getElementById('aurl').value.trim();
+  if(!u){am.textContent='Paste the add-on link.';am.className='err';return}
+  var x=new XMLHttpRequest();x.open('POST','/playbox-addon');
+  x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+  aa.disabled=true;am.textContent='The tablet is fetching it…';am.className='';
+  x.onload=function(){var r={};try{r=JSON.parse(x.responseText)}catch(e){}
+    aa.disabled=false;
+    if(r.ok){am.textContent='Added: '+(r.name||'the add-on')+'. Open a film in Playbox to see its sources.';am.className='ok';document.getElementById('aurl').value=''}
+    else{am.textContent=r.error||'That didn\'t work.';am.className='err'}};
+  x.onerror=function(){aa.disabled=false;am.textContent='Is the phone on the same Wi-Fi as the tablet?';am.className='err'};
+  x.send('url='+encodeURIComponent(u))};
 var gl=document.getElementById('glink'),gm=document.getElementById('gmsg');
 gl.onclick=function(){
   var t=document.getElementById('gtoken').value.trim(),rp=document.getElementById('grepo').value.trim();

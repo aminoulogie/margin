@@ -69,6 +69,9 @@ type videoPlayer struct {
 	req       videoReq
 	state     string    // "install", "torrent", "probing", "starting", "playing", "paused", "seeking", "ended", "failed"
 	loadAt    time.Time // when loading began (the loading screen's clock)
+	textAt    time.Time // the loading screen's text was last redrawn
+	spinStep  int       // the spinner's lit spoke
+	spinAt    time.Time // ...since when
 	msg       string
 	url       string
 	probe     *videoProbe
@@ -104,7 +107,8 @@ type videoPlayer struct {
 	ticker    bool
 	pauseNext bool // show the next frame, then pause (a seek while paused)
 	overlay   []*ovPart
-	ovKey     string
+	ovKey     string // what the overlay shows (videoOverlayKey): same key = the same parts
+	ovBuilds  int    // overlays drawn, for the frame log
 }
 
 type videoTouch struct {
@@ -304,35 +308,58 @@ const (
 )
 
 type videoRun struct {
-	vcmd     *exec.Cmd // the picture
-	acmd     *exec.Cmd // the sound
-	aplay    *exec.Cmd
-	vout     io.ReadCloser
-	aout     io.ReadCloser
-	aplayW   *os.File
-	fw, fh   int
-	half     bool
-	rate     float64
-	base     float64 // the film's time where this run starts
-	speed    float64
-	written  atomic.Int64 // sound bytes handed to aplay
-	audio    atomic.Bool  // the sound is playing (and sets the clock)
-	volume   atomic.Int32
-	mu       sync.Mutex
-	cond     *sync.Cond
-	paused   bool
-	killed   bool
-	t0       time.Time
-	started  bool
-	pausedT  time.Duration
-	pauseAt  time.Time
-	errs     lineRing
-	frames   int // shown, under drawMu
-	done     chan struct{}
-	soundErr string
-	soundEnd atomic.Bool  // the sound's ffmpeg has finished (not an error)
-	writing  atomic.Int64 // when the write to aplay now under way began (unix ns), 0 if none
+	vcmd    *exec.Cmd // the picture
+	acmd    *exec.Cmd // the sound
+	aplay   *exec.Cmd
+	vout    io.ReadCloser
+	aout    io.ReadCloser
+	aplayW  *os.File
+	fw, fh  int
+	half    bool
+	rate    float64
+	base    float64 // the film's time where this run starts
+	speed   float64
+	written atomic.Int64 // sound bytes handed to aplay
+	audio   atomic.Bool  // the sound is playing (and sets the clock)
+	volume  atomic.Int32
+	mu      sync.Mutex
+	cond    *sync.Cond
+	paused  bool
+	killed  bool
+	t0      time.Time
+	started bool
+	pausedT time.Duration
+	pauseAt time.Time
+	errs    lineRing
+	frames  int // shown, under drawMu
+	// The frame log (under drawMu): every 10 s, frames shown, what a redraw cost.
+	statAt     time.Time
+	statFrames int
+	statBuilds int
+	drawT      time.Duration
+	done       chan struct{}
+	soundErr   string
+	soundEnd   atomic.Bool  // the sound's ffmpeg has finished (not an error)
+	writing    atomic.Int64 // when the write to aplay now under way began (unix ns), 0 if none
+
+	// Instant pause (2026-11-08; user: pause and play took ~1 s): the chip holds ~0.5 s of sound
+	// queued, so pausing kills aplay (the queue is dropped at once) and playing starts a new one
+	// from the moment last heard, resent from ring. Under mu.
+	ctx        context.Context
+	ring       []byte // the last soundRing bytes read from ffmpeg, by stream offset
+	read       int64  // sound bytes read from ffmpeg (the ring's end)
+	aplayGen   int    // bumped when an aplay is dropped or started
+	aplayBase  int64  // written when the current aplay started
+	statusPath string // /proc/asound/cardC/pcmDp/sub0/status of the sound device ("" = unknown)
+	hwFrames   int64  // the chip's hw_ptr (frames played by the current aplay)
+	hwAt       time.Time
+	hwOK       bool    // hwFrames/hwAt are read from statusPath
+	dropped    bool    // paused with the sound's aplay dropped: a new one starts on play
+	pauseClock float64 // the clock while paused with the sound dropped
 }
+
+// soundRing is how much sound is kept to resend after a pause (well over the chip's queue).
+const soundRing = audioBytesSec * 2
 
 // soundStuckAfter: a write to aplay blocked this long means the output has stopped taking
 // sound (a call output, a wedged driver). The first write waits for the device to open,
@@ -449,23 +476,14 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		r.soundErr = "no sound: aplay isn't installed"
 		return
 	}
-	pr, pw, err := os.Pipe()
+	r.ctx, r.statusPath = ctx, soundStatusPath(soundDev())
+	r.mu.Lock()
+	err := r.openAplayLocked()
+	r.mu.Unlock()
 	if err != nil {
 		r.soundErr = "no sound: " + err.Error()
 		return
 	}
-	setPipeSize(pw, 16<<10) // a short pipe: what's heard is close to what was written
-	a := alpineCtxCmd(ctx, aplayPath, filmAplayArgs(soundDev())...)
-	a.Stdin = pr
-	var errs lineRing
-	ep, _ := a.StderrPipe()
-	if err := a.Start(); err != nil {
-		pr.Close()
-		pw.Close()
-		r.soundErr = "no sound: " + err.Error()
-		return
-	}
-	pr.Close()
 	acmd := alpineCtxCmd(ctx, ffmpegPath(), ffmpegAudioArgs(url, p, r.base, r.speed)...)
 	aout, err := acmd.StdoutPipe()
 	if err == nil {
@@ -475,29 +493,138 @@ func (r *videoRun) startSound(ctx context.Context, url string, p *videoProbe) {
 		}
 	}
 	if err != nil {
-		a.Process.Kill()
-		pw.Close()
+		r.mu.Lock()
+		if r.aplay != nil && r.aplay.Process != nil {
+			r.aplay.Process.Kill()
+		}
+		r.aplayW.Close()
+		r.mu.Unlock()
 		r.soundErr = "no sound: " + err.Error()
 		return
 	}
-	r.aplay, r.aplayW, r.acmd, r.aout = a, pw, acmd, aout
+	r.acmd, r.aout = acmd, aout
 	r.audio.Store(true)
+	go r.pumpSound()
+	go r.soundWatch()
+	go r.watchChip()
+	go acmd.Wait()
+}
+
+// openAplayLocked starts an aplay on a fresh short pipe; the sound written from now on goes to
+// it. Its end is reported (no sound) unless it was dropped on purpose (a pause, a newer one).
+// Caller holds mu.
+func (r *videoRun) openAplayLocked() error {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	setPipeSize(pw, 16<<10) // a short pipe: what's heard is close to what was written
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a := alpineCtxCmd(ctx, aplayPath, filmAplayArgs(soundDev())...)
+	a.Stdin = pr
+	var errs lineRing
+	ep, _ := a.StderrPipe()
+	if err := a.Start(); err != nil {
+		pr.Close()
+		pw.Close()
+		return err
+	}
+	pr.Close()
+	r.aplayGen++
+	gen := r.aplayGen
+	r.aplay, r.aplayW, r.aplayBase = a, pw, r.written.Load()
+	r.hwFrames, r.hwAt, r.hwOK = 0, time.Now(), r.statusPath != "" && chipStatusReadable(r.statusPath)
 	go func() {
 		logLines(ep, "aplay", &errs)
 		a.Wait()
 		r.mu.Lock()
-		if !r.killed && r.audio.Load() && !r.soundEnd.Load() {
+		ours := gen == r.aplayGen
+		if ours && !r.killed && r.audio.Load() && !r.soundEnd.Load() {
 			r.soundErr = "no sound: " + strings.TrimPrefix(errs.last(), "aplay: ")
 			if errs.last() == "" {
 				r.soundErr = "no sound: the sound device didn't open"
 			}
 		}
 		r.mu.Unlock()
-		r.soundLost()
+		if ours {
+			r.soundLost()
+		}
 	}()
-	go r.pumpSound()
-	go r.soundWatch()
-	go acmd.Wait()
+	return nil
+}
+
+// heardLocked is how much of the sound has been heard, in bytes of the stream: from the chip's
+// play position (hw_ptr, which moves a period at a time, filled in with the wall clock up to one
+// period) when it can be read, else written minus the usual latency. Never past what was
+// written. Caller holds mu.
+func (r *videoRun) heardLocked() int64 {
+	w := r.written.Load()
+	var h int64
+	if r.hwOK {
+		extra := math.Min(time.Since(r.hwAt).Seconds(), chipPeriod)
+		h = r.aplayBase + r.hwFrames*4 + int64(extra*audioBytesSec)&^3
+	} else {
+		h = w - int64(audioLatency*audioBytesSec)&^3
+		h = max(h, r.aplayBase)
+	}
+	return max(min(h, w), 0)
+}
+
+// chipPeriod is how far the clock runs on between two reads of the chip's position (its period
+// is 6000 frames, 0.125 s, on this tablet).
+const chipPeriod = 0.15
+
+// soundStatusPath is where the kernel shows a device's play position: plughw:4,0 →
+// /proc/asound/card4/pcm0p/sub0/status.
+func soundStatusPath(dev string) string {
+	d := strings.TrimPrefix(strings.TrimPrefix(dev, "plughw:"), "hw:")
+	card, devn, ok := strings.Cut(d, ",")
+	if !ok || card == "" || devn == "" {
+		return ""
+	}
+	return "/proc/asound/card" + card + "/pcm" + devn + "p/sub0/status"
+}
+
+func chipStatusReadable(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// chipHwPtr reads hw_ptr from a status file ("closed" or unreadable: false).
+func chipHwPtr(path string) (int64, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if k, v, ok := strings.Cut(l, ":"); ok && strings.TrimSpace(k) == "hw_ptr" {
+			n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			return n, err == nil
+		}
+	}
+	return 0, false
+}
+
+// watchChip reads the chip's play position every 20 ms, for the clock.
+func (r *videoRun) watchChip() {
+	if r.statusPath == "" {
+		return
+	}
+	for !r.isKilled() && !r.soundEnd.Load() {
+		time.Sleep(20 * time.Millisecond)
+		r.mu.Lock()
+		gen := r.aplayGen
+		r.mu.Unlock()
+		n, ok := chipHwPtr(r.statusPath)
+		r.mu.Lock()
+		if ok && gen == r.aplayGen && !r.dropped && n != r.hwFrames {
+			r.hwFrames, r.hwAt, r.hwOK = n, time.Now(), true
+		}
+		r.mu.Unlock()
+	}
 }
 
 // soundWatch drops the sound when the output stops taking it: the sound is the clock, so
@@ -518,10 +645,15 @@ func (r *videoRun) soundWatch() {
 		r.soundErr = "no sound: the output stopped taking sound (stuck); pick another in Playbox > Settings"
 		r.mu.Unlock()
 		r.soundLost()
-		if r.aplay != nil && r.aplay.Process != nil {
-			r.aplay.Process.Kill()
+		r.mu.Lock()
+		ap, aw := r.aplay, r.aplayW
+		r.mu.Unlock()
+		if ap != nil && ap.Process != nil {
+			ap.Process.Kill()
 		}
-		r.aplayW.Close() // the blocked write returns
+		if aw != nil {
+			aw.Close() // the blocked write returns
+		}
 		return
 	}
 }
@@ -551,7 +683,10 @@ func (r *videoRun) clock() float64 {
 
 func (r *videoRun) clockLocked() float64 {
 	if r.audio.Load() {
-		return math.Max(float64(r.written.Load())/audioBytesSec-audioLatency, 0)
+		if r.dropped {
+			return r.pauseClock
+		}
+		return float64(r.heardLocked()) / audioBytesSec
 	}
 	if !r.started {
 		return 0
@@ -579,11 +714,36 @@ func (r *videoRun) setPaused(p bool) {
 	if p == r.paused {
 		return
 	}
+	if p && r.audio.Load() && r.aplay != nil && !r.killed {
+		// What was handed to the chip but not heard yet is dropped with its aplay, and resent to
+		// the next one: the sound stops at once and comes back where it stopped.
+		heard := r.heardLocked()
+		r.pauseClock = float64(heard) / audioBytesSec
+		r.written.Store(heard)
+		r.aplayGen++
+		r.dropped = true
+		if r.aplay.Process != nil {
+			r.aplay.Process.Kill()
+		}
+		r.aplayW.Close()
+		r.aplay, r.aplayW = nil, nil
+	}
 	r.paused = p
 	if p {
 		r.pauseAt = time.Now()
-	} else if !r.pauseAt.IsZero() {
-		r.pausedT += time.Since(r.pauseAt)
+	} else {
+		if !r.pauseAt.IsZero() {
+			r.pausedT += time.Since(r.pauseAt)
+		}
+		if r.dropped && r.audio.Load() && !r.killed {
+			r.dropped = false
+			if err := r.openAplayLocked(); err != nil {
+				r.soundErr = "no sound: " + err.Error()
+				r.mu.Unlock()
+				r.soundLost()
+				r.mu.Lock()
+			}
+		}
 	}
 	r.cond.Broadcast()
 }
@@ -597,15 +757,16 @@ func (r *videoRun) kill() {
 	}
 	r.killed = true
 	r.cond.Broadcast()
+	ap, aw := r.aplay, r.aplayW
 	r.mu.Unlock()
 	r.audio.Store(false)
-	for _, cmd := range []*exec.Cmd{r.vcmd, r.acmd, r.aplay} {
+	for _, cmd := range []*exec.Cmd{r.vcmd, r.acmd, ap} {
 		if cmd != nil && cmd.Process != nil {
 			cmd.Process.Kill()
 		}
 	}
-	if r.aplayW != nil {
-		r.aplayW.Close()
+	if aw != nil {
+		aw.Close()
 	}
 }
 
@@ -618,34 +779,88 @@ func (r *videoRun) isKilled() bool {
 // pumpSound copies the sound to aplay at the volume chosen.
 func (r *videoRun) pumpSound() {
 	buf := make([]byte, 4096)
+	r.mu.Lock()
+	if r.ring == nil {
+		r.ring = make([]byte, soundRing)
+	}
+	r.mu.Unlock()
+	ended := false
 	for r.wait() {
-		n, err := io.ReadFull(r.aout, buf)
-		if n > 0 {
+		// After a pause, first what was handed over but not heard (from the ring), then on.
+		r.mu.Lock()
+		w, rd := r.written.Load(), r.read
+		var chunk []byte
+		if w < rd && rd-w <= int64(len(r.ring)) {
+			o := int(w % int64(len(r.ring)))
+			n := int(min(rd-w, int64(len(buf)), int64(len(r.ring)-o)))
+			chunk = buf[:copy(buf, r.ring[o:o+n])]
+		}
+		r.mu.Unlock()
+		if chunk == nil {
+			if ended {
+				break
+			}
+			n, err := io.ReadFull(r.aout, buf)
 			n &^= 3
-			vol := int(r.volume.Load())
-			if vol != 100 {
-				for i := 0; i+1 < n; i += 2 {
-					v := int(int16(binary.LittleEndian.Uint16(buf[i:]))) * vol / 100
-					binary.LittleEndian.PutUint16(buf[i:], uint16(int16(min(max(v, -32768), 32767))))
+			if n > 0 {
+				vol := int(r.volume.Load())
+				if vol != 100 {
+					for i := 0; i+1 < n; i += 2 {
+						v := int(int16(binary.LittleEndian.Uint16(buf[i:]))) * vol / 100
+						binary.LittleEndian.PutUint16(buf[i:], uint16(int16(min(max(v, -32768), 32767))))
+					}
 				}
-			}
-			if r.audio.Load() {
-				r.writing.Store(time.Now().UnixNano())
-				_, werr := r.aplayW.Write(buf[:n])
-				r.writing.Store(0)
-				if werr != nil {
-					r.soundLost()
+				r.mu.Lock()
+				for k := 0; k < n; {
+					o := int(r.read % int64(len(r.ring)))
+					c := copy(r.ring[o:], buf[k:n])
+					k += c
+					r.read += int64(c)
 				}
+				r.mu.Unlock()
+				chunk = buf[:n]
 			}
-			r.written.Add(int64(n))
+			if err != nil {
+				ended = true
+			}
+			if len(chunk) == 0 {
+				continue
+			}
 		}
-		if err != nil {
-			break
+		r.mu.Lock()
+		aw, gen, dropped := r.aplayW, r.aplayGen, r.dropped
+		r.mu.Unlock()
+		if dropped {
+			continue // paused just now: this goes to the next aplay (wait blocks until play)
 		}
+		if r.audio.Load() && aw != nil {
+			r.writing.Store(time.Now().UnixNano())
+			_, werr := aw.Write(chunk)
+			r.writing.Store(0)
+			r.mu.Lock()
+			ours := gen == r.aplayGen
+			r.mu.Unlock()
+			if !ours {
+				continue // a pause dropped that aplay: this goes again to the next one
+			}
+			if werr != nil {
+				r.soundLost()
+			}
+		}
+		r.mu.Lock()
+		if gen == r.aplayGen {
+			r.written.Add(int64(len(chunk)))
+		}
+		r.mu.Unlock()
 	}
 	r.soundEnd.Store(true)
 	r.aout.Close()
-	r.aplayW.Close() // aplay plays what it has, then ends
+	r.mu.Lock()
+	aw := r.aplayW
+	r.mu.Unlock()
+	if aw != nil {
+		aw.Close() // aplay plays what it has, then ends
+	}
 	// The sound ran out before the picture (or failed): the wall clock carries on.
 	if !r.isKilled() {
 		time.Sleep(time.Duration(audioLatency * float64(time.Second)))
@@ -923,7 +1138,20 @@ func (c *console) videoFrames(v *videoPlayer, run *videoRun) {
 			log.Printf("playbox: %s", run.soundErr)
 		}
 		c.lastInput = time.Now() // a film playing keeps the screen on
+		t0 := time.Now()
 		c.videoCompose()
+		run.drawT += time.Since(t0)
+		if run.statAt.IsZero() {
+			run.statAt = t0
+		}
+		if d := time.Since(run.statAt); d >= 10*time.Second {
+			// What the tablet keeps up with: frames shown and dropped, and what a redraw costs.
+			n := run.frames - run.statFrames
+			log.Printf("playbox: picture %dx%d%s at %.1f of %.0f frames a second (%d dropped), redraw %.0f ms, overlay drawn %d times",
+				run.fw, run.fh, map[bool]string{true: " doubled", false: ""}[run.half], float64(n)/d.Seconds(), run.rate,
+				v.drops, float64(run.drawT.Milliseconds())/float64(max(n, 1)), v.ovBuilds-run.statBuilds)
+			run.statAt, run.statFrames, run.statBuilds, run.drawT = time.Now(), run.frames, v.ovBuilds, 0
+		}
 		c.videoKeepUp(v)
 		if time.Since(v.lastSave) > videoSaveEvery {
 			c.videoSavePos()
@@ -1030,9 +1258,14 @@ func (c *console) videoTicker(v *videoPlayer) {
 			}
 			switch {
 			case v.frame == nil && v.state != "failed" || v.state == "seeking" || v.state == "starting":
+				// The spinner alone at every step; the text (and everything live) 4 times a second.
 				t0 := time.Now()
-				c.videoRedraw()
-				wait = max(33*time.Millisecond, 2*time.Since(t0))
+				text := time.Since(v.textAt) >= 250*time.Millisecond
+				if text {
+					v.textAt = t0
+				}
+				c.videoLoadingFrame(text)
+				wait = max(spinStepEvery/3, 2*time.Since(t0))
 			case v.controls && v.state == "playing" && time.Now().After(v.ctlUntil) && !v.touch.down:
 				v.controls = false
 				c.videoRedraw()
@@ -1388,6 +1621,8 @@ type ovPart struct {
 	img   *image.RGBA // premultiplied
 	x, y  int
 	spans [][]ovSpan
+	live  bool // part of the loading screen, redrawn alone a few times a second
+	spin  bool // the spinner, redrawn alone at every step
 }
 
 func newOvPart(w, h, x, y int) *ovPart {
@@ -1525,7 +1760,7 @@ func (c *console) videoOverlay() []*ovPart {
 		parts = append(parts, top.seal())
 	}
 	if loading {
-		parts = append(parts, c.videoLoadingCard())
+		parts = append(parts, c.videoLoadingParts()...)
 	} else if v.controls || v.state == "paused" || v.state == "ended" || v.state == "failed" {
 		// The middle: back 10, play or pause, forward 10.
 		mid := newOvPart(760, 240, W/2-380, H/2-120)
@@ -1659,9 +1894,52 @@ func (c *console) videoCompose() {
 	if !c.screenOn || c.locked || c.pinMode != "" || c.alarm != "" || c.mode != modeVideo {
 		return
 	}
+	// The overlay is rebuilt only when what it shows changes (its drawing cost more than the
+	// frame itself on the tablet: a film with the controls up played at ~5 frames a second).
+	key := c.videoOverlayKey()
+	parts := v.overlay
+	if key == "" || key != v.ovKey || parts == nil {
+		parts = c.videoOverlay()
+		v.overlay, v.ovKey = parts, key
+		v.ovBuilds++
+	}
+	c.videoRecompose(0, c.s.fbH, parts)
+}
+
+// videoOverlayKey sums up everything the overlay shows; "" = always draw it again (the
+// spinner turning over a picture). Caller holds drawMu.
+func (c *console) videoOverlayKey() string {
+	v := c.vid
+	if v.frame == nil || v.state == "seeking" || v.state == "starting" {
+		return ""
+	}
+	pos := v.pos
+	if v.scrub >= 0 {
+		pos = v.scrub
+	}
+	hud := ""
+	if v.hud != "" && time.Now().Before(v.hudUntil) {
+		hud = v.hud
+	}
+	return fmt.Sprintf("%s|%v|%v|%v|%s|%d|%s|%d|%.0f|%v|%s|%s|%s|%s|%s|%v|%dx%d",
+		v.state, v.controls, v.light, v.speed, v.subLang, len(v.subLangs), v.req.title, int(pos),
+		v.scrub, v.scrub >= 0, v.noSound, v.subMsg, v.msg, hud, cueAt(v.cues, v.pos),
+		pbSettingsNow().Flip, c.s.fbW, c.s.fbH)
+}
+
+// videoRecompose puts landscape rows y0..y1-1 together again (the frame, black around it, and
+// the overlay parts that cross them) and sends just those rows. The loading screen's spinner and
+// text are redrawn this way alone, so a step costs a strip, not the whole panel (on the Atom a
+// whole redraw took long enough for the spinner to jump several spokes). Caller holds drawMu.
+func (c *console) videoRecompose(y0, y1 int, parts []*ovPart) {
+	v := c.vid
 	s := c.s
 	flip := pbSettingsNow().Flip
 	W, H := s.fbW, s.fbH
+	y0, y1 = max(y0, 0), min(y1, H)
+	if y0 >= y1 {
+		return
+	}
 	dst := words(s.buf)
 	ds := s.stride / 4
 	xrgb := s.bpp == 32 && s.red.offset == 16 && s.green.offset == 8 && s.blue.offset == 0
@@ -1676,7 +1954,7 @@ func (c *console) videoCompose() {
 	}
 	ox, oy := (W-fw*scale)/2, (H-fh*scale)/2
 	rowBuf := make([]uint32, W)
-	for y := 0; y < H; y++ {
+	for y := y0; y < y1; y++ {
 		clear(rowBuf)
 		fy := y - oy
 		if src != nil && fy >= 0 && fy < fh*scale {
@@ -1701,31 +1979,79 @@ func (c *console) videoCompose() {
 		}
 	}
 	// The overlay.
-	parts := c.videoOverlay()
-	v.overlay = parts
 	for _, p := range parts {
-		blendPart(s, p, flip)
+		blendPartRows(s, p, flip, y0, y1)
 	}
 	if !xrgb && v.frame != nil { // another pixel format: slow but right (tests use the tablet's)
 		c.videoSlowFrame(flip)
 	}
-	s.markRows(0, H-1)
+	if flip {
+		s.markRows(H-y1, H-1-y0)
+	} else {
+		s.markRows(y0, y1-1)
+	}
 	if err := s.FlushFrame(); err != nil {
 		log.Printf("flush: %v", err)
 	}
 }
 
+// videoLoadingFrame redraws the loading screen's live parts alone: the spinner at every step,
+// and (text) the whole loading screen's parts every quarter second. Caller holds drawMu.
+func (c *console) videoLoadingFrame(text bool) {
+	v := c.vid
+	if c.vid == nil || c.mode != modeVideo || !c.screenOn || c.locked || c.pinMode != "" || c.alarm != "" {
+		return
+	}
+	if v.overlay == nil {
+		c.videoCompose()
+		return
+	}
+	rows := func(ps []*ovPart, want func(*ovPart) bool, lo, hi int) (int, int) {
+		for _, p := range ps {
+			if want(p) {
+				lo, hi = min(lo, p.y), max(hi, p.y+p.img.Rect.Dy())
+			}
+		}
+		return lo, hi
+	}
+	if text {
+		isLive := func(p *ovPart) bool { return p.live || p.spin }
+		lo, hi := rows(v.overlay, isLive, c.s.fbH, 0)
+		parts := c.videoOverlay()
+		lo, hi = rows(parts, isLive, lo, hi)
+		v.overlay, v.ovKey = parts, ""
+		c.videoRecompose(lo, hi, parts)
+		return
+	}
+	var old *ovPart
+	for i, p := range v.overlay {
+		if p.spin {
+			old = p
+			np := c.videoSpinnerPartAt(p.x+p.img.Rect.Dx()/2, p.y+p.img.Rect.Dy()/2, p.live)
+			v.overlay[i] = np
+			break
+		}
+	}
+	if old == nil {
+		return
+	}
+	c.videoRecompose(old.y, old.y+old.img.Rect.Dy(), v.overlay)
+}
+
 func (c *console) videoSlowFrame(flip bool) {}
 
 // blendPart lays an overlay part over the screen's back buffer (XRGB, the panel's layout).
-func blendPart(s *Screen, p *ovPart, flip bool) {
+func blendPart(s *Screen, p *ovPart, flip bool) { blendPartRows(s, p, flip, 0, s.fbH) }
+
+// blendPartRows is blendPart for landscape rows y0..y1-1 only.
+func blendPartRows(s *Screen, p *ovPart, flip bool, y0, y1 int) {
 	W, H := s.fbW, s.fbH
 	dst := words(s.buf)
 	ds := s.stride / 4
 	pix := p.img.Pix
 	for y, spans := range p.spans {
 		ly := p.y + y
-		if ly < 0 || ly >= H {
+		if ly < 0 || ly >= H || ly < y0 || ly >= y1 {
 			continue
 		}
 		ny := ly
