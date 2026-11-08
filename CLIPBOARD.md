@@ -8,6 +8,31 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Habit sync and Playbox sources
+```send
+R=/proc/1/root/data/condor
+L=$R/init.log
+J=$R/soma/state.json
+echo "--- tablet clock: $(date -u '+%F %T') UTC"
+echo "--- internet:     $(curl -sI -m 10 https://www.google.com | grep -i '^date:')"
+echo "--- sync log"
+grep "soma:" $L | tail -12
+command -v jq >/dev/null || apk add -q jq >/dev/null 2>&1
+echo "--- sync state"
+jq -r '"last synced \(.last_ok) · device \(.device) · \(.recs|length) records · not sent yet: \([.recs[]|select(.dirty)]|length)"' $J
+echo "--- habits, last changed first (time UTC, device, not sent, ticked today)"
+D=$(TZ=WAT-1 date +%F)
+jq -r --arg d "$D" '.recs|to_entries[]|select(.key|startswith("habits#"))|select(.value.v)|(.value.v|fromjson) as $h|[.value.t, .value.d, (.value.dirty//false), ($h.history[$d]//"-"), $h.name]|@tsv' $J | sort -rn | head -10 | while IFS="$(printf '\t')" read t d dirty today name; do echo "$(date -u -d @$((t/1000)) '+%m-%d %H:%M:%S') $d unsent=$dirty today=$today $name"; done
+echo "--- Playbox add-ons installed"
+jq -r '.[]? | "\(.manifest.name // .Manifest.name // "?") \(.base // .Base // "")"' $R/playbox/addons.json 2>&1 | head -12
+echo "--- Playbox log"
+grep "playbox:" $L | grep -v -E "sound|route|aplay|chime" | tail -15
+echo "--- Torrentio from the tablet (Halloween 1978)"
+curl -s -m 20 -o /tmp/tio.json -w "HTTP %{http_code} in %{time_total}s\n" https://torrentio.strem.fun/stream/movie/tt0077651.json
+head -c 300 /tmp/tio.json; echo
+jq '.streams|length' /tmp/tio.json 2>&1
+```
+
 ## Playbox: why video stops after the sound error
 ```send
 L=/proc/1/root/data/condor/init.log
