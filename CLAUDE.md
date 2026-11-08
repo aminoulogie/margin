@@ -742,6 +742,13 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       add-ons don't answer" checks DNS, proxy vs direct, Comet with Margin's User-Agent
       (webGetCtx sends "margin-books/1.0 ...") vs a browser's, MediaFusion and other public
       add-ons. Not fixed yet.
+      Result (margin-results 18:21): DNS fine (Cloudflare 172.67.164.220); Torrentio's manifest
+      answers 200 in 0.36 s through the proxy and directly (so not blocked); only its stream
+      requests hung (>20 s). Comet | ElfHosted: 403 even with a browser User-Agent; MediaFusion |
+      ElfHosted: 200 with {"streams":[]}: both need a configured (personal) URL, so as installed
+      they never give sources. thepiratebay-plus.strem.fun and torrentsdb.com: no answer;
+      knightcrawler/stremio-jackett on ElfHosted: redirects. Next: Clipboard "Playbox: how long
+      Torrentio takes to answer" (stream requests with a 60 s limit, browser UA, second try).
 - [x] **Playbox faster + new loading screen (2026-11-08; user: "everything super fast, opening,
       ending, closing, double tapping, swiping; loading ring like the iPhone one, info updating
       every ms, no background behind the loading text, white on black, 20% smaller, more info").**
