@@ -771,6 +771,26 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Wi-Fi, and a failure waited 2 minutes. Now somaLoop waits for the proxy (waitProxy, up to
       30 s) and retries 20 s after a failure. If the phone still lacks a tick the tablet sent,
       look at the phone app's pull (repo kite-bay-otter-topaz), not the tablet.
+- [x] **Phone food / habits not matching the tablet (2026-11-08, user: food logged on the phone isn't
+      on the tablet, the training session is; habits ticked on one don't show on the other).**
+      Read from margin-results 18:13 (habit sync): the tablet is linked to the same vault as the phone
+      (device zr8a32yw = the phone, ibslav35 = the tablet) and the tablet's own ticks are on the
+      relay (unsent 0, last sync 18:13). The tablet's log shows NO pulled records from the phone
+      between 2026-11-05 15:00 and 2026-11-08 17:27 (pull position stuck at 1107, then 1113), and the
+      phone's Train tick + session written at 15:02 were pulled only at 17:27. So the phone sent
+      little or late: its sync runs only while the app is open (src/components/SyncRunner.tsx: on
+      start, every 20 s, 2 s after a change, on coming to the front), and an iPhone app freezes in
+      the background. Not proven yet. Tablet side checked and found consistent: habit ticks are
+      written as Soma's toggleHabit does (history[date], stepLog), the day's food as `nutrition/<date>`
+      with items/planned (today's food waits in `planned` until eaten, the Waiting card shows it).
+      Added `margin-init soma-check food` (somacheck_food.go; Clipboard "Soma: food and habits,
+      tablet vs phone"): today's and yesterday's food and today's ticked habits on the tablet and on
+      the relay, the relay's 14 newest records with the device that wrote each, and when each device
+      last wrote. Read its result in margin-results before changing sync code. Whole-record
+      newest-wins (a day's food is ONE record) means two devices editing the same day between syncs
+      lose one side's change: if the result shows that, merge items/planned and habit history on pull.
+      Not built or run on the 386 here (no Go modules reachable): the new file was type-checked
+      against stubs and gofmt'd only; the tablet's `update` builds it.
 - [x] **Playbox: no sources (2026-11-08):** Torrentio times out from the tablet ("context deadline
       exceeded"; curl: no answer in 20 s), Comet | ElfHosted answers 403 to every stream request,
       MediaFusion logged nothing. The user then removed Torrentio. Clipboard "Playbox: why the
