@@ -8,6 +8,11 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Soma: food and habits, tablet vs phone
+```send
+/proc/1/root/data/condor/condor-init soma-check food
+```
+
 ## Playbox: how fast the picture plays
 ```send
 grep -E "playbox: (picture|.*frames late|lighter)" /proc/1/root/data/condor/init.log | tail -15
