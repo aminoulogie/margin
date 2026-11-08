@@ -52,6 +52,7 @@ type page struct {
 	rows    []hrow              // rows that scroll sideways (scroll.go)
 	rowBtns map[string][]button // their buttons, replaced when a row moves
 	swipes  []swipeZone         // where a sideways swipe turns a page (the next week, say)
+	cal     *calView            // the Planner's endless week (work_calweek.go)
 	owned   bool                // img is this page's alone (not a shared canvas): kept as it is
 }
 

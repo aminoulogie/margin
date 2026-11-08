@@ -1044,6 +1044,22 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       rail moved with the page (the user has the GPU on): it starts at page.left now.
       Skill with all the working rules: .claude/skills/margin/SKILL.md. **Not yet verified on the
       tablet.**
+- [x] **Planner week: endless days, hours round the clock** (2026-11-08, work_calweek.go; user's
+      photo: only 08:00-20:00 and week-by-week swipes; "swipe to infinity, a little = 1 day, more =
+      2 days; scroll past midnight to 1 a.m., a roulette; 160 fps"). The week view is a calView
+      (page.cal: Grid/Head/Lbl page rects, From = leftmost day, Top = pixel row of the day at the
+      grid's top; kept with views on disk). Each day is drawn once as its whole 24 h column (72 px
+      an hour, 1728 rows) and heading, turned to native layout and kept (35 days, ~0.9 MB each;
+      ±14 days prefetched when idle); a frame = one or two copies per native row (0.25 ms on the
+      PC), one loop per vsync. Sideways: follows the finger, eases to a whole day (a swipe of more
+      than 24 px = at least one day; a flick carries further); up/down: flings, wraps at midnight
+      (stronger line at 00:00; the month's name under the 1st). At rest calSettle repaints the
+      page picture from the same strips (identical to the frame, test), rebuilds the buttons and
+      drop zones round the clock (calButtons; drag-and-drop works anywhere in 24 h), saves
+      somaUI.weekFrom/weekTop, and redraws the page later in a way a touch stops (title dates).
+      Prev/next/Today reset weekFrom to that week's Monday. Day and Month views keep their swipes.
+      160 fps isn't possible: the panel refreshes ~60 times a second. **Not yet verified on the
+      tablet.**
 - [-] microSD bind into Alpine: dropped (2026-11-01, the user doesn't use the microSD).
 
 **What's next: `docs/MARGIN-BACKLOG.md`** (the user's 20 answers of 2026-11-01, in batches).

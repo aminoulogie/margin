@@ -70,6 +70,7 @@ type scrollState struct {
 	frameSum time.Duration
 	zone     string // the swipe zone the finger touched down in ("" none)
 	swiping  bool   // ...and it's moving sideways across it
+	calOn    bool   // the Planner's week calendar has the finger (work_calweek.go)
 }
 
 const (
@@ -200,7 +201,9 @@ func (c *console) pageTouch(p TouchPoint) {
 		}
 		c.stopMotion() // a finger on a moving page catches it
 		c.pressClear(true)
-		sc.fling++ // ...and on a flinging one (the GPU's overlay stays until it lifts)
+		sc.calOn = false
+		c.wcal.caught = c.calCatch() // ...and on the moving week calendar
+		sc.fling++                   // ...and on a flinging one (the GPU's overlay stays until it lifts)
 		sc.drag, sc.moved, sc.row, sc.samples = true, false, nil, nil
 		// Held still for a moment: a long press (as on iOS); a moment less: shown pressed.
 		sc.longGen++
@@ -265,6 +268,10 @@ func (c *console) pageTouch(p TouchPoint) {
 			c.edgeMove(p.X, p.Y)
 			return
 		}
+		if sc.calOn { // the week calendar follows the finger: days sideways, hours round the clock
+			c.calFollow(p.X-sc.x0, p.Y-sc.y0)
+			return
+		}
 		dx, dy := p.X-sc.x0, p.Y-sc.y0
 		if !sc.moved {
 			if abs(dx) < scrollSlop && abs(dy) < scrollSlop {
@@ -272,6 +279,13 @@ func (c *console) pageTouch(p TouchPoint) {
 			}
 			sc.moved = true
 			c.pressClear(true)
+			if c.calGrab(sc.x0, sc.y0, dx, dy) {
+				sc.calOn = true
+				sc.x0 += scrollSlop * sign(dx) * map[bool]int{true: 1}[abs(dx) > abs(dy)] // moves from here, no jump
+				sc.y0 += scrollSlop * sign(dy) * map[bool]int{true: 1}[abs(dy) >= abs(dx)]
+				c.calFollow(p.X-sc.x0, p.Y-sc.y0)
+				return
+			}
 			if sc.zone != "" && sc.row == nil && abs(dx) > abs(dy) { // a sideways swipe: no scrolling
 				sc.swiping, sc.vert = true, false
 				sc.x0 += scrollSlop * sign(dx) // it moves from here, without a jump
@@ -329,6 +343,15 @@ func (c *console) pageTouch(p TouchPoint) {
 			return
 		}
 		sc.longGen++
+		if sc.calOn { // the week calendar: flings on, rests on a whole day
+			sc.drag, sc.calOn = false, false
+			c.calRelease()
+			return
+		}
+		if c.wcal.caught && !sc.moved { // it stopped the moving calendar: not a tap
+			c.wcal.caught, sc.drag = false, false
+			return
+		}
 		if c.drag.on { // a dragged to-do: let go here
 			sc.longFired, sc.drag = false, false
 			c.dragDrop(p.X, p.Y)

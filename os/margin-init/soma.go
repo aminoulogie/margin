@@ -68,6 +68,8 @@ type somaUI struct {
 	calDay      string          // the Calendar's chosen day ("" today)
 	calOff      int             // and its month, from this one
 	planDate    string          // the Planner's day (its week, its month); "" today
+	weekFrom    string          // the week calendar's leftmost day ("" the Monday of planDate's week)
+	weekTop     int             // and the hour row at its top, +1 (0: from 08:00, or earlier if booked)
 	foodMeal    string          // the meal food is being added to
 	foodQuery   string          // what the food library was searched for
 	portion     obj             // the food whose portion is being set

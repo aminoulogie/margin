@@ -55,6 +55,7 @@ type console struct {
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
 	ts               termScroll  // the scrollback moving with the finger (termscroll.go)
 	selJob, swipeJob frameJob    // a selection being dragged, a card swiped: the latest move per frame
+	wcal             calMotion   // the Planner's week moving (work_calweek.go)
 	cb               clipState   // the Clipboard over the keyboard: commands from GitHub (clipboard.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
 	xapp             *xapp       // a desktop app open full screen (desktop.go)

@@ -64,6 +64,10 @@ func (k *wk) planner() int {
 	pd := k.c.planDay()
 	tab := k.sel("tab", 0)
 	mon := weekStart(pd)
+	calOn := tab == 0 && k.c.calOK()
+	if calOn && k.c.somaUI.weekFrom != "" { // the endless week: from wherever it was left
+		mon = calDate(k.c.somaUI.weekFrom)
+	}
 	// The projects' daily practice, as timed blocks among the to-dos (from the month's first
 	// week to its last).
 	first := weekStart(time.Date(pd.Year(), pd.Month(), 1, 0, 0, 0, 0, displayZone))
@@ -83,7 +87,7 @@ func (k *wk) planner() int {
 		}
 	}
 	sub := fmt.Sprintf("%s – %s · %.1f h booked", mon.Format("2 Jan"), mon.AddDate(0, 0, 6).Format("2 Jan"), float64(booked)/60)
-	inNow := mon.Equal(weekStart(today))
+	inNow := !today.Before(mon) && today.Before(mon.AddDate(0, 0, 7))
 	switch tab {
 	case 1:
 		sub = pd.Format("Monday 2 January 2006")
@@ -120,6 +124,15 @@ func (k *wk) planner() int {
 		return k.planBoard(todos, now)
 	case 4:
 		return k.routines()
+	}
+	if calOn {
+		top := k.c.somaUI.weekTop - 1
+		if top < 0 {
+			top = calDefaultTop(todos, mon)
+		}
+		k.planWeekCal(mon, pd, top)
+		y := k.dayList(pd, todos, now, 1323)
+		return k.weekList(weekStart(pd), todos, y+24)
 	}
 	return k.planWeek(mon, pd, todos, now)
 }
@@ -793,6 +806,7 @@ func init() {
 	wkSwipes["plan"] = func(c *console, _ string, dir int) { wkActions["plannav"](c, fmt.Sprint(dir)) }
 	wkActions["plannav"] = func(c *console, arg string) {
 		n, _ := strconv.Atoi(arg)
+		c.somaUI.weekFrom = "" // the week calendar goes to the chosen week
 		if n == 0 {
 			c.somaUI.planDate = ""
 			return

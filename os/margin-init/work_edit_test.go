@@ -353,12 +353,15 @@ func TestPlannerUsable(t *testing.T) {
 		t.Fatal("plan my day didn't give it a time")
 	}
 
-	// Swipes: weeks, then a day, then a month.
-	swipeAcross(t, c, "plan:", 1)
-	if c.planDay().Format("2006-01-02") != wkAddDays(today, 7) {
-		t.Fatalf("week swipe: %v", c.planDay())
+	// Swipes: the week by days (endless), then a day, then a month.
+	from := c.page.cal.From
+	gs, _ := c.calShown(c.page.cal.Grid)
+	calDrag(c, gs.Min.X+400, gs.Min.Y+100, -2*calColW, 0)
+	if c.somaUI.weekFrom == "" || c.somaUI.weekFrom == from {
+		t.Fatalf("week swipe: from %s to %q", from, c.somaUI.weekFrom)
 	}
-	swipeAcross(t, c, "plan:", -1)
+	wkActions["plannav"](c, "0") // (Today shows only once today is off the week)
+	c.showPage()
 	tapBtn(t, c, "wk:planday:"+today)
 	shot(t, c, "plan-day")
 	swipeAcross(t, c, "plan:", 1)

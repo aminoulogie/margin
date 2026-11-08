@@ -83,6 +83,7 @@ func TestDragTodo(t *testing.T) {
 
 func TestSwipeFollowsFinger(t *testing.T) {
 	c := workAt(t, "planner")
+	tapBtn(t, c, "wk:tab:1") // the day (the week runs on without end: work_calweek_test.go)
 	zr, ok := c.swipeZoneRect("plan:")
 	if !ok {
 		t.Fatal("no week to swipe")
@@ -97,6 +98,6 @@ func TestSwipeFollowsFinger(t *testing.T) {
 	shot(t, c, "planner-swiping")
 	c.pageTouch(TouchPoint{Up: true, X: x - 320, Y: y + 2})
 	if !c.planDay().After(before) {
-		t.Fatalf("swiping left should show the next week: %v then %v", before, c.planDay())
+		t.Fatalf("swiping left should show the next day: %v then %v", before, c.planDay())
 	}
 }

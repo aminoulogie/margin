@@ -151,7 +151,7 @@ func (c *console) viewKeyOf() string {
 		}
 		sort.Strings(sel)
 		k = fmt.Sprintf("soma|%v|%s|%s|%s|%s|%s|%s|%s|%d|%s|%v", soma.linked(), su.view, su.work, su.workSub, su.workProj,
-			strings.Join(sel, ","), su.planDate, su.calDay, su.calOff, su.nutDate, c.cfg.SomaHidden)
+			strings.Join(sel, ","), su.planDate+"/"+su.weekFrom+"/"+fmt.Sprint(su.weekTop), su.calDay, su.calOff, su.nutDate, c.cfg.SomaHidden)
 	case modePlaybox:
 		pb := &c.pb
 		if pb.typing {
@@ -534,6 +534,7 @@ type viewFile struct {
 	ScrollY              int
 	Buttons              []viewFileBtn
 	Swipes               []viewFileBtn
+	Cal                  *calView // the Planner's week calendar, if the page has one
 }
 
 const viewMagic = "MRGVIEW2"
@@ -592,7 +593,7 @@ func (c *console) viewSave(e *viewEntry) {
 	p := e.p
 	img := p.img
 	f := viewFile{Key: e.key, W: img.Rect.Dx(), H: img.Rect.Dy(), ViewH: c.viewH(), Header: p.header, Footer: p.footer,
-		Left: p.left, TabsOn: e.tabsOn, ScrollY: e.scrollY}
+		Left: p.left, TabsOn: e.tabsOn, ScrollY: e.scrollY, Cal: p.cal}
 	for _, b := range p.buttons {
 		f.Buttons = append(f.Buttons, viewFileBtn{b.id, b.r})
 	}
@@ -671,12 +672,15 @@ func (c *console) viewFromDisk(key string) *viewEntry {
 	if unpackRGBA(b[4+n:], img.Pix) != nil {
 		return nil
 	}
-	p := &page{img: img, header: f.Header, footer: f.Footer, left: f.Left, owned: true}
+	p := &page{img: img, header: f.Header, footer: f.Footer, left: f.Left, owned: true, cal: f.Cal}
 	for _, x := range f.Buttons {
 		p.buttons = append(p.buttons, button{x.ID, x.R})
 	}
 	for _, x := range f.Swipes {
 		p.swipes = append(p.swipes, swipeZone{x.ID, x.R})
+	}
+	if f.Cal != nil {
+		calButtons(p, f.Cal) // the drop zones (not kept on disk) with the buttons
 	}
 	now := time.Now()
 	return &viewEntry{key: key, p: p, tabsOn: f.TabsOn, scrollY: f.ScrollY, at: now, used: now, disk: true, saved: true}
