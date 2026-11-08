@@ -8,23 +8,18 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Playbox: why the add-ons don't answer
+## Playbox: how long Torrentio takes to answer
 ```send
-echo "--- names (DNS)"
-nslookup torrentio.strem.fun 2>&1 | tail -2
-nslookup torrentio.strem.fun 1.1.1.1 2>&1 | tail -2
-echo "--- Torrentio through Margin's proxy"
-curl -s -m 15 -o /dev/null -w "HTTP %{http_code} · connected %{time_connect}s · %{time_total}s\n" https://torrentio.strem.fun/manifest.json
-echo "--- Torrentio straight out (no proxy)"
-curl --noproxy '*' -s -m 15 -o /dev/null -w "HTTP %{http_code} · connected %{time_connect}s\n" https://torrentio.strem.fun/manifest.json 2>&1
-echo "--- Comet: Margin's name vs a browser's"
-U=https://comet.elfhosted.com/stream/movie/tt0077651.json
-curl -s -m 15 -A "margin-books/1.0 (Condor TRA-901G tablet reader)" -o /tmp/c1 -w "margin: HTTP %{http_code}\n" $U; head -c 160 /tmp/c1; echo
-curl -s -m 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" -o /tmp/c2 -w "browser: HTTP %{http_code}\n" $U; head -c 160 /tmp/c2; echo
-echo "--- MediaFusion"
-curl -s -m 20 -o /tmp/m -w "HTTP %{http_code}\n" https://mediafusion.elfhosted.com/stream/movie/tt0077651.json; head -c 240 /tmp/m; echo
-echo "--- other public torrent add-ons"
-for u in https://thepiratebay-plus.strem.fun https://knightcrawler.elfhosted.com https://torrentsdb.com https://stremio-jackett.elfhosted.com; do curl -s -m 12 -o /dev/null -w "$u HTTP %{http_code} %{time_total}s\n" $u/manifest.json; done
+for id in movie/tt0077651 movie/tt0111161 series/tt0903747:1:1; do
+  curl -s -m 60 -o /tmp/t.json -w "$id: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/$id.json
+  jq '.streams|length' /tmp/t.json 2>/dev/null || echo "no list"
+done
+echo "--- same, with a browser's name"
+curl -s -m 60 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" -o /tmp/t.json -w "movie/tt0109830: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/movie/tt0109830.json
+jq '.streams|length' /tmp/t.json 2>/dev/null || head -c 200 /tmp/t.json
+echo "--- a second time (cached?)"
+curl -s -m 60 -o /tmp/t.json -w "movie/tt0077651: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/movie/tt0077651.json
+jq '.streams|length' /tmp/t.json 2>/dev/null || echo "no list"
 ```
 
 ## Playbox: why video stops after the sound error
