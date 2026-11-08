@@ -70,6 +70,13 @@ type somaUI struct {
 	planDate    string          // the Planner's day (its week, its month); "" today
 	weekFrom    string          // the week calendar's leftmost day ("" the Monday of planDate's week)
 	weekTop     int             // and the hour row at its top, +1 (0: from 08:00, or earlier if booked)
+	planSelOn   bool            // picking to-dos in the Planner (work_dup.go)
+	planSel     []string        // ...the ones picked
+	planClip    []string        // to-dos copied, pasted by tapping a time
+	dupIDs      []string        // the to-dos the Duplicate sheet copies
+	dupFrom     string          // ...from this day
+	dupDays     int             // ...on this many days
+	dupWeekdays bool            // ...weekdays only
 	foodMeal    string          // the meal food is being added to
 	foodQuery   string          // what the food library was searched for
 	portion     obj             // the food whose portion is being set

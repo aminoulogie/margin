@@ -151,7 +151,7 @@ func (c *console) viewKeyOf() string {
 		}
 		sort.Strings(sel)
 		k = fmt.Sprintf("soma|%v|%s|%s|%s|%s|%s|%s|%s|%d|%s|%v", soma.linked(), su.view, su.work, su.workSub, su.workProj,
-			strings.Join(sel, ","), su.planDate+"/"+su.weekFrom+"/"+fmt.Sprint(su.weekTop), su.calDay, su.calOff, su.nutDate, c.cfg.SomaHidden)
+			strings.Join(sel, ","), su.planDate+"/"+su.weekFrom+"/"+fmt.Sprint(su.weekTop, su.planSelOn, su.planSel, su.planClip), su.calDay, su.calOff, su.nutDate, c.cfg.SomaHidden)
 	case modePlaybox:
 		pb := &c.pb
 		if pb.typing {

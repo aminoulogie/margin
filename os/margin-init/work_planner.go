@@ -100,20 +100,33 @@ func (k *wk) planner() int {
 	case 4:
 		sub, inNow = "Your routines: steps that fit a window of time", true
 	}
-	k.header([]string{wkUser() + " · Freelance", "Planner"}, "Tasks & calendar", sub, color.RGBA{})
-	var x int
-	if tab == 4 {
-		x = k.primary("wk:type-open:rtnew:", "plus", "Routine", wkX1)
-	} else {
-		x = k.primary("wk:newtask", "plus", "Task", wkX1)
-	}
-	if tab <= 2 {
-		x = k.square("wk:plannav:1", "chevron-right", x-13)
-		x = k.square("wk:plannav:-1", "chevron-left", x-13)
-		if !inNow {
-			k.outline("wk:plannav:0", "", "Today", x-13, 103, 63)
+	k.c.syncPlanSel()
+	if tab <= 1 {
+		if s, ok := k.planSelHeader(); ok {
+			k.header([]string{wkUser() + " · Freelance", "Planner"}, "Tasks & calendar", s, color.RGBA{})
+			goto tabs
 		}
 	}
+	k.header([]string{wkUser() + " · Freelance", "Planner"}, "Tasks & calendar", sub, color.RGBA{})
+	{
+		var x int
+		if tab == 4 {
+			x = k.primary("wk:type-open:rtnew:", "plus", "Routine", wkX1)
+		} else {
+			x = k.primary("wk:newtask", "plus", "Task", wkX1)
+		}
+		if tab <= 2 {
+			x = k.square("wk:plannav:1", "chevron-right", x-13)
+			x = k.square("wk:plannav:-1", "chevron-left", x-13)
+			if !inNow {
+				x = k.outline("wk:plannav:0", "", "Today", x-13, 103, 63)
+			}
+			if tab <= 1 {
+				k.square("wk:selstart:", "list-checks", x-13) // pick several to-dos
+			}
+		}
+	}
+tabs:
 	k.tabs("wk:tab", []string{"Week", "Day", "Month", "Board", "Routines"}, nil, tab)
 	switch tab {
 	case 1:
@@ -330,6 +343,9 @@ func (k *wk) dayList(day time.Time, todos []somaTodo, now time.Time, y int) int 
 func (k *wk) todoRows(list []somaTodo, ry int, day string) {
 	for _, t := range list {
 		ui.Fill(k.img, k.R(wkX0+2, ry, wkX1-2, ry+2), wkLine)
+		if planSelected[t.ID] {
+			ui.Fill(k.img, k.R(wkX0+2, ry+2, wkX1-2, ry+83), blend(wkCard, wkLime, 0.14))
+		}
 		cy := ry + 42
 		k.checkbox(188, cy, t.Done)
 		k.btn(todoTickID(t), k.R(wkX0, ry, 236, ry+83))
@@ -437,6 +453,9 @@ func (k *wk) planDayView(day time.Time, todos []somaTodo, now time.Time) int {
 		fill := blend(wkCard, c, 0.24)
 		if t.Done {
 			fill = blend(wkCard, c, 0.08)
+		}
+		if planSelected[t.ID] {
+			ui.RoundRect(k.img, r.Inset(-3), 12, wkLime)
 		}
 		ui.RoundRect(k.img, r, 10, fill)
 		ui.RoundRect(k.img, image.Rect(r.Min.X, r.Min.Y, r.Min.X+5, r.Max.Y), 2, c)
@@ -914,6 +933,7 @@ func init() {
 		} else {
 			sh.rows = append(sh.rows, wkRow{id: "wk:tscope:" + id + ":week", label: "Move to this week's list", icon: "calendar-range"})
 		}
+		sh.rows = append(sh.rows, planTaskExtras(id)...)
 		sh.rows = append(sh.rows,
 			wkRow{id: "wk:ttomorrow:" + id, label: "Tomorrow", icon: "arrow-right"},
 			wkRow{id: "wk:tdel:" + id, label: "Delete", icon: "trash-2", danger: true})

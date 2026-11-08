@@ -1008,6 +1008,10 @@ func (c *console) workTap(id string) bool {
 	if su.typing {
 		c.somaDone() // a tap elsewhere: what was typed is kept
 	}
+	if c.planTapHook(id) { // picking to-dos, or pasting copies (work_dup.go)
+		c.showPage()
+		return true
+	}
 	prev := su.sheet
 	su.keep, su.toTop = false, false
 	name, arg, _ := strings.Cut(strings.TrimPrefix(id, "wk:"), ":")

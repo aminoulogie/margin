@@ -107,7 +107,7 @@ func calDefaultTop(todos []somaTodo, from time.Time) int {
 		dates[somaDate(from.AddDate(0, 0, i))] = true
 	}
 	first, _ := hourSpan(todos, dates, 8, 19)
-	return first * calPxH
+	return floorMod(first*calPxH-20, calDayH) // a little above the hour: its label shows whole
 }
 
 // planWeekCal draws the week calendar from day from, its hours from pixel top, into the page
@@ -137,7 +137,7 @@ func (k *wk) planWeekCal(from, pd time.Time, top int) {
 // calKey names what the strips show: the records, the clock (the now line), today, the chosen
 // day, the colours.
 func calKey(cv *calView) string {
-	return fmt.Sprint(somaGen.Load(), viewClock(time.Now()), somaToday(), cv.PD, wkLime, wkCard, wkFG, cv.BG, len(cv.HeadBG))
+	return fmt.Sprint(somaGen.Load(), viewClock(time.Now()), somaToday(), cv.PD, wkLime, wkCard, wkFG, cv.BG, len(cv.HeadBG), planSelKey())
 }
 
 func (m *calMotion) fresh(cv *calView) {
@@ -183,6 +183,9 @@ func calDayImg(date string, bg color.RGBA, now time.Time) *image.RGBA {
 		fill := blend(bg, col, 0.22)
 		if t.Done {
 			fill = blend(bg, col, 0.08)
+		}
+		if planSelected[t.ID] { // picked: ringed in the accent
+			ui.RoundRect(img, r.Inset(-3), 10, wkLime)
 		}
 		ui.RoundRect(img, r, 8, fill)
 		ui.RoundRect(img, image.Rect(r.Min.X, r.Min.Y, r.Min.X+4, r.Max.Y), 2, col)

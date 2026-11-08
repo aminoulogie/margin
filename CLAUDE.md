@@ -1060,6 +1060,16 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Prev/next/Today reset weekFrom to that week's Monday. Day and Month views keep their swipes.
       160 fps isn't possible: the panel refreshes ~60 times a second. **Not yet verified on the
       tablet.**
+- [x] **Planner: duplicate, copy/paste, pick several** (2026-11-08, work_dup.go; user: "copy paste or
+      duplicate, multiple selection; it asks what day and how many days: 6 = the next 6 days").
+      A to-do's sheet: Duplicate… (sheet "dup:": Starting day (date sheet), How many days 1-60,
+      Every day / Weekdays, the span shown; copies keep the time; default = the next day after the
+      to-do's), Copy, Select more. Header list-checks button = pick mode (week and day tabs): taps
+      on to-dos toggle them (ringed in the accent on the calendar, tinted in lists), header becomes
+      Duplicate · Copy · Delete · Done. Copied to-dos (su.planClip) paste on a tap of a time: the
+      first there, the others keep their times relative to it; they stay ready for more pastes
+      until Cancel. Every duplicate/paste/delete offers Undo. planTapHook in workTap takes those
+      taps first. Test: work_dup_test.go. **Not yet verified on the tablet.**
 - [-] microSD bind into Alpine: dropped (2026-11-01, the user doesn't use the microSD).
 
 **What's next: `docs/MARGIN-BACKLOG.md`** (the user's 20 answers of 2026-11-01, in batches).
