@@ -773,6 +773,8 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       dead (engine.jobDead: stopped, failed or t.Closed()), and a failed read is tried again 3 times,
       2 s apart, restarting a dead torrent ("Trying again (n of 3)…" on the loading screen).
       Test: TestTorrentShownStatusAndReplay (kept status, close then play the same torrent at once).
+      Seen while testing (not fixed, not Playbox): TestPlannerUsable fails in the evening (from
+      ~21:30 local, before its 22:00 guard): "plan my day didn't give it a time" also on main alone.
 - [x] **Freeze on removing an add-on FIXED (2026-11-08):** the pb:uninstall tap runs under drawMu;
       addons.remove → notify → the changed callback (playboxPage) took drawMu again = deadlock,
       Margin frozen for good (the remove itself was saved first). notify now runs the callback in
