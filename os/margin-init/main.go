@@ -67,7 +67,10 @@ func main() {
 			}
 			fmt.Printf("alpine-run: exit %d\n", code)
 			os.Exit(code)
-		case "soma-check": // margin-init soma-check: the tablet's time records next to the relay's (somacheck.go)
+		case "soma-check": // margin-init soma-check [food]: the tablet's records next to the relay's (somacheck.go)
+			if len(os.Args) > 2 && os.Args[2] == "food" { // today's food and habits, and who wrote what (somacheck_food.go)
+				os.Exit(runSomaFoodCheck())
+			}
 			os.Exit(runSomaCheck())
 		case "soma-plan": // margin-init soma-plan "Name" YYYY-MM-DD < plan: a plan project (work_plans.go)
 			os.Exit(runSomaPlan(os.Args[2:]))
