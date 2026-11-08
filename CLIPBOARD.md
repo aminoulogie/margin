@@ -8,6 +8,12 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
+## Playbox: how fast the picture plays
+```send
+grep -E "playbox: (picture|.*frames late|lighter)" /proc/1/root/data/condor/init.log | tail -15
+echo "--- GPU drawing: $(ls /proc/1/root/data/condor/gpu 2>/dev/null && echo on || echo off)"
+```
+
 ## Playbox: why Torrentio and Knightcrawler won't install
 ```send
 UA="margin-books/1.0 (Condor TRA-901G tablet reader)"
