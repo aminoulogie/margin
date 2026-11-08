@@ -120,8 +120,11 @@ func TestHomeOldRowsRefreshedInBackground(t *testing.T) {
 		t.Fatalf("the new list wasn't kept: %d books", len(c.homePop))
 	}
 
-	// No internet: the old list stays.
+	// No internet: the old list stays. The server is closed without drawMu: a request still on
+	// its way (a background load) takes drawMu in the fake server, and Close waits for it.
+	drawMu.Unlock()
 	f.srv.Close()
+	drawMu.Lock()
 	c.homePop, c.homePopAt = []*storeItem{keptBook(0, "")}, old
 	c.loadPopular()
 	drawMu.Unlock()
