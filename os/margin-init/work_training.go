@@ -110,6 +110,19 @@ var (
 
 // exerciseKey is exercise-key.ts: "Leg Extensions (Machine)" and "leg extension" meet.
 func exerciseKey(name string) string {
+	if k, ok := exKeys.Load(name); ok {
+		return k.(string)
+	}
+	k := exerciseKeyOf(name)
+	exKeys.Store(name, k)
+	return k
+}
+
+// exKeys keeps each name's key: the same few hundred names are keyed for every set drawn,
+// and five regular expressions a name were a good part of the Training page's time.
+var exKeys sync.Map
+
+func exerciseKeyOf(name string) string {
 	s := strings.ToLower(name)
 	s = reParen.ReplaceAllString(s, "")
 	s = reDash.ReplaceAllString(s, " ")
@@ -205,23 +218,89 @@ func bodyweights() map[string]float64 {
 	return out
 }
 
-func nearestBW(bw map[string]float64, date string) float64 {
-	t, _ := time.Parse("2006-01-02", date)
-	best, gap := 0.0, math.Inf(1)
-	for d, w := range bw {
-		dt, _ := time.Parse("2006-01-02", d)
-		if g := math.Abs(dt.Sub(t).Hours()); g < gap {
-			best, gap = w, g
+// bwNear is the weight on the weigh-in nearest each date: the weigh-ins sorted once, each
+// date's answer kept. (It parsed every weigh-in for every bodyweight set; a year of them
+// was a good part of the Training page.) A tie goes to the earlier weigh-in.
+type bwNear struct {
+	days []string
+	w    map[string]float64
+	memo map[string]float64
+}
+
+func newBWNear(bw map[string]float64) *bwNear {
+	b := &bwNear{w: bw, memo: map[string]float64{}}
+	for d := range bw {
+		b.days = append(b.days, d)
+	}
+	sort.Strings(b.days)
+	return b
+}
+
+func (b *bwNear) at(date string) float64 {
+	if v, ok := b.memo[date]; ok {
+		return v
+	}
+	v := 0.0
+	if len(b.days) > 0 {
+		i := sort.SearchStrings(b.days, date)
+		switch {
+		case i < len(b.days) && b.days[i] == date:
+			v = b.w[date]
+		case i == 0:
+			v = b.w[b.days[0]]
+		case i == len(b.days):
+			v = b.w[b.days[i-1]]
+		default:
+			t, _ := time.Parse("2006-01-02", date)
+			lo, _ := time.Parse("2006-01-02", b.days[i-1])
+			hi, _ := time.Parse("2006-01-02", b.days[i])
+			if t.Sub(lo) <= hi.Sub(t) {
+				v = b.w[b.days[i-1]]
+			} else {
+				v = b.w[b.days[i]]
+			}
 		}
 	}
-	return best
+	b.memo[date] = v
+	return v
+}
+
+// trainingLogs keeps the last log built, while no record has changed (somaGen) and the
+// sheet is the same: every Training tab, the calendar and the library read it.
+var trainingLogs struct {
+	sync.Mutex
+	gen  int64
+	seed *seedFile
+	log  map[string]*exLog
 }
 
 // trainingLog is buildTrainingLog: the sheet, then the sessions, then the corrections.
+// Kept while nothing has changed; callers copy what they change (ldayv).
 func trainingLog() map[string]*exLog {
-	bw := bodyweights()
+	gen, seed := somaGen.Load(), loadSeed()
+	trainingLogs.Lock()
+	if trainingLogs.log != nil && trainingLogs.gen == gen && trainingLogs.seed == seed {
+		l := trainingLogs.log
+		trainingLogs.Unlock()
+		for _, f := range []string{"history/", "nutrition/", "logOverrides/"} {
+			soma.note(f) // what building it reads, for the kept pages (views.go)
+		}
+		return l
+	}
+	trainingLogs.Unlock()
+	l := buildTrainingLog(seed)
+	trainingLogs.Lock()
+	if somaGen.Load() == gen {
+		trainingLogs.gen, trainingLogs.seed, trainingLogs.log = gen, seed, l
+	}
+	trainingLogs.Unlock()
+	return l
+}
+
+func buildTrainingLog(seed *seedFile) map[string]*exLog {
+	bw := newBWNear(bodyweights())
 	by := map[string]*exLog{}
-	if seed := loadSeed(); seed != nil {
+	if seed != nil {
 		for _, e := range seed.Exercises {
 			l := &exLog{Name: e.Name, Key: exerciseKey(e.Name), Muscle: e.Key, Group: e.Group, BW: e.BW, Days: map[string][]lset{}, Src: map[string]int{}, Imp: map[string]bool{}}
 			for d, sets := range e.Days {
@@ -235,7 +314,7 @@ func trainingLog() map[string]*exLog {
 					}
 					w, added := get(0), get(0)
 					if e.BW {
-						w = nearestBW(bw, d) + added
+						w = bw.at(d) + added
 					}
 					out = append(out, lset{W: w, Reps: get(1), Fail: get(2), BW: e.BW, Added: added, Src: -1})
 				}
@@ -253,7 +332,7 @@ func trainingLog() map[string]*exLog {
 				}
 				w := st.W
 				if ex.BW {
-					w = nearestBW(bw, s.Date) + st.W
+					w = bw.at(s.Date) + st.W
 				}
 				done = append(done, lset{W: w, Reps: st.Reps, Fail: max(0, st.Fail-3), BW: ex.BW, Added: st.W, Src: si})
 			}
@@ -321,6 +400,8 @@ type wkEx struct {
 	Targets      []string
 	BW, Axial    bool
 	Sets         []wkSet
+	Wrap         obj  // how it went (work_body.go), nil when nothing was said
+	Straps       bool // done with straps
 }
 
 type wkSess struct {
@@ -343,6 +424,8 @@ func parseSession(date string, o obj) wkSess {
 		ex := wkEx{Name: str(eo["name"]), Muscle: str(eo["muscle"])}
 		ex.BW, _ = eo["isBW"].(bool)
 		ex.Axial, _ = eo["isAxial"].(bool)
+		ex.Wrap, _ = eo["wrap"].(obj)
+		ex.Straps, _ = eo["straps"].(bool)
 		tk, _ := eo["targetKeys"].([]any)
 		for _, t := range tk {
 			ex.Targets = append(ex.Targets, str(t))
@@ -668,7 +751,8 @@ func (k *wk) trainingOverview(log map[string]*exLog, sessions []wkSess, days map
 		}
 	}
 	sort.Slice(ms, func(i, j int) bool { return this[ms[i]] > this[ms[j]] || this[ms[i]] == this[ms[j]] && ms[i] < ms[j] })
-	y := 840
+	// This week's coverage against each group's floor (work_body.go, smart-training.ts).
+	y := k.coverageCard(840, now) + 24
 	mc := image.Rect(wkX0, y, 652, y+96+56*max(min(len(ms), 10), 1))
 	k.card(mc)
 	k.cardHead(wkX0+28, y+44, "activity", "Sets by muscle", "· this week")
@@ -1068,7 +1152,12 @@ func (k *wk) session(date string, log map[string]*exLog) int {
 	k.small(box(3), "flame", "Burned", fmt.Sprintf("%.0f", s.Cals), "kcal", "estimated", wkFG)
 	y := 420
 	for xi, ex := range s.Ex {
-		cr := image.Rect(wkX0, y, wkX1, y+124+64*len(ex.Sets)+80)
+		note := strings.TrimSpace(str(ex.Wrap["note"]))
+		ch := y + 124 + 64*len(ex.Sets) + 80
+		if note != "" {
+			ch += 40
+		}
+		cr := image.Rect(wkX0, y, wkX1, ch)
 		k.card(cr)
 		k.text(wkFont("semi", 24), 188, y+48, wkFG, clip(wkFont("semi", 24), ex.Name, 640))
 		k.btn("wk:move:"+exerciseKey(ex.Name), k.R(wkX0, y, 860, y+90))
@@ -1112,6 +1201,19 @@ func (k *wk) session(date string, log map[string]*exLog) int {
 		lucideIcon(k.img, "plus", ar.Min.X+30, (ar.Min.Y+ar.Max.Y)/2, 22, wkMuted)
 		apText(k.img, wkFont("medium", 19), ar.Min.X+52, (ar.Min.Y+ar.Max.Y)/2+7, wkMuted, "Add a set")
 		k.btn(fmt.Sprintf("wk:addset:%s:%d", date, xi), ar)
+		// How it went, the phone's one line: "Off · Joint pain (Shoulder) · straps".
+		wr := k.R(480, ry+12, 1136, ry+60)
+		sum, col := wrapSummary(ex.Wrap, ex.Straps), wrapColour(ex.Wrap)
+		if sum == "" {
+			sum, col = "How did it go?", wkFaint
+		}
+		ui.RoundRect(k.img, wr, 12, rgb(0x191a21))
+		lucideIcon(k.img, "smile", wr.Min.X+30, (wr.Min.Y+wr.Max.Y)/2, 22, col)
+		apText(k.img, wkFont("medium", 19), wr.Min.X+52, (wr.Min.Y+wr.Max.Y)/2+7, col, clip(wkFont("medium", 19), sum, wr.Dx()-70))
+		k.btn(fmt.Sprintf("wk:sheet-open:hwrap:%s:%d", date, xi), wr)
+		if note != "" {
+			k.text(wkFont("regular", 18), 190, ry+92, wkText2, clip(wkFont("regular", 18), "“"+note+"”", 940))
+		}
 		y = cr.Max.Y + 20
 	}
 	k.boxBtn("wk:type-open:addex:"+date, wkX0, y, wkX1, y+70, "plus", "Add an exercise", wkLime, wkOnLime)
@@ -1305,6 +1407,14 @@ func init() {
 			{id: "wk:move:" + exerciseKey(str(eo["name"])), label: "Its history", icon: "trending-up"},
 			{id: "wk:addset:" + arg, label: "Add a set", icon: "plus"},
 		}}
+		w, _ := eo["wrap"].(obj)
+		straps, _ := eo["straps"].(bool)
+		how := wrapSummary(w, straps)
+		if how == "" {
+			how = "not said"
+		}
+		sh.rows = append(sh.rows, wkRow{id: "wk:sheet-open:hwrap:" + arg, label: "How it went", icon: "smile",
+			detail: clip(wkFont("regular", 20), how, 380)})
 		if xi > 0 {
 			sh.rows = append(sh.rows, wkRow{id: "wk:hexmove:" + arg + ":-1", label: "Move up", icon: "arrow-up"})
 		}

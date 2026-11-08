@@ -170,6 +170,11 @@ func (k *wk) evening() int {
 	k.iconBtn("wk:bcrea:5", "plus", 1000, cy, 26, wkLime, wkOnLime)
 	y = cr.Max.Y + 24
 
+	// What the body did outside the gym and what aches (work_body.go), then how today's
+	// exercises went: the phone's recovery map and smart training read both.
+	y = k.outsideAches(y, today) + 24
+	y = k.trainingToday(y, today) + 24
+
 	// Supplements taken today.
 	sups, taken := wkSupplements(), wkTaken(today)
 	cr = image.Rect(wkX0, y, wkX1, y+92+84*max(len(sups), 1))

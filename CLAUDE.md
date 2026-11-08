@@ -877,6 +877,25 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       hid that command from the tablet; TestClipboard now checks every fence has a title the
       tablet sees. TestDragTodo failed on Sundays (its to-do is "tomorrow" = next week).
       **Not yet verified on the tablet.**
+- [x] **Outside & aches, how each exercise went, weekly coverage; faster Training** (2026-11-08,
+      work_body.go, work_evening.go, work_training.go; mirrors Soma's training-feedback.ts and
+      smart-training.ts). Evening: "Outside & aches" (Today/Yesterday) logs activities on the
+      day's nutrition record as `activities: [{id, hours, effort}]` (the phone's ids: climbing,
+      hiking, running, football, swimming, cycling, combat; tap adds 2 h normal, ± 0.5 h,
+      Easy/Normal/Hard, x) and `aches: [{where, level}]` (8 joints; each tap niggle → sore →
+      hurts → none); "Training today" lists today's exercises with how each went. "How it went"
+      sheet (hwrap: from Evening, a session's card, and the exercise's ⋯ sheet) writes the
+      exercise's `wrap: {feel 1-3, held[], painAt[], note, at}` and `straps`, shown as the phone's
+      one line ("Off · Joint pain (Shoulder) · straps") plus the note on the session card.
+      Training > Overview: "This week's coverage" (Monday on): hard sets (done, not warm-up or
+      feeder) per group vs its floor (chest 8, shoulders 8, triceps 6, biceps 6, back 10, quads
+      8, hamstrings 6, calves 4, abs 4), core variants missed (e.g. triceps long head after
+      pushdowns only), groups at nothing, last week's misses. No somaFields change (history and
+      nutrition already synced). Speed (work_somaspeed_test.go, MARGIN_SPEED=1, a year of data):
+      trainingLog cached by somaGen + seed, exerciseKey memoised, bodyweight lookup sorted once
+      (was time.Parse over every weigh-in per set): Training tabs 25-44 ms → 9-24 ms on the PC,
+      library 89 → ~65 ms (the rest is the 42 MB canvas and the rotation blit). Tests:
+      work_body_test.go. **Not yet verified on the tablet.**
 - [-] microSD bind into Alpine: dropped (2026-11-01, the user doesn't use the microSD).
 
 **What's next: `docs/MARGIN-BACKLOG.md`** (the user's 20 answers of 2026-11-01, in batches).
