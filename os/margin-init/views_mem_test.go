@@ -10,6 +10,11 @@ import (
 // every page and screen had grown margin-init past a gigabyte on the tablet.
 func TestViewsMemoryBounded(t *testing.T) {
 	c := workAt(t, "overview")
+	// What earlier tests in this process left in the shared buffers (the turned page, kept
+	// pages, glyphs) isn't this test's: only what going through the pages adds counts.
+	runtime.GC()
+	var ms0 runtime.MemStats
+	runtime.ReadMemStats(&ms0)
 	views.Lock()
 	views.off = false
 	views.Unlock()
@@ -37,11 +42,11 @@ func TestViewsMemoryBounded(t *testing.T) {
 	views.Lock()
 	n, b := len(views.m), views.bytes
 	views.Unlock()
-	t.Logf("views %d, %d MB; live heap %d MB", n, b>>20, ms.HeapAlloc>>20)
+	t.Logf("views %d, %d MB; live heap %d MB (%d MB at the start)", n, b>>20, ms.HeapAlloc>>20, ms0.HeapAlloc>>20)
 	if b > viewMemBytes {
 		t.Fatalf("views hold %d MB, over their %d MB", b>>20, viewMemBytes>>20)
 	}
-	if ms.HeapAlloc > 320<<20 {
-		t.Fatalf("live heap %d MB after going through the pages", ms.HeapAlloc>>20)
+	if ms.HeapAlloc > ms0.HeapAlloc+300<<20 {
+		t.Fatalf("live heap %d MB after going through the pages (%d MB at the start)", ms.HeapAlloc>>20, ms0.HeapAlloc>>20)
 	}
 }

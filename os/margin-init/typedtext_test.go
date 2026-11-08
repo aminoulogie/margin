@@ -37,4 +37,5 @@ func TestTypedTextSameAsWholeBar(t *testing.T) {
 		c.somaKey([]byte(k))
 		check("bar, after " + k)
 	}
+	c.somaUI.typing, c.skb.visible = false, false // no page drawn after the pause, in the next test
 }

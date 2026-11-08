@@ -152,16 +152,17 @@ func (c *console) fieldTyped() {
 	if c.composing() {
 		return
 	}
-	gen := c.typeGen
+	gen, tries := c.typeGen, 0
 	var try func()
 	try = func() {
 		time.AfterFunc(typeBarPause, func() {
 			drawMu.Lock()
 			defer drawMu.Unlock()
-			if gen != c.typeGen || !c.screenOn {
-				return
+			if _, typing := c.pageTyping(); gen != c.typeGen || !c.screenOn || !typing {
+				return // typed again (that key waits instead), or done: the page is drawn then
 			}
-			if time.Since(c.lastInput) < typeBarPause || len(c.skb.pressed) > 0 { // still typing: later
+			tries++
+			if (time.Since(c.lastInput) < typeBarPause || len(c.skb.pressed) > 0) && tries < 20 { // still typing: later
 				try()
 				return
 			}
