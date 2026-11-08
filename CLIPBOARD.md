@@ -8,18 +8,19 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Playbox: how long Torrentio takes to answer
+## Playbox: why Torrentio and Knightcrawler won't install
 ```send
-for id in movie/tt0077651 movie/tt0111161 series/tt0903747:1:1; do
-  curl -s -m 60 -o /tmp/t.json -w "$id: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/$id.json
-  jq '.streams|length' /tmp/t.json 2>/dev/null || echo "no list"
+UA="margin-books/1.0 (Condor TRA-901G tablet reader)"
+for u in https://torrentio.strem.fun/manifest.json https://knightcrawler.elfhosted.com/manifest.json; do
+  echo "--- $u, as Margin asks"
+  curl -s -m 30 -A "$UA" -o /tmp/man.json -w "HTTP %{http_code} · %{time_total}s · type %{content_type}\n" $u
+  head -c 200 /tmp/man.json; echo
+  echo "--- same, following redirects"
+  curl -s -L -m 30 -A "$UA" -o /tmp/man.json -w "HTTP %{http_code} · ended at %{url_effective}\n" $u
+  head -c 200 /tmp/man.json; echo
 done
-echo "--- same, with a browser's name"
-curl -s -m 60 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" -o /tmp/t.json -w "movie/tt0109830: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/movie/tt0109830.json
-jq '.streams|length' /tmp/t.json 2>/dev/null || head -c 200 /tmp/t.json
-echo "--- a second time (cached?)"
-curl -s -m 60 -o /tmp/t.json -w "movie/tt0077651: HTTP %{http_code} in %{time_total}s · " https://torrentio.strem.fun/stream/movie/tt0077651.json
-jq '.streams|length' /tmp/t.json 2>/dev/null || echo "no list"
+echo "--- Margin's log"
+grep -E "playbox: (installing|add-on)|proxy:" /proc/1/root/data/condor/init.log | tail -12
 ```
 
 ## Playbox: why video stops after the sound error

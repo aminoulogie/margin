@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -756,6 +757,7 @@ func (as *addonStore) install(input string) error {
 	as.mu.Lock()
 	as.busy = ""
 	if err != nil {
+		log.Printf("playbox: installing %s: %v", base, err)
 		as.msg = u.Host + ": " + shortErr(err)
 		as.mu.Unlock()
 		as.notify()
