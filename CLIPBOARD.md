@@ -8,43 +8,6 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Sound 16: is Android's media server holding the speaker
-```send
-F=/tmp/t440.wav
-[ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
-A=/system/bin/alsa_amixer
-R=/proc/1/root
-I=$(pidof condor-init | cut -d' ' -f1)
-W=$(tr '\0' '\n' </proc/$I/environ | grep ANDROID_PROPERTY_WORKSPACE)
-prop(){ env $W chroot $R /system/bin/$1 $2 $3; }
-holders(){ for p in /proc/[0-9]*; do l=$(ls -l $p/fd 2>/dev/null | grep -E "/dev/(snd|intel_sst)" | sed 's/.*-> //' | tr '\n' ' '); [ -n "$l" ] && echo "  $(basename $p) $(tr '\0' ' ' <$p/cmdline | cut -c1-50): $l"; done; }
-tone(){ (sleep 1; grep -E "state|hw_ptr" /proc/asound/card4/pcm0p/sub0/status | tr '\n' ' '; echo; sleep 2; grep hw_ptr /proc/asound/card4/pcm0p/sub0/status) & timeout 7 /system/bin/alsa_aplay -q -D plughw:4,0 $F >/dev/null 2>&1; echo "  aplay exit $? (0 = played the whole tone)"; wait; }
-echo "--- Android services"
-prop getprop | grep -E "init.svc.(media|audio|drm|zygote)"
-echo "--- who has the sound devices open"
-holders
-echo "--- every sound stream on the chip"
-for f in /proc/asound/card4/pcm*/sub*/status; do echo "$f: $(head -1 $f)"; done
-echo "=== A: speaker mixer on PCM only (1), media server running"
-$A -q -c 4 cset name='LPE IHF mixer' 1
-tone
-echo "=== B: media server stopped, mixer Mixed (3)"
-prop setprop ctl.stop media
-sleep 2
-M=$(pidof mediaserver)
-[ -n "$M" ] && { echo "  still running ($M): killing it"; kill $M; sleep 1; }
-echo "  media: $(prop getprop init.svc.media)"
-holders
-$A -q -c 4 cset name='LPE IHF mixer' 3
-tone
-echo "=== C: media server stopped, mixer PCM only (1)"
-$A -q -c 4 cset name='LPE IHF mixer' 1
-tone
-$A -q -c 4 cset name='LPE IHF mixer' 3
-echo "--- sound kernel messages"
-dmesg | grep -i -E "sst|lpe|clk0|OSC_CLK|cs42|asoc" | tail -15
-```
-
 ## Playbox: why video stops after the sound error
 ```send
 L=/proc/1/root/data/condor/init.log

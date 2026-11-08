@@ -109,3 +109,28 @@ func TestSoundRouteCloverview(t *testing.T) {
 		t.Fatalf("headphones:\n%s", b)
 	}
 }
+
+// Android's media server holds an idle stream on the chip that stalls every sound: Margin stops
+// it once, with setprop ctl.stop media (sound_media.go).
+func TestStopAndroidMedia(t *testing.T) {
+	dir := t.TempDir()
+	calls := dir + "/calls"
+	fake := dir + "/setprop"
+	os.WriteFile(fake, []byte("#!/bin/sh\necho \"$*\" >> "+calls+"\n"), 0o755)
+	oldSet, oldPids := androidSetprop, mediaServerPids
+	androidSetprop = fake
+	mediaServerPids = func() []int {
+		if _, err := os.Stat(calls); err == nil {
+			return nil // stopped once setprop ran
+		}
+		return []int{144}
+	}
+	mediaStopOnce = sync.Once{}
+	t.Cleanup(func() { androidSetprop, mediaServerPids, mediaStopOnce = oldSet, oldPids, sync.Once{} })
+	stopAndroidMedia()
+	stopAndroidMedia() // once only
+	b, _ := os.ReadFile(calls)
+	if string(b) != "ctl.stop media\n" {
+		t.Fatalf("setprop calls: %q", b)
+	}
+}

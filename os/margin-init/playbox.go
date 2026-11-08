@@ -40,9 +40,9 @@ type pbUI struct {
 	results     []pbSection
 	searching   bool
 	searchErr   string
-	searchStop  context.CancelFunc // cancels the search still asking when a newer one starts
+	searchStop  context.CancelFunc     // cancels the search still asking when a newer one starts
 	searchMemo  map[string][]pbSection // finished searches, so typing back or repeating is instant
-	gen         int // bumped by each load: late answers to replaced loads are dropped: late answers to replaced loads are dropped
+	gen         int                    // bumped by each load: late answers to replaced loads are dropped: late answers to replaced loads are dropped
 	typing      bool
 	field       string // "search", "addonurl", "addonfind"
 	editing     string

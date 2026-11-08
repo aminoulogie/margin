@@ -718,11 +718,24 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       = two DSP streams allocated by someone else, almost certainly Android's media server (the hook
       stops only zygote + bootanim; class main services like `media` keep running). With the mixer
       on Mixed, a stream that is allocated but never fed can hold the mix after the first block.
-      Next: Clipboard "Sound 16" (who has /dev/snd open, then the tone with mixer=PCM, with media
+      Done: see the FIXED bullet below. Was: Clipboard "Sound 16" (who has /dev/snd open, then the tone with mixer=PCM, with media
       stopped + Mixed, with media stopped + PCM). Android props from the Alpine shell: env
       ANDROID_PROPERTY_WORKSPACE from /proc/<condor-init>/environ + `chroot /proc/1/root
       /system/bin/setprop|getprop`. If stopping media fixes it, setupSound runs
       `/system/bin/setprop ctl.stop media` once (margin-init already runs setprop directly).
+- [x] **Playbox sound FIXED (2026-11-08, Sound 16, margin-results 17:50): Android's media server
+      was the stall.** `/system/bin/mediaserver` (init service `media`, still running under Margin)
+      holds `/dev/snd/pcmC4D6p` open, state PREPARED, never started. With 'LPE IHF mixer' on Mixed
+      (3) the DSP mixer waits on it after the first block (the hw_ptr 6000 stall). Results: mixer on
+      PCM (1) with media running: tone played to the end (hw_ptr 48000 at 3 s, aplay exit 0); media
+      stopped + Mixed: played; media stopped + PCM: played. dmesg: stopping media closed its stream,
+      so OSC_CLK_AUDIO went off and came back on at the next stream (clk0 mode 0x20). After the test
+      (media left stopped) the Playbox Settings output chime was audible; the user heard nothing
+      during the three tones themselves (not explained; maybe the speaker gain, check if it recurs).
+      Fix: sound_media.go stopAndroidMedia(), once per boot from setupSound before the route on the
+      tablet's own chip: `/system/bin/setprop ctl.stop media`, waits up to 3 s, kills it if still
+      there. Test: TestStopAndroidMedia. The mixer stays on Mixed (Android's own value). If sound
+      stalls again, first check `ls -l /proc/*/fd | grep snd` for another holder.
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for

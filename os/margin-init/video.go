@@ -1897,6 +1897,7 @@ func setupSound() {
 		card = strings.Split(d, ",")[0]
 	}
 	if card == soundCardNo() && cloverviewCard() { // the tablet's own chip: Android's routes
+		stopAndroidMedia() // its idle stream stalls every sound (sound_media.go)
 		if err := routeCloverview(card, d == soundHeadphones); err != nil {
 			log.Printf("playbox: sound route on card %s: %v", card, err)
 		} else {
