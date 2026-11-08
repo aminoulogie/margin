@@ -919,6 +919,11 @@ func (c *console) videoPrepare(v *videoPlayer) {
 	}
 	// The torrent starts here, not when the source was tapped: starting the client and adding
 	// the magnet can take seconds, and the player is already on screen meanwhile.
+	if j := v.req.job; j != nil && v.req.src != nil && engine.jobDead(j) {
+		drawMu.Lock()
+		v.req.job = nil // closed under us (a page left, an earlier film's drop): start it again
+		drawMu.Unlock()
+	}
 	if v.req.job == nil && v.req.src != nil {
 		if !set("torrent", "") {
 			return
@@ -1015,6 +1020,41 @@ func (c *console) videoPrepare(v *videoPlayer) {
 		return
 	}
 	p, err := probeVideo(v.ctx, url)
+	// A torrent read can fail at the start (its data still arriving, the torrent closed and
+	// opened again): try again a few times before saying the film can't be played.
+	for try := 1; err != nil && j != nil && try <= 3 && v.ctx.Err() == nil; try++ {
+		log.Printf("playbox: reading the film failed (%v): try %d again", err, try)
+		if !set("probing", fmt.Sprintf("Trying again (%d of 3)…", try)) {
+			return
+		}
+		select {
+		case <-v.ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		if engine.jobDead(j) && v.req.src != nil {
+			nj, serr := engine.start(v.req.src, false, "", v.req.item)
+			if serr != nil {
+				err = serr
+				break
+			}
+			drawMu.Lock()
+			if c.vid != v {
+				drawMu.Unlock()
+				engine.stopPlay(nj)
+				return
+			}
+			j, v.req.job = nj, nj
+			drawMu.Unlock()
+			for st := engine.status(j); st.State == "resolving" && v.ctx.Err() == nil; st = engine.status(j) {
+				time.Sleep(300 * time.Millisecond)
+			}
+			if url, err = engine.streamURL(j, "", ""); err != nil {
+				break
+			}
+		}
+		p, err = probeVideo(v.ctx, url)
+	}
 	if v.ctx.Err() != nil {
 		return
 	}
@@ -1801,7 +1841,7 @@ func (c *console) videoOverlay() []*ovPart {
 		tr := c.videoTrack().Sub(image.Pt(0, H-200))
 		ovRound(bot.img, tr, 7, color.RGBA{255, 255, 255, 70})
 		if j := v.req.job; j != nil && dur > 0 { // how much of the torrent is here
-			if st := engine.status(j); st.Size > 0 {
+			if st := engine.shownStatus(j); st.Size > 0 {
 				w := int(float64(tr.Dx()) * float64(st.Done) / float64(st.Size))
 				ovRound(bot.img, image.Rect(tr.Min.X, tr.Min.Y, tr.Min.X+max(w, 14), tr.Max.Y), 7, color.RGBA{255, 255, 255, 110})
 			}

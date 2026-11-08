@@ -177,3 +177,55 @@ func TestTorrentDownloadGoesToMovies(t *testing.T) {
 		t.Fatalf("local file served %d bytes", len(b))
 	}
 }
+
+// Screens read a job's status from the copy its poller keeps (never waiting on the torrent
+// client), and closing a film and playing it again at once gives a torrent that streams.
+func TestTorrentShownStatusAndReplay(t *testing.T) {
+	testEngine(t)
+	src, seeder, data := seedFilm(t)
+	j, err := engine.start(src, false, "", metaItem{ID: "tt1254207", Type: "movie", Name: "Big Buck Bunny"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.t.AddClientPeer(seeder)
+	waitState(t, j, "ready", 20*time.Second)
+	deadline := time.Now().Add(5 * time.Second)
+	for engine.shownStatus(j).Size != int64(len(data)) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the kept status never got the film's size: %+v", engine.shownStatus(j))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t0 := time.Now()
+	for i := 0; i < 100; i++ {
+		engine.shownStatus(j)
+	}
+	if d := time.Since(t0); d > 50*time.Millisecond {
+		t.Fatalf("100 reads of the kept status took %v", d)
+	}
+	// Close it (dropped in the background) and play it again straight away.
+	engine.stopPlay(j)
+	if !engine.jobDead(j) {
+		t.Fatal("a stopped job isn't dead")
+	}
+	j2, err := engine.start(src, false, "", metaItem{ID: "tt1254207", Type: "movie", Name: "Big Buck Bunny"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j2.t.AddClientPeer(seeder)
+	waitState(t, j2, "ready", 20*time.Second)
+	u, err := engine.streamURL(j2, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !bytes.Equal(got, data) {
+		t.Fatalf("replay streamed %d bytes, want the whole film (%d)", len(got), len(data))
+	}
+	engine.stopPlay(j2)
+}

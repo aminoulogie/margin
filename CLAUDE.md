@@ -758,6 +758,21 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       tablet (likely the 9 MB write of every frame to the panel).
       Also fixed a test race: TestHomeOldRowsRefreshedInBackground closed its fake server while
       holding drawMu (Close waits for a request that takes drawMu): it hung the suite now and then.
+- [x] **Playbox: spinner every 2 s, "Input/output error" on a replay (2026-11-08, user's photos).**
+      Spinner: drawing the loading text and the timeline called engine.status under drawMu, and
+      status takes the torrent client's lock (t.Stats, BytesCompleted), held for seconds while peers
+      connect or a torrent is dropped (Drop keeps the client lock for the whole close). Now every
+      job has a poller (pollStatus, 4 a second, outside any lock) and all drawing reads its kept
+      copy (engine.shownStatus): the player, the source rows and the downloads list. Found by the
+      race detector on the way: status wrote one shared j.stats from two goroutines; each call has
+      its own heap copy now (alignment for 386 atomics kept).
+      Error: ffprobe read http://127.0.0.1:<port>/t/<hash>/0 and got "Input/output error" = the
+      stream was cut mid-body (serveTorrent's reader failed, e.g. the torrent closed under it). Cause
+      not confirmed (no tablet log yet: Clipboard "Playbox: why a film said Input/output error").
+      Made robust: pbPlay always keeps req.src; videoPrepare starts the source again if its job is
+      dead (engine.jobDead: stopped, failed or t.Closed()), and a failed read is tried again 3 times,
+      2 s apart, restarting a dead torrent ("Trying again (n of 3)…" on the loading screen).
+      Test: TestTorrentShownStatusAndReplay (kept status, close then play the same torrent at once).
 - [x] **Freeze on removing an add-on FIXED (2026-11-08):** the pb:uninstall tap runs under drawMu;
       addons.remove → notify → the changed callback (playboxPage) took drawMu again = deadlock,
       Margin frozen for good (the remove itself was saved first). notify now runs the callback in

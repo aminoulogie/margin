@@ -75,10 +75,11 @@ type tjob struct {
 	state    string // "resolving", "ready" (playing), "downloading", "saved", "failed", "stopped"
 	err      string
 	saved    string // where a download went
-	stats    *torrent.TorrentStats
 	lastRead int64
 	lastAt   time.Time
 	speed    float64
+	shown    tstatus // the latest status, kept by pollStatus for the screens (under e.mu)
+	hasShown bool
 }
 
 // tstatus is what the screens show about a job.
@@ -218,11 +219,12 @@ func (e *torrentEngine) start(src *addonStream, download bool, name string, meta
 		idx = *src.FileIdx
 	}
 	j := &tjob{key: src.key(), hash: hash, t: t, fileIdx: idx, download: download, name: name, meta: meta,
-		started: time.Now(), state: "resolving", stats: new(torrent.TorrentStats)}
+		started: time.Now(), state: "resolving"}
 	e.mu.Lock()
 	e.jobs[hash] = j
 	e.mu.Unlock()
 	go e.run(j)
+	go e.pollStatus(j)
 	go boostTorrent(t, hash)
 	return j, nil
 }
@@ -508,9 +510,12 @@ func (e *torrentEngine) status(j *tjob) tstatus {
 	f, t := j.file, j.t
 	e.mu.Unlock()
 	if st.State != "saved" && st.State != "stopped" {
-		*j.stats = t.Stats() // j.stats is on the heap: its counters are aligned for 386's atomics
-		st.Peers, st.Seeds, st.All = j.stats.ActivePeers, j.stats.ConnectedSeeders, j.stats.TotalPeers
-		read := j.stats.BytesReadUsefulData.Int64()
+		// Each call its own copy (status is called from the poller and others at once), on the
+		// heap: its counters are aligned for 386's atomics.
+		stats := new(torrent.TorrentStats)
+		*stats = t.Stats()
+		st.Peers, st.Seeds, st.All = stats.ActivePeers, stats.ConnectedSeeders, stats.TotalPeers
+		read := stats.BytesReadUsefulData.Int64()
 		e.mu.Lock()
 		// The speed, measured every quarter second (the loading screen shows it live), smoothed.
 		if now := time.Now(); j.lastAt.IsZero() || now.Sub(j.lastAt) >= 250*time.Millisecond {
@@ -531,6 +536,56 @@ func (e *torrentEngine) status(j *tjob) tstatus {
 		}
 	} else if t != nil {
 		st.Name = t.Name()
+	}
+	return st
+}
+
+// pollStatus keeps a job's status fresh for the screens, four times a second. Reading it takes
+// the torrent client's lock, which can be held for seconds while peers connect or another
+// torrent is dropped; a screen that asked under drawMu froze with it (the player's spinner
+// moved once every 2 s, 2026-11-08). Screens read the kept copy (shownStatus) instead.
+func (e *torrentEngine) pollStatus(j *tjob) {
+	for {
+		st := e.status(j)
+		e.mu.Lock()
+		j.shown, j.hasShown = st, true
+		done := j.state == "stopped" || j.state == "failed" || j.state == "saved"
+		e.mu.Unlock()
+		if done {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// jobDead: the job's torrent can't be read any more (stopped, failed, or closed).
+func (e *torrentEngine) jobDead(j *tjob) bool {
+	e.mu.Lock()
+	st := j.state
+	e.mu.Unlock()
+	if st == "stopped" || st == "failed" {
+		return true
+	}
+	select {
+	case <-j.t.Closed():
+		return true
+	default:
+		return false
+	}
+}
+
+// shownStatus is a job's status for drawing: the copy pollStatus keeps (never waits on the
+// torrent client), with the job's own state and elapsed time up to date.
+func (e *torrentEngine) shownStatus(j *tjob) tstatus {
+	if j == nil {
+		return tstatus{}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	st := j.shown
+	st.State, st.Err, st.Saved, st.Elapsed = j.state, j.err, j.saved, time.Since(j.started)
+	if !j.hasShown && j.file != nil {
+		st.Name = j.file.DisplayPath()
 	}
 	return st
 }

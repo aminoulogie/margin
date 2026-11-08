@@ -136,7 +136,7 @@ func (c *console) loadingInfo(now time.Time) (status, big string, lines []string
 	v := c.vid
 	var st tstatus
 	if v.req.job != nil {
-		st = engine.status(v.req.job)
+		st = engine.shownStatus(v.req.job)
 	}
 	peers := func() string {
 		return fmt.Sprintf("%d connected · %d seeders · %d known", st.Peers, st.Seeds, st.All)
@@ -179,6 +179,7 @@ func (c *console) loadingInfo(now time.Time) (status, big string, lines []string
 		}
 	case "probing":
 		status = "Reading the film's details"
+		add(v.msg) // "Trying again (1 of 3)…" after a failed read
 		add(got())
 		if v.req.job != nil {
 			add(peers())

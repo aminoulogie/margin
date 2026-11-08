@@ -1280,7 +1280,7 @@ func (c *console) pbSourceRow(p *page, d *pbDetail, s *addonStream, y int) int {
 	status, statusCol := "", apBlue
 	switch {
 	case j != nil:
-		st := engine.status(j)
+		st := engine.shownStatus(j)
 		status = torrentLine(st, j.download)
 		if st.State == "failed" {
 			statusCol = apRed
@@ -1331,10 +1331,10 @@ func (c *console) pbSourceRow(p *page, d *pbDetail, s *addonStream, y int) int {
 	p.buttons = append(p.buttons, button{"pb:play:" + idx, pr})
 	dr := image.Rect(r.Max.X-110, cy-50, r.Max.X-10, cy+50)
 	switch {
-	case (j != nil && j.download && engine.status(j).State != "saved" && engine.status(j).State != "failed") || (dl != nil && dl.running()):
+	case (j != nil && j.download && engine.shownStatus(j).State != "saved" && engine.shownStatus(j).State != "failed") || (dl != nil && dl.running()):
 		iconCircleButton(img, dr, apRed, "stop")
 		p.buttons = append(p.buttons, button{"pb:stop:" + idx, dr})
-	case (j != nil && engine.status(j).State == "saved") || (dl != nil && dl.done()):
+	case (j != nil && engine.shownStatus(j).State == "saved") || (dl != nil && dl.done()):
 		iconCircleButton(img, dr, rgb(0x34c759), "check")
 	default:
 		iconCircleButton(img, dr, apCard2, "down")
@@ -1484,7 +1484,7 @@ func (c *console) pbLibraryPage() *page {
 	if len(running)+len(httpRunning) > 0 {
 		section("Downloading")
 		for _, j := range running {
-			st := engine.status(j)
+			st := engine.shownStatus(j)
 			name := j.name
 			if name == "" {
 				name = st.Name
@@ -2185,10 +2185,11 @@ func (c *console) pbPlay(d *pbDetail, s *addonStream) {
 	req.alts = alternatives(d.streams, s)
 	if u := s.playableURL(); u != "" {
 		req.direct = u
-	} else if j := engine.jobFor(s.key()); j != nil {
-		req.job = j // already running (warmed up, or downloading): no wait at all
 	} else {
-		req.src = s // the player starts it, off the screen's lock: it opens at once
+		req.src = s // the player starts it, off the screen's lock (and again if it dies)
+		if j := engine.jobFor(s.key()); j != nil {
+			req.job = j // already running (warmed up, or downloading): no wait at all
+		}
 	}
 	c.openVideo(req)
 }

@@ -91,13 +91,18 @@ slow came from breaking one of these rules. Measure on the PC (`go test -bench`,
 8. **Memory**: 2 GB, 32-bit, `SetMemoryLimit(400 MB)`. Keep caches bounded (views 112 MB,
    kept terminal lines a few screens, covers 48 MB); reuse big buffers instead of allocating
    per frame.
-9. **Never take drawMu in a callback that may run under drawMu** (it froze Margin for good once:
+9. **Never wait on anything slow while drawing (under drawMu)**: no network, no disk scans, and
+   never the torrent client (its lock is held for seconds while peers connect or a torrent is
+   dropped). Draw from kept copies refreshed in the background, e.g. `engine.shownStatus(j)`
+   (a poller keeps it), not `engine.status(j)` (2026-11-08: the player's spinner moved once
+   every 2 s because of it).
+10. **Never take drawMu in a callback that may run under drawMu** (it froze Margin for good once:
    addons remove). Hand it to a goroutine.
-10. **The panel shows ~60 frames a second at most** (vsync-paced): asked for "160 fps", say so
+11. **The panel shows ~60 frames a second at most** (vsync-paced): asked for "160 fps", say so
     plainly and make every frame cost a few ms so all 60 are hit. Content that scrolls without
     end (the Planner's week, work_calweek.go) is kept as turned strips per item (day, line) and
     composed per frame; cache them bounded and prefetch neighbours when idle.
-11. Motion (animations + smooth scroll) is on by default; every animation is time-boxed
+12. Motion (animations + smooth scroll) is on by default; every animation is time-boxed
     (`c.frames`) and tests run with `animScale = 0`.
 
 ## 6. Look
