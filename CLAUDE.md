@@ -747,8 +747,16 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       requests hung (>20 s). Comet | ElfHosted: 403 even with a browser User-Agent; MediaFusion |
       ElfHosted: 200 with {"streams":[]}: both need a configured (personal) URL, so as installed
       they never give sources. thepiratebay-plus.strem.fun and torrentsdb.com: no answer;
-      knightcrawler/stremio-jackett on ElfHosted: redirects. Next: Clipboard "Playbox: how long
-      Torrentio takes to answer" (stream requests with a 60 s limit, browser UA, second try).
+      knightcrawler/stremio-jackett on ElfHosted: redirects.
+      Timing (margin-results 18:26): every Torrentio /stream request (3 films/series, browser UA,
+      a second try) ends HTTP 000 at exactly 33.0 s with curl -m 60: the connection is closed
+      with no answer while the manifest answers at once. margin-init's proxy has no timeout on
+      CONNECT tunnels, so it isn't Margin; it's on the way (Torrentio's origin or the network)
+      and can't be fixed on the tablet. Answer: add-ons set up on their own website (MediaFusion
+      P2P, no debrid: mediafusion.elfhosted.com/configure) give a long personal link; the phone
+      page (sendbooks.go) now has a "Playbox add-on" card: POST /playbox-addon {url} (same-origin
+      only) → addons.install (stremio:// ok; same manifest id replaces the installed one), toast
+      on the tablet, installed names listed on the card. Test: playbox_addon_phone_test.go.
 - [x] **Playbox faster + new loading screen (2026-11-08; user: "everything super fast, opening,
       ending, closing, double tapping, swiping; loading ring like the iPhone one, info updating
       every ms, no background behind the loading text, white on black, 20% smaller, more info").**
