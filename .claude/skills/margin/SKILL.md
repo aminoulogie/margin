@@ -88,7 +88,10 @@ slow came from breaking one of these rules. Measure on the PC (`go test -bench`,
 7. **Feedback at once**: buttons show pressed 70 ms after touch-down (press.go); a long press
    **lifts** what's under the finger (grows ~6% with a shadow, lift.go `liftAt`) before its
    menu, sheet or drag; tabs and the rail answer on touch-down (`instantTap`).
-8. **Memory**: 2 GB, 32-bit, `SetMemoryLimit(400 MB)`. Keep caches bounded (views 112 MB,
+8. **Memory**: 2 GB, 32-bit (~3 GB of address space for margin-init), `SetMemoryLimit(400 MB)`.
+   Never memory-map a big file (a film, a big archive): after a while there's no free stretch
+   that large ("cannot allocate memory"); read it in pieces (the torrent library runs with
+   TORRENT_STORAGE_DEFAULT_FILE_IO=classic for this). Keep caches bounded (views 112 MB,
    kept terminal lines a few screens, covers 48 MB); reuse big buffers instead of allocating
    per frame.
 9. **Never wait on anything slow while drawing (under drawMu)**: no network, no disk scans, and

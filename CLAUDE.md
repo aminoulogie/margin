@@ -767,8 +767,15 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       race detector on the way: status wrote one shared j.stats from two goroutines; each call has
       its own heap copy now (alignment for 386 atomics kept).
       Error: ffprobe read http://127.0.0.1:<port>/t/<hash>/0 and got "Input/output error" = the
-      stream was cut mid-body (serveTorrent's reader failed, e.g. the torrent closed under it). Cause
-      not confirmed (no tablet log yet: Clipboard "Playbox: why a film said Input/output error").
+      stream was cut mid-body. **Cause found (margin-results 20:38):** the torrent library's file
+      storage memory-maps each whole file by default; init.log: "error reading ... piece=0 ...
+      mapping file: cannot allocate memory" for Buddy (880 MB) and Obsession (998 MB). On the 32-bit
+      tablet a long-running margin-init has no 880 MB stretch of address space left, so it worked
+      only soon after a start. Fix: storage_io_linux.go: the library picks plain reads/writes when
+      TORRENT_STORAGE_DEFAULT_FILE_IO=classic is set before its init, so margin-init's daemon path
+      sets it and execs itself once (same pid; init.log "margin-init starting, pid N (torrent file
+      reads: classic)"). Tests: TestReexecForTorrentIO, TestTorrentIOClassicInChild (child
+      processes). The cache had 20 film folders (4 GB limit).
       Made robust: pbPlay always keeps req.src; videoPrepare starts the source again if its job is
       dead (engine.jobDead: stopped, failed or t.Closed()), and a failed read is tried again 3 times,
       2 s apart, restarting a dead torrent ("Trying again (n of 3)…" on the loading screen).

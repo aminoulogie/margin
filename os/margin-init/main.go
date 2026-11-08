@@ -98,8 +98,9 @@ func main() {
 			return
 		}
 	}
+	reexecForTorrentIO() // films read with plain file reads, not mapped (storage_io_linux.go)
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	log.Printf("margin-init starting, pid %d", os.Getpid())
+	log.Printf("margin-init starting, pid %d (torrent file reads: %s)", os.Getpid(), os.Getenv("TORRENT_STORAGE_DEFAULT_FILE_IO"))
 	// A 32-bit program on a 2 GB tablet: the collector works harder rather than let the heap
 	// grow past this (it had grown past a gigabyte, and the tablet froze). Soft: a heap that
 	// truly needs more still gets it.
