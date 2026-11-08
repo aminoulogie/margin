@@ -605,8 +605,8 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       and show as each source answers (pbRankSearch); a new search cancels the old (pb.searchStop);
       15 s timeout; finished searches kept in pb.searchMemo (40, only ones that reached the
       catalogs); Discover titles that match show at once as suggestions; search starts 400 ms after
-      the last key; return doesn't restart a search already running. **Written without Go on the
-      machine (not compiled or tested): if `update` fails to build, fix playbox.go first.**
+      the last key; return doesn't restart a search already running. Written without Go at first;
+      compiled (linux/386 too), vetted and the whole test suite passed on 2026-11-08.
 - [x] **Playbox sound, still silent (2026-11-07 findings, margin-results 20:15-20:19):**
       the route fix works (all 8 controls read back as set) and the codec path is fully powered
       while a tone plays (DAPM: ASP Playback/ASPIN/SPK Mixer/SPK DAC/SPK Amp/SPKLO Amp/IHFAMP_SD_N
@@ -694,6 +694,35 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       "Sound 15": the tone three times (baseline; osc_clk0 forced on; runtime_pm off) with hw_ptr, SSSR
       and DMA state each time, both knobs put back afterwards (they also reset on restart), then all
       card-4 controls. If a run plays, setupSound should do that step before every sound.
+- [x] **Playbox sound, 2026-11-08: read the real driver source; Sound 15 dropped, Sound 16 next.**
+      Source: the Clovertrail 3.4 kernel in trevd/android_kernel_samsung_santos10 (raw files on
+      raw.githubusercontent.com): sound/soc/mid-x86/ctp_rhb_cs42l73.c is this tablet's machine driver
+      (same DAI names, "Ext Spk", IHFAMP_SD_N), sst_platform.c, sst_platform_controls_ctp.c,
+      sst/intel_sst_*.c, drivers/platform/x86/intel_scu_ipcutil.c. What it settles:
+      (1) **the audio clock is on**: osc_clk0 reads the clk0 user mask; 0x20 = CLK0_MSIC (the machine
+      driver holds OSC_CLK_AUDIO 19.2 MHz while the card isn't in bias OFF). "set_clk0 request OFF for
+      Mode 0x1000" is only CLK0_QUERY (the debugfs read itself), not a clock change. So forcing
+      osc_clk0 (old Sound 15) can't help: removed from the Clipboard.
+      (2) The codec is the clock follower (SND_SOC_DAIFMT_CBS_CFS in the ASP hw_params): the DSP's SSP
+      makes BCLK/FS, matching the SSCR1 decode.
+      (3) **Correction to the Sound 14 reading:** SSSR 0xfedc also has RNE, RFL 15 and ROR (receive
+      FIFO full and overrun). A receive overrun needs frames clocked in, so the port most likely does
+      clock; the TX FIFO staying near full points at the firmware not consuming/feeding past its
+      first block rather than a dead clock (still a register decode, not proven).
+      (4) **'LPE IHF mixer' and 'LPE headset mixer' share ONE value** (sst_drv_ctx->device_input_mixer:
+      device | input). Setting either control sends it to the DSP, and on every stream allocation the
+      driver re-sends only the last one set ("setting pp param" = sst_send_lpe_mixer_algo_params). So
+      the route must set the wanted mixer LAST (cloverviewSpeaker sets only IHF: fine). Values:
+      0 None, 1 PCM, 2 Compressed, 3 Mixed.
+      (5) **New lead:** boot dmesg shows "setting pp param" twice at 16 s, before Margin plays anything
+      = two DSP streams allocated by someone else, almost certainly Android's media server (the hook
+      stops only zygote + bootanim; class main services like `media` keep running). With the mixer
+      on Mixed, a stream that is allocated but never fed can hold the mix after the first block.
+      Next: Clipboard "Sound 16" (who has /dev/snd open, then the tone with mixer=PCM, with media
+      stopped + Mixed, with media stopped + PCM). Android props from the Alpine shell: env
+      ANDROID_PROPERTY_WORKSPACE from /proc/<condor-init>/environ + `chroot /proc/1/root
+      /system/bin/setprop|getprop`. If stopping media fixes it, setupSound runs
+      `/system/bin/setprop ctl.stop media` once (margin-init already runs setprop directly).
 - [x] **Clipboard in the Terminal** (2026-10-29, clipboard.go, CLIPBOARD.md): first button of the
       shortcuts bar (both tabs, yellow); a panel over the keyboard lists CLIPBOARD.md's commands,
       fetched from raw.githubusercontent.com (cache-busting query) each time it opens, cached for
@@ -921,6 +950,16 @@ Update this checklist as things are done.
   the tablet, the code or the user's preferences, add it here (a status bullet or a rule) in the
   same session, and update the old bullet when a finding is replaced. Test results from
   margin-results go in as findings with their date. Don't wait to be asked.
+- **GitHub username changed (seen 2026-11-08):** the repos now live under `user445879785/` (margin,
+  margin-results, ...). GitHub redirects the old aminoulogie/ links for git, but some API tools need
+  the new owner name.
+- **Building in a cloud session without Go** (2026-11-08): `pip download --no-deps go-bin` gives a
+  Go toolchain wheel (unzip it, chmod +x go/bin/* and go/pkg/tool/*/*). proxy.golang.org and the
+  vanity hosts (golang.org/x, go.etcd.io, go.opentelemetry.io, lukechampine.com...) are blocked
+  there but GitHub git works: `tools/goproxy-from-github.py <dir> mod@ver...` builds a
+  GOPROXY=file://<dir>/goproxy mirror from the GitHub copies (adds the repo LICENSE to subdirectory
+  modules, as Go does, so go.sum still verifies). Then GOPROXY=file://<dir>/goproxy,direct
+  GOSUMDB=off GOFLAGS=-mod=mod go build/vet/test as usual.
 - Go code in `cli/` (Windows tool) and `os/` (tablet userspace). `gofmt`, `go vet` before commit.
 - The tablet is **32-bit (386)**: before pushing margin-init, `GOOS=linux GOARCH=386 go build` and
   `GOARCH=386 go test ./...` (a 1<<62 constant once broke the tablet's own `update` build).

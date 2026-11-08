@@ -8,129 +8,41 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Sound 15: hold the audio clock on and play the tone three ways
-```send
-L=/root/sound15.log
-D=/sys/kernel/debug
-S=$D/sst
-F=/tmp/t440.wav
-[ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
-mount -t debugfs none $D 2>/dev/null
-play() {
-  (timeout 6 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
-  sleep 2
-  grep -E "hw_ptr" /proc/asound/card4/pcm0p/sub0/status
-  grep -E "^ *(30|64):" /proc/interrupts
-  if grep -h "Audio ENGINE" $D/pmu_sss_states $D/mid_pmu_states 2>/dev/null | grep -q D0i0; then
-    grep -E "Reg: 0x8:" $S/fw_ssp_reg
-    grep -E "^(CTL1|CFG1|SAR1|DAR1):|Reg: 0x3a0:" $S/fw_dma_reg
-  fi
-  sleep 5
-}
-{
-echo "=== A: baseline"
-play
-echo "=== B: audio clock held on (osc_clk0)"
-echo "osc_clk0 before: $(cat $S/osc_clk0)"
-echo enable > $S/osc_clk0
-echo "osc_clk0 now: $(cat $S/osc_clk0)"
-play
-echo disable > $S/osc_clk0
-echo "=== C: sst runtime power management off"
-echo disable > $S/runtime_pm
-play
-echo enable > $S/runtime_pm
-echo "=== back to normal: runtime_pm $(cat $S/runtime_pm), osc_clk0 $(cat $S/osc_clk0)"
-echo "--- clock messages"
-dmesg | grep -E "set_clk0|OSC_CLK|snd_intel_sst" | tail -15
-echo "--- all sound card controls"
-/system/bin/alsa_amixer -c 4 controls 2>&1 | cut -c1-90
-} 2>&1 | tee $L
-```
-
-## Sound 12: Android's media route settings and the DSP side
-```send
-f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
-echo "--- Multimedia.IHF, Multimedia.Headset (lines 51-198)"
-sed -n '51,198p' $f | tr -s ' \t' ' '
-echo "--- AudioConfiguration (1165-1210)"
-sed -n '1165,1210p' $f | tr -s ' \t' ' '
-echo "--- LPE_Mixer + Ext_amp (2009-2110)"
-sed -n '2009,2110p' $f | tr -s ' \t' ' '
-mount -t debugfs none /sys/kernel/debug 2>/dev/null
-D=/sys/kernel/debug/asoc
-F=/tmp/t440.wav
-echo "--- debugfs top"
-ls /sys/kernel/debug | head -40
-(timeout 7 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
-sleep 3
-echo "--- DSP and DAI widgets while stalled"
-cd $D 2>/dev/null && grep -r -H "" platforms dais 2>/dev/null | grep -E ": On|: Off" | cut -c1-120 | head -60
-echo "--- kernel messages (no charger)"
-dmesg | grep -v smb347 | tail -30
-sleep 5
-```
-
-## Sound 11: what is powered while the speaker stalls
+## Sound 16: is Android's media server holding the speaker
 ```send
 F=/tmp/t440.wav
 [ -f $F ] || /usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
-mount -t debugfs none /sys/kernel/debug 2>&1 | tail -1
-D=/sys/kernel/debug/asoc
-echo "--- debugfs"
-ls $D 2>&1 | head -8
-echo "--- Android's route domains"
-f=/system/etc/parameter-framework/Settings/Audio/AudioConfigurableDomains.xml
-grep -n "<ConfigurableDomain Name=" $f | cut -c1-110 | head -50
-(timeout 7 /usr/bin/aplay -q -D plughw:4,0 $F >/dev/null 2>&1 &)
-sleep 3
-echo "--- chip while the tone is stalled"
-cat /proc/asound/card4/pcm0p/sub0/hw_params
-grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status
-echo "--- powered widgets"
-cd $D 2>/dev/null && grep -r -H "" . 2>/dev/null | grep "/dapm/" | grep -E ": On|: Off" | sed 's#^\./##' | cut -c1-110 | head -170
-sleep 5
-```
-
-## Sound 10: Android's aplay against Alpine's, same tone
-```send
-A=/system/bin/alsa_aplay
-F=/tmp/t440.wav
-/usr/bin/ffmpeg -loglevel error -y -f lavfi -i sine=frequency=440:duration=3 -ar 48000 -ac 2 $F
-ls -l $F
-echo "--- Android's aplay, 3 s tone"
-( sleep 1; echo "[1 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status; sleep 1; echo "[2 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status ) &
-timeout 8 $A -D plughw:4,0 $F >/tmp/a1.log 2>&1
-echo "android aplay exit $? (0 = played, 124 = hung)"
-tail -3 /tmp/a1.log
-wait
-echo "--- Alpine's aplay, same tone"
-( sleep 1; echo "[1 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status; sleep 1; echo "[2 s]"; grep -E "state|hw_ptr|appl_ptr" /proc/asound/card4/pcm0p/sub0/status ) &
-timeout 8 aplay -D plughw:4,0 $F >/tmp/a2.log 2>&1
-echo "alpine aplay exit $? (0 = played, 124 = hung)"
-tail -3 /tmp/a2.log
-wait
-echo "--- chip after"
-cat /proc/asound/card4/pcm0p/sub0/status
-dmesg | tail -8
-```
-
-## Sound 9: why the speaker stops taking sound
-```send
-L=/proc/1/root/data/condor/init.log
-echo "--- Margin's sound log"
-grep -E "playbox:.*(sound|route|stopped|aplay|mixer|chime)|aplay" $L | tail -30
-echo "--- sound programs (stat D = stuck in the driver)"
-ps -o pid,stat,args | grep -E "aplay|ffmpeg" | grep -v grep
-echo "--- chip state, twice, 2 s apart"
-cat /proc/asound/card4/pcm0p/sub0/status 2>&1
-sleep 2
-cat /proc/asound/card4/pcm0p/sub0/status 2>&1
-echo "--- route now"
 A=/system/bin/alsa_amixer
-for n in 'SPK Amp Switch' 'SPKLO Amp Switch' 'HP Amp Switch' 'LPE IHF mixer' 'ESL-ASP Mux' 'SPK-ASP Mux' 'IHFAMP_SD_N Switch'; do $A -c 4 cget name="$n" 2>&1 | grep -E "name=|: values="; done
-echo "--- kernel messages about sound"
-dmesg 2>&1 | grep -i -E "sst|lpe|cs42|snd|underrun|xrun|audio" | tail -25
+R=/proc/1/root
+I=$(pidof condor-init | cut -d' ' -f1)
+W=$(tr '\0' '\n' </proc/$I/environ | grep ANDROID_PROPERTY_WORKSPACE)
+prop(){ env $W chroot $R /system/bin/$1 $2 $3; }
+holders(){ for p in /proc/[0-9]*; do l=$(ls -l $p/fd 2>/dev/null | grep -E "/dev/(snd|intel_sst)" | sed 's/.*-> //' | tr '\n' ' '); [ -n "$l" ] && echo "  $(basename $p) $(tr '\0' ' ' <$p/cmdline | cut -c1-50): $l"; done; }
+tone(){ (sleep 1; grep -E "state|hw_ptr" /proc/asound/card4/pcm0p/sub0/status | tr '\n' ' '; echo; sleep 2; grep hw_ptr /proc/asound/card4/pcm0p/sub0/status) & timeout 7 /system/bin/alsa_aplay -q -D plughw:4,0 $F >/dev/null 2>&1; echo "  aplay exit $? (0 = played the whole tone)"; wait; }
+echo "--- Android services"
+prop getprop | grep -E "init.svc.(media|audio|drm|zygote)"
+echo "--- who has the sound devices open"
+holders
+echo "--- every sound stream on the chip"
+for f in /proc/asound/card4/pcm*/sub*/status; do echo "$f: $(head -1 $f)"; done
+echo "=== A: speaker mixer on PCM only (1), media server running"
+$A -q -c 4 cset name='LPE IHF mixer' 1
+tone
+echo "=== B: media server stopped, mixer Mixed (3)"
+prop setprop ctl.stop media
+sleep 2
+M=$(pidof mediaserver)
+[ -n "$M" ] && { echo "  still running ($M): killing it"; kill $M; sleep 1; }
+echo "  media: $(prop getprop init.svc.media)"
+holders
+$A -q -c 4 cset name='LPE IHF mixer' 3
+tone
+echo "=== C: media server stopped, mixer PCM only (1)"
+$A -q -c 4 cset name='LPE IHF mixer' 1
+tone
+$A -q -c 4 cset name='LPE IHF mixer' 3
+echo "--- sound kernel messages"
+dmesg | grep -i -E "sst|lpe|clk0|OSC_CLK|cs42|asoc" | tail -15
 ```
 
 ## Playbox: why video stops after the sound error
@@ -189,23 +101,6 @@ tail -25 $L
 echo "--- memory"
 grep -E "MemTotal|MemFree|MemAvailable|^Cached" /proc/meminfo
 P=$(pidof condor-init); [ -n "$P" ] && grep -E "VmRSS|VmPeak" /proc/$P/status
-```
-
-## Sound 8: switch the speaker on the way Android does, then play the chime
-```send
-A=/system/bin/alsa_amixer
-$A -q -c 4 cset name='SPK Amp Switch' on
-$A -q -c 4 cset name='SPKLO Amp Switch' on
-$A -q -c 4 cset name='HP Amp Switch' off
-$A -q -c 4 cset name='EAR Amp Switch' off
-$A -q -c 4 cset name='LPE IHF mixer' 3
-$A -q -c 4 cset name='ESL-ASP Mux' 1
-$A -q -c 4 cset name='SPK-ASP Mux' 0
-$A -q -c 4 cset name='IHFAMP_SD_N Switch' on
-echo "speaker route set; playing the chime"
-timeout 8 aplay -D plughw:4,0 /tmp/playbox-test.wav
-echo "aplay exit $?"
-cat /proc/asound/card4/pcm0p/sub0/status
 ```
 
 ## Update Margin from GitHub
