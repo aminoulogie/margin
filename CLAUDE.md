@@ -723,6 +723,27 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       ANDROID_PROPERTY_WORKSPACE from /proc/<condor-init>/environ + `chroot /proc/1/root
       /system/bin/setprop|getprop`. If stopping media fixes it, setupSound runs
       `/system/bin/setprop ctl.stop media` once (margin-init already runs setprop directly).
+- [x] **Playbox faster + new loading screen (2026-11-08; user: "everything super fast, opening,
+      ending, closing, double tapping, swiping; loading ring like the iPhone one, info updating
+      every ms, no background behind the loading text, white on black, 20% smaller, more info").**
+      video_loading.go: iOS activity indicator (12 tapered spokes, lit one steps every 83 ms = once
+      a second, ovSpinner/ovCapsule), plain white text on the black screen (no card), fonts at 80%
+      of apple()'s (loadingFonts), more info per state: status, big % with 2 decimals, "X of Y ·
+      speed · whole file in m:ss", connected/seeders/known peers, resolution/codec/fps/length and
+      "From" time once probed, a running "Elapsed 0:07.42", the file name; Close (and Try Again on
+      failure) as small dark capsules. The seeking spinner is the same indicator with a dark halo.
+      videoTicker now redraws every 33 ms while loading/seeking (never faster than twice the last
+      redraw's time, so touches get the screen), 250 ms otherwise; torrent speed sampled every
+      250 ms (was 1 s). One redraw of the loading screen: 4-8 ms on the PC.
+      Opening: pbPlay no longer starts the torrent under drawMu (client start + AddMagnet could
+      freeze the screen for seconds on the first film): req.src, started by videoPrepare; a job
+      already running for the source (warm/download) is used at once; the warm-up goroutine leaves
+      a job the player took alone. Closing: engine.stop drops the torrent in the background
+      (e.dropping[hash]; start() of the same hash waits for it, up to 10 s). Playbox/player page
+      push/pop slide 200 ms (durPushQuick) instead of 330. Tests: video_loading_test.go
+      (MARGIN_SHOTS=<dir> saves PNGs of every loading state). Not changed: row/page scrolling
+      (shared fastscroll machinery, already 33 ms frames) and double tap (immediate; the seek
+      restarts ffmpeg, which is the wait).
 - [x] **Playbox sound FIXED (2026-11-08, Sound 16, margin-results 17:50): Android's media server
       was the stall.** `/system/bin/mediaserver` (init service `media`, still running under Margin)
       holds `/dev/snd/pcmC4D6p` open, state PREPARED, never started. With 'LPE IHF mixer' on Mixed

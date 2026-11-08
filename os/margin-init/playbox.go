@@ -2185,14 +2185,10 @@ func (c *console) pbPlay(d *pbDetail, s *addonStream) {
 	req.alts = alternatives(d.streams, s)
 	if u := s.playableURL(); u != "" {
 		req.direct = u
+	} else if j := engine.jobFor(s.key()); j != nil {
+		req.job = j // already running (warmed up, or downloading): no wait at all
 	} else {
-		j, err := engine.start(s, false, "", it)
-		if err != nil {
-			d.errs[s.key()] = err.Error()
-			c.showPage()
-			return
-		}
-		req.job = j
+		req.src = s // the player starts it, off the screen's lock: it opens at once
 	}
 	c.openVideo(req)
 }
@@ -2278,6 +2274,9 @@ func (c *console) pbPrewarm(d *pbDetail) {
 		d.warming = false
 		if err != nil {
 			return
+		}
+		if v := c.vid; v != nil && (v.req.job == j || v.req.src != nil && v.req.src.key() == s.key()) {
+			return // the player opened this same source meanwhile: it's the player's now
 		}
 		if c.pb.sel != d || d.warm != nil {
 			engine.stopPlay(j)

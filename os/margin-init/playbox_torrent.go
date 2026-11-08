@@ -49,8 +49,11 @@ type torrentEngine struct {
 	mu   sync.Mutex
 	cl   *torrent.Client
 	jobs map[string]*tjob // by info hash
-	addr string           // the media server: 127.0.0.1:port
-	srv  *http.Server
+	// dropping: torrents being dropped in the background (closing a film doesn't wait for it);
+	// starting the same torrent again waits for its drop first.
+	dropping map[string]chan struct{}
+	addr     string // the media server: 127.0.0.1:port
+	srv      *http.Server
 }
 
 var engine = &torrentEngine{jobs: map[string]*tjob{}}
@@ -197,7 +200,14 @@ func (e *torrentEngine) start(src *addonStream, download bool, name string, meta
 		e.mu.Unlock()
 		return j, nil
 	}
+	wait := e.dropping[hash]
 	e.mu.Unlock()
+	if wait != nil { // this torrent was just closed: let its drop finish first
+		select {
+		case <-wait:
+		case <-time.After(10 * time.Second):
+		}
+	}
 	go e.cleanCache(hash)
 	t, err := cl.AddMagnet(magnet)
 	if err != nil {
@@ -425,8 +435,23 @@ func (e *torrentEngine) stop(j *tjob) {
 	if e.jobs[j.hash] == j {
 		delete(e.jobs, j.hash)
 	}
+	// Dropping closes every peer connection and can take a second or more: in the background,
+	// so closing a film is instant.
+	done := make(chan struct{})
+	if e.dropping == nil {
+		e.dropping = map[string]chan struct{}{}
+	}
+	e.dropping[j.hash] = done
 	e.mu.Unlock()
-	j.t.Drop()
+	go func() {
+		j.t.Drop()
+		e.mu.Lock()
+		if e.dropping[j.hash] == done {
+			delete(e.dropping, j.hash)
+		}
+		e.mu.Unlock()
+		close(done)
+	}()
 }
 
 // stopPlay ends a job that was only played (a download carries on).
@@ -487,9 +512,10 @@ func (e *torrentEngine) status(j *tjob) tstatus {
 		st.Peers, st.Seeds, st.All = j.stats.ActivePeers, j.stats.ConnectedSeeders, j.stats.TotalPeers
 		read := j.stats.BytesReadUsefulData.Int64()
 		e.mu.Lock()
-		if now := time.Now(); j.lastAt.IsZero() || now.Sub(j.lastAt) >= time.Second {
+		// The speed, measured every quarter second (the loading screen shows it live), smoothed.
+		if now := time.Now(); j.lastAt.IsZero() || now.Sub(j.lastAt) >= 250*time.Millisecond {
 			if !j.lastAt.IsZero() {
-				j.speed = 0.5*j.speed + 0.5*float64(read-j.lastRead)/now.Sub(j.lastAt).Seconds()
+				j.speed = 0.75*j.speed + 0.25*float64(read-j.lastRead)/now.Sub(j.lastAt).Seconds()
 			}
 			j.lastRead, j.lastAt = read, now
 		}

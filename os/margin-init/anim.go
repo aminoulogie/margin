@@ -21,12 +21,13 @@ import (
 var animScale = 1.0 // tests set 0: no frames, straight to the end
 
 const (
-	durPush  = 330 * time.Millisecond
-	durSheet = 300 * time.Millisecond
-	durGlide = 110 * time.Millisecond
-	durOpen  = 420 * time.Millisecond
-	durTab   = 140 * time.Millisecond // the selected tab's pill sliding to the one touched
-	openDim  = 0.4                    // how dark the screen behind a book opening gets
+	durPush      = 330 * time.Millisecond
+	durPushQuick = 200 * time.Millisecond // Playbox's pages
+	durSheet     = 300 * time.Millisecond
+	durGlide     = 110 * time.Millisecond
+	durOpen      = 420 * time.Millisecond
+	durTab       = 140 * time.Millisecond // the selected tab's pill sliding to the one touched
+	openDim      = 0.4                    // how dark the screen behind a book opening gets
 )
 
 var turnDuration = map[string]time.Duration{"slide": 300 * time.Millisecond, "curl": 380 * time.Millisecond}
@@ -89,10 +90,14 @@ func (c *console) transition(kind string, r image.Rectangle, change func()) {
 	change()
 	s.hold = false
 	copy(nu, s.buf)
+	push := durPush
+	if c.mode == modePlaybox || c.mode == modeVideo {
+		push = durPushQuick // Playbox: snappier (2026-11-08, user: "super fast opening, closing")
+	}
 	if c.gpuHas(old, nu) {
 		switch kind {
 		case "push", "pop":
-			c.gpuFrames(durPush, func(t float64) []quad { return c.pushQuads(t, kind == "push") })
+			c.gpuFrames(push, func(t float64) []quad { return c.pushQuads(t, kind == "push") })
 		case "rise":
 			c.gpuFrames(durSheet, func(t float64) []quad { return c.riseQuads(gpuOld, gpuNew, r, t) })
 		case "fall":
@@ -104,7 +109,7 @@ func (c *console) transition(kind string, r image.Rectangle, change func()) {
 	}
 	switch kind {
 	case "push", "pop":
-		c.frames(durPush, func(t float64) { c.pushFrame(old, nu, t, kind == "push"); s.markRows(0, s.fbH-1) })
+		c.frames(push, func(t float64) { c.pushFrame(old, nu, t, kind == "push"); s.markRows(0, s.fbH-1) })
 	case "rise":
 		c.frames(durSheet, func(t float64) { c.riseFrame(old, nu, r, t); s.markRows(0, s.fbH-1) })
 	case "fall": // a sheet dropping away: rise played backwards

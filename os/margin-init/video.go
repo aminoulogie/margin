@@ -52,6 +52,7 @@ type videoReq struct {
 	direct, local    string
 	from             mode
 	alts             []*addonStream // next torrents to try if this one finds no peers
+	src              *addonStream   // a torrent to start (by videoPrepare, off the screen's lock)
 }
 
 type videoProbe struct {
@@ -66,7 +67,8 @@ type videoProbe struct {
 
 type videoPlayer struct {
 	req       videoReq
-	state     string // "install", "torrent", "probing", "starting", "playing", "paused", "seeking", "ended", "failed"
+	state     string    // "install", "torrent", "probing", "starting", "playing", "paused", "seeking", "ended", "failed"
+	loadAt    time.Time // when loading began (the loading screen's clock)
 	msg       string
 	url       string
 	probe     *videoProbe
@@ -667,7 +669,7 @@ func (c *console) openVideo(req videoReq) {
 	req.from = from
 	cfg := pbSettingsNow()
 	ctx, cancel := context.WithCancel(context.Background())
-	v := &videoPlayer{req: req, state: "starting", speed: 1, light: cfg.Light, ctx: ctx, cancel: cancel, scrub: -1, pos: req.start}
+	v := &videoPlayer{req: req, state: "starting", speed: 1, light: cfg.Light, ctx: ctx, cancel: cancel, scrub: -1, pos: req.start, loadAt: time.Now()}
 	v.subLangs = subLangs(req.subs)
 	c.vid = v
 	c.mode = modeVideo
@@ -699,6 +701,30 @@ func (c *console) videoPrepare(v *videoPlayer) {
 		drawMu.Lock()
 		pbLastProblem = msg
 		drawMu.Unlock()
+	}
+	// The torrent starts here, not when the source was tapped: starting the client and adding
+	// the magnet can take seconds, and the player is already on screen meanwhile.
+	if v.req.job == nil && v.req.src != nil {
+		if !set("torrent", "") {
+			return
+		}
+		j, err := engine.start(v.req.src, false, "", v.req.item)
+		drawMu.Lock()
+		if c.vid != v {
+			drawMu.Unlock()
+			if err == nil {
+				engine.stopPlay(j)
+			}
+			return
+		}
+		if err == nil {
+			v.req.job = j
+		}
+		drawMu.Unlock()
+		if err != nil {
+			fail(err.Error())
+			return
+		}
 	}
 	if !ffmpegInstalled() || !aplayInstalled() || !fastFFmpegReady() && !fastTried {
 		if !set("install", "Getting the video player ready (once)…") {
@@ -985,23 +1011,28 @@ func (c *console) videoEnded() {
 	v.controls = true
 }
 
-// videoTicker redraws the player every half second while there's no picture moving (the
-// torrent's progress, the clock), and hides the controls after a few seconds.
+// videoTicker redraws the player while no picture is moving: about 30 times a second while it
+// loads or seeks (the spinner turns, the clock and the numbers update live), slower if a redraw
+// takes longer, so touches still get the screen; otherwise four times a second, to hide the
+// controls and the HUD on time.
 func (c *console) videoTicker(v *videoPlayer) {
 	if v.ticker {
 		return
 	}
 	v.ticker = true
 	go func() {
-		for range time.Tick(500 * time.Millisecond) {
+		for {
+			wait := 250 * time.Millisecond
 			drawMu.Lock()
 			if c.vid != v {
 				drawMu.Unlock()
 				return
 			}
 			switch {
-			case v.state == "torrent" || v.state == "probing" || v.state == "install" || v.state == "starting" || v.state == "seeking":
+			case v.frame == nil && v.state != "failed" || v.state == "seeking" || v.state == "starting":
+				t0 := time.Now()
 				c.videoRedraw()
+				wait = max(33*time.Millisecond, 2*time.Since(t0))
 			case v.controls && v.state == "playing" && time.Now().After(v.ctlUntil) && !v.touch.down:
 				v.controls = false
 				c.videoRedraw()
@@ -1010,6 +1041,7 @@ func (c *console) videoTicker(v *videoPlayer) {
 				c.videoRedraw()
 			}
 			drawMu.Unlock()
+			time.Sleep(wait)
 		}
 	}()
 }
@@ -1073,7 +1105,7 @@ func (c *console) videoTogglePause() {
 	case v.state == "failed":
 		v.restarts, v.msg = 0, ""
 		if v.probe == nil {
-			v.state = "starting"
+			v.state, v.loadAt = "starting", time.Now()
 			go c.videoPrepare(v)
 		} else {
 			c.videoStart(v.pos, false)
@@ -1565,10 +1597,7 @@ func (c *console) videoOverlay() []*ovPart {
 		}
 	}
 	if v.state == "seeking" || (v.state == "starting" && !loading) {
-		sp := newOvPart(240, 120, W/2-120, H/2-260)
-		ovRound(sp.img, sp.img.Rect, 60, ovGlass)
-		ovTextCenter(sp.img, f.title, 120, 60, "• • •")
-		parts = append(parts, sp.seal())
+		parts = append(parts, c.videoSpinnerPart())
 	}
 	// The subtitle at this time, low on the picture (above the timeline when it shows).
 	if text := cueAt(v.cues, v.pos); text != "" && !loading {
@@ -1611,83 +1640,6 @@ func (c *console) subtitlePart(text string) *ovPart {
 	for i, l := range lines {
 		w := ui.TextWidth(face, visual(l))
 		ovText(p.img, face, (W-w)/2, 10+lh*i+face.Metrics().Ascent.Ceil(), l, true)
-	}
-	return p.seal()
-}
-
-// videoLoadingCard: before the first frame, what's happening (installing, the torrent's
-// peers and speed, starting).
-func (c *console) videoLoadingCard() *ovPart {
-	v := c.vid
-	f := apple()
-	W, H := c.s.fbW, c.s.fbH
-	p := newOvPart(1100, 560, (W-1100)/2, (H-560)/2)
-	img := p.img
-	ovRound(img, img.Rect, 40, color.RGBA{28, 28, 30, 235})
-	cx := 550
-	title, lines := "", []string{}
-	switch v.state {
-	case "install":
-		title, lines = "Getting the player ready", []string{v.msg}
-	case "torrent":
-		st := engine.status(v.req.job)
-		title = "Cache loading"
-		switch st.State {
-		case "resolving":
-			lines = append(lines, fmt.Sprintf("Finding the torrent's details… %d peers", st.All))
-		default:
-			pct := 0.0
-			if st.Size > 0 {
-				pct = float64(st.Done) / float64(st.Size) * 100
-			}
-			lines = append(lines, fmt.Sprintf("%.2f%%", pct))
-		}
-		lines = append(lines, humanBytes(st.Speed)+"/s", fmt.Sprintf("%d peers connected · %d seeders · %d known", st.Peers, st.Seeds, st.All))
-	case "probing":
-		title = "Opening the film"
-		if j := v.req.job; j != nil {
-			st := engine.status(j)
-			lines = append(lines, fmt.Sprintf("%s/s · %d peers", humanBytes(st.Speed), st.Peers))
-		}
-	case "failed":
-		title = "Playback failed"
-		lines = append(lines, v.msg)
-	default:
-		title = "Starting…"
-		if j := v.req.job; j != nil {
-			st := engine.status(j)
-			lines = append(lines, fmt.Sprintf("Buffering · %s/s · %d peers", humanBytes(st.Speed), st.Peers))
-		}
-	}
-	// The spinner: dots, one lit by the time.
-	if v.state != "failed" {
-		k := int(time.Now().UnixMilli()/250) % 8
-		for i := 0; i < 8; i++ {
-			a := 2 * math.Pi * float64(i) / 8
-			col := color.RGBA{255, 255, 255, 70}
-			if i == k {
-				col = ovWhite
-			}
-			ovCircle(img, cx+int(46*math.Cos(a)), 110+int(46*math.Sin(a)), 9, col)
-		}
-	}
-	ovTextCenter(img, f.title, cx, 210, title)
-	y := 270
-	for _, l := range lines {
-		for _, w := range wrapText(f.callout, l, 980) {
-			ovTextCenter(img, f.callout, cx, y, w)
-			y += 46
-		}
-	}
-	br := image.Rect(cx-150, 450, cx+150, 530)
-	ovRound(img, br, 40, color.RGBA{58, 58, 60, 255})
-	ovTextCenter(img, f.headline, cx, 490, "Close")
-	v.buttons = append(v.buttons, button{"v:close", br.Add(image.Pt(p.x, p.y))})
-	if v.state == "failed" {
-		rr := image.Rect(cx-150, 360, cx+150, 440)
-		ovRound(img, rr, 40, apBlue)
-		ovTextCenter(img, f.headline, cx, 400, "Try Again")
-		v.buttons = append(v.buttons, button{"v:play", rr.Add(image.Pt(p.x, p.y))})
 	}
 	return p.seal()
 }
