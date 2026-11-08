@@ -723,6 +723,25 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       ANDROID_PROPERTY_WORKSPACE from /proc/<condor-init>/environ + `chroot /proc/1/root
       /system/bin/setprop|getprop`. If stopping media fixes it, setupSound runs
       `/system/bin/setprop ctl.stop media` once (margin-init already runs setprop directly).
+- [x] **Freeze on removing an add-on FIXED (2026-11-08):** the pb:uninstall tap runs under drawMu;
+      addons.remove → notify → the changed callback (playboxPage) took drawMu again = deadlock,
+      Margin frozen for good (the remove itself was saved first). notify now runs the callback in
+      a goroutine (addons_remove_test.go, checked to fail with the old code). Rule: never call a
+      callback that takes drawMu from code that may run under drawMu.
+- [x] **Soma sync from the tablet (2026-11-08, user: a habit ticked on the tablet didn't show on
+      the phone).** Findings (margin-results 18:13): the tablet clock matched internet time; the
+      ticks were sent (dirty 0, last sync OK 18:13 UTC), so the relay had them and the phone shows
+      them once it pulls. But syncs often failed: "proxyconnect 127.0.0.1:3128 connection refused"
+      at every boot (somaLoop started before runTunnel's proxy), plus timeouts/TLS/EOF on bad
+      Wi-Fi, and a failure waited 2 minutes. Now somaLoop waits for the proxy (waitProxy, up to
+      30 s) and retries 20 s after a failure. If the phone still lacks a tick the tablet sent,
+      look at the phone app's pull (repo kite-bay-otter-topaz), not the tablet.
+- [x] **Playbox: no sources (2026-11-08):** Torrentio times out from the tablet ("context deadline
+      exceeded"; curl: no answer in 20 s), Comet | ElfHosted answers 403 to every stream request,
+      MediaFusion logged nothing. The user then removed Torrentio. Clipboard "Playbox: why the
+      add-ons don't answer" checks DNS, proxy vs direct, Comet with Margin's User-Agent
+      (webGetCtx sends "margin-books/1.0 ...") vs a browser's, MediaFusion and other public
+      add-ons. Not fixed yet.
 - [x] **Playbox faster + new loading screen (2026-11-08; user: "everything super fast, opening,
       ending, closing, double tapping, swiping; loading ring like the iPhone one, info updating
       every ms, no background behind the loading text, white on black, 20% smaller, more info").**

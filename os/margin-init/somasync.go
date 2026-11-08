@@ -16,6 +16,7 @@ import (
 	"log"
 	"maps"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -766,9 +767,34 @@ func (s *somaStore) status() string {
 }
 
 // somaLoop syncs now and then while Margin runs (the PC and the phone change things too).
+// Every request goes through margin-init's proxy, which starts a little after this loop: the
+// first sync waits for it (the boot's first sync used to fail with "connection refused").
+// A failed sync is tried again after 20 s, not 2 minutes, so a tick reaches the phone soon.
 func somaLoop() {
+	waitProxy(30 * time.Second)
 	for {
 		soma.sync()
-		time.Sleep(2 * time.Minute)
+		wait := 2 * time.Minute
+		if soma.failing() {
+			wait = 20 * time.Second
+		}
+		time.Sleep(wait)
+	}
+}
+
+// failing: the last sync ended in an error.
+func (s *somaStore) failing() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastErr != ""
+}
+
+// waitProxy waits until margin-init's proxy answers, or up to d.
+func waitProxy(d time.Duration) {
+	for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(250 * time.Millisecond) {
+		if c, err := net.DialTimeout("tcp", proxyAddr, time.Second); err == nil {
+			c.Close()
+			return
+		}
 	}
 }

@@ -723,12 +723,15 @@ func (as *addonStore) isInstalled(manifestURL string) bool {
 	return false
 }
 
+// notify tells Playbox the add-ons changed, in the background: callers often hold drawMu (a
+// tap on Remove does), and the callback takes drawMu itself. Run inline, Remove deadlocked and
+// froze Margin for good (2026-11-08).
 func (as *addonStore) notify() {
 	as.mu.Lock()
 	f := as.changed
 	as.mu.Unlock()
 	if f != nil {
-		f()
+		go f()
 	}
 }
 

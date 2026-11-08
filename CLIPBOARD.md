@@ -8,29 +8,23 @@ For whoever adds commands (people and AI models, see CLAUDE.md): newest first; e
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
 `cbrun`, which sends the output to the private repo aminoulogie/margin-results.
 
-## Habit sync and Playbox sources
+## Playbox: why the add-ons don't answer
 ```send
-R=/proc/1/root/data/condor
-L=$R/init.log
-J=$R/soma/state.json
-echo "--- tablet clock: $(date -u '+%F %T') UTC"
-echo "--- internet:     $(curl -sI -m 10 https://www.google.com | grep -i '^date:')"
-echo "--- sync log"
-grep "soma:" $L | tail -12
-command -v jq >/dev/null || apk add -q jq >/dev/null 2>&1
-echo "--- sync state"
-jq -r '"last synced \(.last_ok) · device \(.device) · \(.recs|length) records · not sent yet: \([.recs[]|select(.dirty)]|length)"' $J
-echo "--- habits, last changed first (time UTC, device, not sent, ticked today)"
-D=$(TZ=WAT-1 date +%F)
-jq -r --arg d "$D" '.recs|to_entries[]|select(.key|startswith("habits#"))|select(.value.v)|(.value.v|fromjson) as $h|[.value.t, .value.d, (.value.dirty//false), ($h.history[$d]//"-"), $h.name]|@tsv' $J | sort -rn | head -10 | while IFS="$(printf '\t')" read t d dirty today name; do echo "$(date -u -d @$((t/1000)) '+%m-%d %H:%M:%S') $d unsent=$dirty today=$today $name"; done
-echo "--- Playbox add-ons installed"
-jq -r '.[]? | "\(.manifest.name // .Manifest.name // "?") \(.base // .Base // "")"' $R/playbox/addons.json 2>&1 | head -12
-echo "--- Playbox log"
-grep "playbox:" $L | grep -v -E "sound|route|aplay|chime" | tail -15
-echo "--- Torrentio from the tablet (Halloween 1978)"
-curl -s -m 20 -o /tmp/tio.json -w "HTTP %{http_code} in %{time_total}s\n" https://torrentio.strem.fun/stream/movie/tt0077651.json
-head -c 300 /tmp/tio.json; echo
-jq '.streams|length' /tmp/tio.json 2>&1
+echo "--- names (DNS)"
+nslookup torrentio.strem.fun 2>&1 | tail -2
+nslookup torrentio.strem.fun 1.1.1.1 2>&1 | tail -2
+echo "--- Torrentio through Margin's proxy"
+curl -s -m 15 -o /dev/null -w "HTTP %{http_code} · connected %{time_connect}s · %{time_total}s\n" https://torrentio.strem.fun/manifest.json
+echo "--- Torrentio straight out (no proxy)"
+curl --noproxy '*' -s -m 15 -o /dev/null -w "HTTP %{http_code} · connected %{time_connect}s\n" https://torrentio.strem.fun/manifest.json 2>&1
+echo "--- Comet: Margin's name vs a browser's"
+U=https://comet.elfhosted.com/stream/movie/tt0077651.json
+curl -s -m 15 -A "margin-books/1.0 (Condor TRA-901G tablet reader)" -o /tmp/c1 -w "margin: HTTP %{http_code}\n" $U; head -c 160 /tmp/c1; echo
+curl -s -m 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" -o /tmp/c2 -w "browser: HTTP %{http_code}\n" $U; head -c 160 /tmp/c2; echo
+echo "--- MediaFusion"
+curl -s -m 20 -o /tmp/m -w "HTTP %{http_code}\n" https://mediafusion.elfhosted.com/stream/movie/tt0077651.json; head -c 240 /tmp/m; echo
+echo "--- other public torrent add-ons"
+for u in https://thepiratebay-plus.strem.fun https://knightcrawler.elfhosted.com https://torrentsdb.com https://stremio-jackett.elfhosted.com; do curl -s -m 12 -o /dev/null -w "$u HTTP %{http_code} %{time_total}s\n" $u/manifest.json; done
 ```
 
 ## Playbox: why video stops after the sound error
