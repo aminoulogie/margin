@@ -45,6 +45,9 @@ type dragState struct {
 	zone      *dropZone
 	at        int // the minute it would start at (zone with hours)
 	travelled bool
+	want      image.Point // where the finger is now: the frame loop draws it there
+	pending   bool        // the finger moved since the last frame
+	looping   bool
 }
 
 // dragTodoID is the to-do a button holds: a block or a row's text, or its tick box.
@@ -84,7 +87,8 @@ func (c *console) dragStart(id string, x, y int) bool {
 	}
 	c.drag = dragState{on: true, id: tid, t: t, gx: x - scr.Min.X, gy: y - scr.Min.Y, x0: x, y0: y}
 	vibrate(15)
-	c.dragDraw(x, y)
+	c.liftAt(x, y) // it lifts first, as on the iPad (lift.go)
+	c.dragPaint(x, y)
 	return true
 }
 
@@ -98,14 +102,44 @@ func (c *console) dragZone(x, py int) *dropZone {
 	return nil
 }
 
-// dragDraw draws the to-do where the finger has it: snapped into a zone's hours, or loose.
-// Caller holds drawMu.
+// dragDraw follows the finger: the to-do is drawn where it is now by a loop, once per
+// vertical blank; moves in between are skipped, never queued (each drawn in turn, the to-do
+// fell further and further behind the finger). Caller holds drawMu.
 func (c *console) dragDraw(x, y int) {
+	d := &c.drag
+	d.want, d.pending = image.Pt(x, y), true
+	if d.looping {
+		return
+	}
+	d.looping = true
+	go func() {
+		for {
+			drawMu.Lock()
+			if !c.drag.on || !c.drag.pending || c.mode != modeSoma || !c.screenOn || c.page == nil {
+				c.drag.looping = false
+				drawMu.Unlock()
+				return
+			}
+			c.drag.pending = false
+			p := c.drag.want
+			start := time.Now()
+			c.dragPaint(p.X, p.Y)
+			drawMu.Unlock()
+			c.frameTime(time.Since(start))
+			if !waitVsync(c.s) {
+				time.Sleep(4 * time.Millisecond) // touches get in between frames
+			}
+		}
+	}()
+}
+
+// dragPaint draws the to-do where the finger has it: snapped into a zone's hours, or loose,
+// and puts back what it covered before, in one piece. Caller holds drawMu.
+func (c *console) dragPaint(x, y int) {
 	d := &c.drag
 	if abs(x-d.x0) > scrollSlop || abs(y-d.y0) > scrollSlop {
 		d.travelled = true
 	}
-	c.dragRestore()
 	hh, vh, fh := c.page.header, c.viewH(), c.page.footer
 	top, bottom := c.barH+hh, c.barH+vh-fh
 	sy := 0
@@ -167,8 +201,13 @@ func (c *console) dragDraw(x, y int) {
 		area = area.Union(lr)
 	}
 	area = area.Intersect(image.Rect(c.page.left, top, c.s.W, bottom))
-	// Drawn off the screen, over what the page has there, then sent in one piece.
-	img := image.NewRGBA(area)
+	// Drawn off the screen, over what the page has there (where it was last, too: put back),
+	// then sent in one piece.
+	whole := area
+	if !d.shown.Empty() {
+		whole = whole.Union(d.shown)
+	}
+	img := image.NewRGBA(whole)
 	c.dragUnder(img)
 	shadow(img, block, 12, 0.45)
 	col := todoCol(d.t)
@@ -188,7 +227,7 @@ func (c *console) dragDraw(x, y int) {
 		ui.RoundRect(img, lr, 21, wkLime)
 		apText(img, f, lr.Min.X+16, lr.Min.Y+28, wkOnLime, label)
 	}
-	c.s.blitRGBA(img, area.Min.X, area.Min.Y)
+	c.s.blitRGBA(img, whole.Min.X, whole.Min.Y)
 	c.s.Flush()
 	d.shown = area
 }
@@ -221,7 +260,7 @@ func (c *console) dragRestore() {
 
 // dragDrop lets the to-do go at (x, y). Caller holds drawMu.
 func (c *console) dragDrop(x, y int) {
-	c.dragDraw(x, y)
+	c.dragPaint(x, y)
 	d := c.drag
 	c.drag = dragState{}
 	switch z := d.zone; {
@@ -311,21 +350,21 @@ func (c *console) swipeZoneRect(id string) (image.Rectangle, bool) {
 
 // swipeFollow moves the zone with the finger (dx from where the swipe began).
 func (c *console) swipeFollow(id string, dx int) {
-	zr, ok := c.swipeZoneRect(id)
-	if !ok || c.mode != modeSoma {
+	if _, ok := c.swipeZoneRect(id); !ok || c.mode != modeSoma {
 		return
 	}
-	if time.Since(c.sc.last) < 16*time.Millisecond {
-		return
-	}
-	c.sc.last = time.Now()
-	c.swipeView(c.page.img, zr, dx)
-	c.s.Flush()
+	c.onFrame(&c.swipeJob, func() { // the latest move, once a frame (framejob.go)
+		if zr, ok := c.swipeZoneRect(id); ok && c.mode == modeSoma && c.sc.swiping {
+			c.swipeView(c.page.img, zr, dx)
+			c.s.Flush()
+		}
+	})
 }
 
 // swipeFinish ends a swipe across zone id that had moved dx: far enough, the next (or the
 // last) week, day or month slides in; else it settles back.
 func (c *console) swipeFinish(id string, dx int) {
+	c.swipeJob.drop()
 	zr, ok := c.swipeZoneRect(id)
 	if !ok || c.mode != modeSoma {
 		if abs(dx) >= 60 {

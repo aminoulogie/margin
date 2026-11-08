@@ -1280,7 +1280,8 @@ they want fixed or changed. Fix it on the spot.
 
 ` + src + `
 Read CLAUDE.md first when a task touches Margin: it explains how the system works, what has been tried, and the
-project's safety rules. The tablet program is in os/margin-init (Go, package main).
+project's safety rules. Then read .claude/skills/margin/SKILL.md: how the user wants the work done, and the speed rules
+every screen follows (draw only what changed, follow the finger in a frame loop, give way to touches). The tablet program is in os/margin-init (Go, package main).
 
 How to fix Margin:
 1. Find the code (grep -rn, read_file), change it with edit_file. Keep the project's style.

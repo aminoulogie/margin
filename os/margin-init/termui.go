@@ -55,6 +55,8 @@ type termUI struct {
 	downY      int
 	backAtDown int
 	scrolling  bool
+	slopY      int  // where the scroll started from, past the slop (no jump)
+	caught     bool // the finger stopped the text moving: its lift isn't a tap
 	selecting  bool
 	hold       *time.Timer
 	gesture    int // counts gestures, so a stale long-press timer does nothing
@@ -127,7 +129,12 @@ func (c *console) selectionText() string {
 // renderView draws every row of the (possibly scrolled-back) view with the selection, then
 // the shortcuts bar. Caller holds drawMu.
 func (c *console) renderView() {
-	c.termDrawn = nil // drawn whole here: render starts again from what the terminal holds
+	c.termDrawn = nil                                 // drawn whole here: render starts again from what the terminal holds
+	if c.tu.back > 0 && !c.tu.selOn && c.termFast() { // from the kept lines (termscroll.go)
+		c.termFrame(c.tu.back*c.ch, false)
+		c.drawShortcuts()
+		return
+	}
 	line := image.NewRGBA(image.Rect(0, 0, c.t.Cols*c.cw, c.ch))
 	hist := c.t.History()
 	for y := 0; y < c.t.Rows; y++ {
@@ -238,6 +245,7 @@ func (c *console) shortcut(i int) {
 
 // goLive scrolls back to the live screen. Caller holds drawMu.
 func (c *console) goLive() {
+	c.ts.on, c.ts.motion, c.ts.want = false, nil, 0
 	if c.tu.back != 0 {
 		c.tu.back = 0
 		c.t.MarkAll()
@@ -262,6 +270,8 @@ func (c *console) termTouch(p TouchPoint) {
 	}
 	switch {
 	case p.Down:
+		tu.caught = c.ts.on // a finger on moving text stops it (on a line)
+		c.termCatch()
 		tu.down, tu.downX, tu.downY, tu.backAtDown = true, p.X, p.Y, tu.back
 		tu.scrolling, tu.selecting = false, false
 		tu.gesture++
@@ -284,24 +294,33 @@ func (c *console) termTouch(p TouchPoint) {
 		case tu.selecting:
 			if at, ok := c.cellAt(p.X, p.Y); ok && at != tu.selB {
 				tu.selB = at
-				c.renderView()
-				c.s.Flush()
+				c.onFrame(&c.selJob, func() { // the latest move, once a frame (framejob.go)
+					if c.mode == modeTerminal && tu.selOn {
+						c.renderView()
+						c.s.Flush()
+					}
+				})
 			}
 		case tu.scrolling || abs(dy) > 24:
-			tu.scrolling = true
-			back := min(max(tu.backAtDown+dy/c.ch, 0), c.t.History()) // drag down = older lines
-			if back != tu.back {
-				tu.back = back
-				c.renderView()
-				c.s.Flush()
+			if !tu.scrolling {
+				tu.scrolling, tu.slopY = true, 24*sign(dy) // it moves from here, without a jump
+				if tu.hold != nil {
+					tu.hold.Stop()
+				}
 			}
+			// Drag down = older lines; the text follows the finger, pixel by pixel.
+			c.termScrollTo(float64(tu.backAtDown*c.ch + dy - tu.slopY))
 		}
 	case p.Up:
 		if tu.hold != nil {
 			tu.hold.Stop()
 		}
-		wasTap := tu.down && !tu.scrolling && !tu.selecting
+		c.selJob.flush()
+		wasTap := tu.down && !tu.scrolling && !tu.selecting && !tu.caught
 		tu.down = false
+		if tu.scrolling {
+			c.termRelease() // flings on, then rests on a line
+		}
 		if !wasTap {
 			return
 		}

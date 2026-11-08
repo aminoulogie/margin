@@ -505,6 +505,7 @@ func (c *console) pageLongPress(x, y int) bool {
 	switch {
 	case c.mode == modeBooksHome && !c.homeEdit && id != "" && c.pageY(y) > tabsH+40:
 		// Home's widgets: rearrange them.
+		c.liftAt(x, y)
 		c.homeEdit = true
 		vibrate(20)
 		c.showPage()
@@ -520,11 +521,13 @@ func (c *console) pageLongPress(x, y int) bool {
 		if c.somaUI.typing {
 			c.somaDone()
 		}
+		c.liftAt(x, y) // it lifts, then its menu or sheet comes (lift.go)
 		f(c, arg)
 		vibrate(20)
 		c.showPage()
 		return true
 	case c.mode == modeSoma && strings.HasPrefix(id, "so:todo:"):
+		c.liftAt(x, y)
 		c.somaTodoMenu(strings.TrimPrefix(id, "so:todo:"))
 		vibrate(20)
 		return true

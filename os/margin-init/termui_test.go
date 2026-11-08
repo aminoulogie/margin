@@ -29,8 +29,8 @@ func TestTerminalScrollSelectCopyPaste(t *testing.T) {
 	// Swipe down: older lines.
 	x, y := c.s.W/2, c.offY+5*c.ch
 	c.termTouch(TouchPoint{Down: true, X: x, Y: y})
-	c.termTouch(TouchPoint{Moved: true, X: x, Y: y + 10*c.ch})
-	c.termTouch(TouchPoint{Up: true, X: x, Y: y + 10*c.ch})
+	c.termTouch(TouchPoint{Moved: true, X: x, Y: y + 10*c.ch + 24}) // + the slop: no jump at the start
+	c.termTouch(TouchPoint{Up: true, X: x, Y: y + 10*c.ch + 24})
 	if c.tu.back != 10 {
 		t.Fatalf("scrolled back %d lines, want 10", c.tu.back)
 	}

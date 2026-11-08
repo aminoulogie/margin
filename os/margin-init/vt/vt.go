@@ -48,6 +48,8 @@ type Term struct {
 	cursorVisible bool
 	dirty         []bool
 	history       [][]Cell // lines that scrolled off the top, oldest first (scrollback)
+	added         int      // lines ever added to history (so a line keeps one number as old ones go)
+	gen           int      // counts changes: output written, a resize
 	shownX        int      // where the cursor was at the last TakeDirty (its row needs a redraw
 	shownY        int      // when it moves, even if no text changed: arrow keys, backspace)
 	shownVis      bool
@@ -98,6 +100,7 @@ func (t *Term) markAll() {
 func (t *Term) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.gen++
 	for _, b := range p {
 		t.feed(b)
 	}
@@ -254,6 +257,7 @@ func (t *Term) scrollUp(top, bot, n int) {
 	if top == 0 && bot == t.Rows-1 { // the whole screen scrolls: keep what leaves it
 		for y := 0; y < n; y++ {
 			t.history = append(t.history, append([]Cell(nil), t.cells[y*t.Cols:(y+1)*t.Cols]...))
+			t.added++
 		}
 		if extra := len(t.history) - MaxHistory; extra > 0 {
 			t.history = append(t.history[:0:0], t.history[extra:]...)
@@ -504,6 +508,7 @@ func (t *Term) Resize(cols, rows int) {
 	if cols == t.Cols && rows == t.Rows {
 		return
 	}
+	t.gen++
 	shift := max(0, t.cy-(rows-1))
 	cells := make([]Cell, cols*rows)
 	for i := range cells {
@@ -531,6 +536,16 @@ func (t *Term) MarkAll() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.markAll()
+}
+
+// Lines says where the scrollback stands: first is the number (counted since the start, never
+// reused) of its oldest kept line, hist how many there are, and gen counts every change to the
+// screen (output, a resize), so a picture of a scrollback line can be kept by its number while
+// the screen's own lines are drawn again after a change.
+func (t *Term) Lines() (first, hist, gen int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.added - len(t.history), len(t.history), t.gen
 }
 
 // History is how many lines of scrollback there are.

@@ -120,7 +120,9 @@ func (c *console) colourQuad(r frect, cr, cg, cb uint8) quad {
 // fixed header, plus the scroll bar while it moves.
 func (c *console) scrollQuads(sy int, bar bool) []quad {
 	img, vh, hh, w, fh := c.page.img, c.viewH(), c.page.header, c.s.W, c.page.footer
-	q := []quad{pageQuad(frect{0, c.barH + hh, w, c.barH + vh - fh}, sy+hh)}
+	// From the rail on (page.left): the screen under the overlay keeps the rail where
+	// blitPage drew it, so it stays put while the page moves (it moved along before).
+	q := []quad{pageQuad(frect{c.page.left, c.barH + hh, w, c.barH + vh - fh}, sy+hh)}
 	if fh > 0 { // the fixed footer, from the page's last rows
 		q = append(q, pageQuad(frect{0, c.barH + vh - fh, w, c.barH + vh}, img.Rect.Dy()-fh))
 	}

@@ -519,7 +519,9 @@ func (kb *keyboard) startRepeat(slot int, key *kbKey) {
 		t := time.NewTicker(every)
 		defer t.Stop()
 		for {
+			got := touchWaits() // a drawing that may give way does (views.go)
 			drawMu.Lock()
+			got()
 			select {
 			case <-stop: // lifted while we waited for the lock
 				drawMu.Unlock()
@@ -555,7 +557,9 @@ func (kb *keyboard) repeatDelete(slot int, key *kbKey, stop chan struct{}) {
 	t := time.NewTicker(deleteEvery)
 	defer t.Stop()
 	for {
+		got := touchWaits()
 		drawMu.Lock()
+		got()
 		select {
 		case <-stop: // lifted while we waited for the lock
 			drawMu.Unlock()

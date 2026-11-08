@@ -53,6 +53,8 @@ type console struct {
 	claudeOnce       sync.Once       // Claude starts the first time its tab opens
 	kb               *keyboard
 	tu               termUI      // scrollback, selection, copy and paste (termui.go)
+	ts               termScroll  // the scrollback moving with the finger (termscroll.go)
+	selJob, swipeJob frameJob    // a selection being dragged, a card swiped: the latest move per frame
 	cb               clipState   // the Clipboard over the keyboard: commands from GitHub (clipboard.go)
 	termDrawn        []termRow   // what render last drew on each terminal row
 	xapp             *xapp       // a desktop app open full screen (desktop.go)
@@ -108,6 +110,8 @@ type console struct {
 	store            storeState
 	skb              *keyboard         // the store's search keyboard
 	typeGen          int               // the page redraw a pause in typing is waiting for (typebar.go)
+	tbar             typeBarCache      // the bar (or composer) above the keyboard, drawn without its text
+	cmpBare          bool              // composerLayout leaves the title out (typebar.go keeps it that way)
 	kbFingers        map[int]*keyboard // fingers that came down on a keyboard
 	fromStore        bool              // the open book came from the store (a preview or a download)
 	rd               readerUI          // the reader's selection, menus, panels, gestures
@@ -376,7 +380,7 @@ func (c *console) render() {
 	if !c.screenOn || c.mode != modeTerminal {
 		return // dirty marks stay; redrawAll repaints everything when the terminal shows again
 	}
-	if c.tu.back > 0 {
+	if c.tu.back > 0 || c.ts.on {
 		return // reading the scrollback: new output waits until the view goes live again
 	}
 	if c.tu.selOn {

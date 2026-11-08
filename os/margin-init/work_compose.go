@@ -90,13 +90,10 @@ func (c *console) composerLayout(img *image.RGBA, y0 int) []cmpBtn {
 	ui.RoundRect(img, card.Inset(2), 20, wkCard)
 
 	// The title, with Add at its end.
-	text := c.somaUI.editing
-	ft := wkFont("semi", 30)
-	tx := card.Min.X + 74
+	add := composerAdd(card)
+	addOn := strings.TrimSpace(c.somaUI.editing) != ""
 	ui.Circle(img, card.Min.X+40, card.Min.Y+50, 15, wkRim)
 	ui.Circle(img, card.Min.X+40, card.Min.Y+50, 13, wkCard)
-	add := image.Rect(card.Max.X-150, card.Min.Y+18, card.Max.X-18, card.Min.Y+82)
-	addOn := strings.TrimSpace(text) != ""
 	if addOn {
 		ui.RoundRect(img, add, 32, wkLime)
 	} else {
@@ -105,16 +102,8 @@ func (c *console) composerLayout(img *image.RGBA, y0 int) []cmpBtn {
 	lucideIcon(img, "arrow-up", add.Min.X+36, (add.Min.Y+add.Max.Y)/2, 26, map[bool]color.RGBA{true: wkOnLime, false: wkMuted}[addOn])
 	apText(img, wkFont("semi", 22), add.Min.X+58, (add.Min.Y+add.Max.Y)/2+8, map[bool]color.RGBA{true: wkOnLime, false: wkMuted}[addOn], "Add")
 	btns = append(btns, cmpBtn{"add", add})
-	room := add.Min.X - 20 - tx
-	if text == "" {
-		apText(img, ft, tx, card.Min.Y+61, wkLime, "|")
-		apText(img, ft, tx+14, card.Min.Y+61, wkFaint, "What needs doing?")
-	} else {
-		s := withCursor(text, c.fieldBack)
-		for s != "" && ui.TextWidth(ft, s) > room {
-			s = string([]rune(s)[1:])
-		}
-		apText(img, ft, tx, card.Min.Y+61, wkFG, s)
+	if !c.cmpBare {
+		c.composerTitle(img, card)
 	}
 	ui.Fill(img, image.Rect(card.Min.X+24, card.Min.Y+100, card.Max.X-24, card.Min.Y+102), wkLine)
 
@@ -185,6 +174,43 @@ func (c *console) composerLayout(img *image.RGBA, y0 int) []cmpBtn {
 	pl := map[string]string{"": "Priority", "high": "High", "low": "Low"}[cm.prio]
 	chip("prio", "flag", pl, x, y, cm.prio != "")
 	return btns
+}
+
+// composerAdd is the Add button of the composer's card.
+func composerAdd(card image.Rectangle) image.Rectangle {
+	return image.Rect(card.Max.X-150, card.Min.Y+18, card.Max.X-18, card.Min.Y+82)
+}
+
+// composerCard is the composer's card, its top at screen row y0.
+func (c *console) composerCard(y0 int) image.Rectangle {
+	x0 := 24
+	if c.page != nil && c.page.left > 0 {
+		x0 = c.page.left + 16
+	}
+	return image.Rect(x0, y0+14, c.s.W-24, y0+composerH-12)
+}
+
+// composerTitleRect is where the title being typed is drawn (all a key changes).
+func composerTitleRect(card image.Rectangle) image.Rectangle {
+	return image.Rect(card.Min.X+70, card.Min.Y+20, composerAdd(card).Min.X-12, card.Min.Y+80)
+}
+
+// composerTitle draws the title being typed (or what it's for, before a key) into img.
+func (c *console) composerTitle(img *image.RGBA, card image.Rectangle) {
+	text := c.somaUI.editing
+	ft := wkFont("semi", 30)
+	tx := card.Min.X + 74
+	room := composerAdd(card).Min.X - 20 - tx
+	if text == "" {
+		apText(img, ft, tx, card.Min.Y+61, wkLime, "|")
+		apText(img, ft, tx+14, card.Min.Y+61, wkFaint, "What needs doing?")
+		return
+	}
+	s := withCursor(text, c.fieldBack)
+	for s != "" && ui.TextWidth(ft, s) > room {
+		s = string([]rune(s)[1:])
+	}
+	apText(img, ft, tx, card.Min.Y+61, wkFG, s)
 }
 
 // drawComposer draws the composer onto the screen, above the keyboard (the caller flushes).

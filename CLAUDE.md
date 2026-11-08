@@ -1,5 +1,13 @@
 # Margin: project memory
 
+## Read the Margin skill first (always, every session, every model)
+**Before any work, read `.claude/skills/margin/SKILL.md`** (also loadable as the `margin`
+skill). It holds how the user wants the work done: safety, the Clipboard/margin-results flow,
+building for the 32-bit tablet, merging to main yourself, and the **speed and feel rules**
+(never redraw what didn't change, frame loops that follow the finger, fixed rail/header,
+lift on long press...). Come back to it whenever you're about to change how something draws
+or reacts to touch. When the user teaches a new rule, add it there too.
+
 Turning an old **Condor TRA-901G** tablet into its own little Linux machine: it boots straight
 into our userspace (Alpine Linux + our Go `margin-init`) on top of Condor's signed kernel, with
 Wi-Fi, SSH and a console on its screen. Plan and what's next: `PLAN.md`. Everything learned,
@@ -985,6 +993,22 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       (was time.Parse over every weigh-in per set): Training tabs 25-44 ms → 9-24 ms on the PC,
       library 89 → ~65 ms (the rest is the 42 MB canvas and the rotation blit). Tests:
       work_body_test.go. **Not yet verified on the tablet.**
+- [x] **Typing, dragging, scrolling feel** (2026-11-08, termscroll.go, typebar.go, work_drag.go,
+      lift.go, gpuscroll.go; user: Soma planner typing/deleting slow and glitchy, a dragged task
+      doesn't follow the finger, the sidebar moves when scrolling, the terminal's scrollback
+      glitchy and slow, long press should animate). (1) Terminal scrollback follows the finger
+      pixel by pixel from kept turned lines (vt.Lines numbers each line; screen lines redrawn
+      after any output), one frame per vsync, fling + rest on a line; PC: 0.31 ms a frame vs
+      3.9 ms drawing glyphs (BenchmarkTermScroll*), and moves are no longer queued.
+      (2) A key in any page field draws only the text's strip of the bar/composer from a kept
+      picture (typeBarCache); the page behind is drawn after a pause only in a way a key stops
+      (yielding; key repeats call touchWaits), never for the new to-do composer.
+      (3) Dragged to-dos: moves only record the finger, a loop draws the latest per vsync, old
+      and new spot sent in one piece. (4) Long press lifts the item (grows 6% + shadow, 150 ms)
+      before its menu/sheet/drag (liftAt). (5) GPU scrolling's page quad started at x 0, so the
+      rail moved with the page (the user has the GPU on): it starts at page.left now.
+      Skill with all the working rules: .claude/skills/margin/SKILL.md. **Not yet verified on the
+      tablet.**
 - [-] microSD bind into Alpine: dropped (2026-11-01, the user doesn't use the microSD).
 
 **What's next: `docs/MARGIN-BACKLOG.md`** (the user's 20 answers of 2026-11-01, in batches).

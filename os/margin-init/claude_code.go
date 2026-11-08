@@ -183,7 +183,7 @@ func seedClaudeCode(home string) {
 func claudeCodeNotes() string {
 	return `You are running in the Claude tab of Margin's Terminal: Margin is the user's own operating system on their
 Condor TRA-901G tablet (32-bit Intel Atom, Linux kernel 3.4, Alpine Linux in a chroot; Margin's whole screen is one Go
-program, margin-init). Margin's code is in ` + marginSrc + ` (unpacked by ` + "`update`" + `; read its CLAUDE.md). The tablet program is
+program, margin-init). Margin's code is in ` + marginSrc + ` (unpacked by ` + "`update`" + `; read its CLAUDE.md, then .claude/skills/margin/SKILL.md). The tablet program is
 os/margin-init (Go, package main).
 
 To fix Margin: change the code, check it builds with
