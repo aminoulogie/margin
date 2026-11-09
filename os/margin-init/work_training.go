@@ -27,7 +27,7 @@ import (
 // --- the sheet --------------------------------------------------------------------------------------
 
 // trainingSeedURL is the sheet as Soma ships it; the tablet keeps a copy beside Soma's records.
-var trainingSeedURL = "https://raw.githubusercontent.com/aminoulogie/kite-bay-otter-topaz/main/src/lib/training-seed.json"
+var trainingSeedURL = "https://raw.githubusercontent.com/user445879785/kite-bay-otter-topaz/main/src/lib/training-seed.json"
 
 type seedFile struct {
 	Exercises []struct {

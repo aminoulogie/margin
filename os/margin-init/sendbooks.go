@@ -371,9 +371,9 @@ input[type=url],input[type=password]{width:100%;margin-top:10px;border:0;border-
 <div id="amsg"></div>
 </div>
 <div class="card" id="github"><h2>Link GitHub</h2>
-<p class="sub" style="margin-bottom:12px">So the tablet can send the output of Clipboard commands to a <b>private</b> repo the AI can read. On github.com: create a private repo (default <b>aminoulogie/margin-results</b>, tick "Add a README"), then Settings &rsaquo; Developer settings &rsaquo; Fine-grained tokens: give it that repo (and margin, to publish fixes) with Contents: read and write. Paste the token here. <span><!--GITHUB--></span></p>
+<p class="sub" style="margin-bottom:12px">So the tablet can send the output of Clipboard commands to a <b>private</b> repo the AI can read. On github.com: create a private repo (default <b>user445879785/margin-results</b>, tick "Add a README"), then Settings &rsaquo; Developer settings &rsaquo; Fine-grained tokens: give it that repo (and margin, to publish fixes) with Contents: read and write. Paste the token here. <span><!--GITHUB--></span></p>
 <input id="gtoken" type="password" placeholder="Token (github_pat_…)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
-<input id="grepo" type="url" placeholder="Results repo (aminoulogie/margin-results)" autocapitalize="off" autocorrect="off" spellcheck="false">
+<input id="grepo" type="url" placeholder="Results repo (user445879785/margin-results)" autocapitalize="off" autocorrect="off" spellcheck="false">
 <button id="glink">Link GitHub</button>
 <div id="gmsg"></div>
 </div>

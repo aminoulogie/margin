@@ -32,7 +32,7 @@ import (
 
 // --- the food library (food-library.json, fetched from the Soma repo once) ----------------------
 
-var foodLibraryURL = "https://raw.githubusercontent.com/aminoulogie/kite-bay-otter-topaz/main/src/lib/food-library.json"
+var foodLibraryURL = "https://raw.githubusercontent.com/user445879785/kite-bay-otter-topaz/main/src/lib/food-library.json"
 
 var foodLibrary struct {
 	sync.Mutex

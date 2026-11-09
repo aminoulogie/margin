@@ -6,7 +6,7 @@ check it, then press return. Margin fetches this file from GitHub each time the 
 For whoever adds commands (people and AI models, see CLAUDE.md): newest first; each one is a
 `## title` line followed by a fenced block. Keep titles short and plain. Open the fence with
 ` ```send ` instead of ` ``` ` when you need to see the output: the tablet then runs it through
-`cbrun`, which sends the output to the private repo aminoulogie/margin-results.
+`cbrun`, which sends the output to the private repo user445879785/margin-results.
 
 ## Soma: food and habits, tablet vs phone
 ```send

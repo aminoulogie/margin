@@ -27,7 +27,7 @@ Terminal > Clipboard and tap the command by its title, instead of asking them to
 
 **Seeing the output without the user copying it:** open the fence with ` ```send ` for any
 command whose output you need. The tablet runs it through `cbrun`, which shows the output and
-uploads it to the **private** repo `aminoulogie/margin-results` as
+uploads it to the **private** repo `user445879785/margin-results` as
 `results/<YYYY-MM-DD>/<HHMMSS>-<title-slug>.md` (command, exit code, output). When the user says
 they ran it, attach that repo (read access) and read the newest files there instead of asking
 for photos. The tablet's token is pasted once from the phone (Send to Books page > Link GitHub,
@@ -35,7 +35,7 @@ github_link.go; saved 0600 in /data/condor/github.json); the results repo must b
 link refuses a public one), never the public margin repo.
 
 ## Names (2026-10-27: the OS is Margin)
-The OS was called condor until 2026-10-27; it is **Margin** now (repo aminoulogie/margin;
+The OS was called condor until 2026-10-27; it is **Margin** now (repo user445879785/margin;
 the PC tool `margin.exe`, the tablet program `margin-init`, the GPU helpers `os/margin-gl`
 and `marginsf`). "Condor" (capital C) is the tablet's maker and model: Condor TRA-901G,
 Condor's kernel and boot logo. Keep those.
@@ -265,7 +265,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       Saved in /data/condor/settings.json. Ready-made launchers don't fit: they need X/Wayland
       or a GPU, and fbdev mmap is shifted 299 rows on this panel.
 - [x] **Books** (reader.go, epub/): EPUB parsing ported from Soma's reader
-      (aminoulogie/kite-bay-otter-topaz src/lib/epub.ts: container.xml → OPF, percent-decoded
+      (user445879785/kite-bay-otter-topaz src/lib/epub.ts: container.xml → OPF, percent-decoded
       paths, linear="no" skipped, dc: metadata, 3 cover conventions; Soma's resolvePath tests
       ported). Shelf scans /data/media/0/Books, microSD Books, /data/alpine/root/books,
       /data/condor/books. Paged reader: Soma's themes (night default, paper, sepia), A-/A+,
@@ -461,7 +461,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       only Home and Store did). (7) EPUB covers: also an image named *cover*, else the first
       non-SVG picture; WebP decodes (x/image/webp).
 - [x] **Soma tab (beta)** (2026-10-06, somasync.go, somadata.go, soma.go): Soma (the user's PC/iOS
-      app, aminoulogie/kite-bay-otter-topaz) on the tablet, synced through Soma's own E2E relay
+      app, user445879785/kite-bay-otter-topaz) on the tablet, synced through Soma's own E2E relay
       (src/lib/sync: crypto.ts, records.ts, engine.ts). Go port: recovery code (Crockford
       base32 + checksum) → secret; HKDF-SHA256 salt "soma-sync-v1": AES-GCM key "records",
       HMAC key "ids", vault "vault"(16), token "auth"(32); record id = b64url(HMAC(name)[:16]);
@@ -501,7 +501,7 @@ GitHub is often unreachable from this PC: pull with a retry loop, or use a git b
       keyboard (newTextKeyboard, follows dark/light); the Terminal keeps its own. Tests write
       settings to a temp file (settingsPath var). **Not yet verified on the tablet.**
 - [x] **Playbox tab** (2026-10-28, playbox*.go, video*.go, subtitles.go): the user's iPhone app
-      aminoulogie/playbox in Go. Stremio add-ons (Cinemeta, Torrentio, OpenSubtitles installed on
+      user445879785/playbox in Go. Stremio add-ons (Cinemeta, Torrentio, OpenSubtitles installed on
       first run; /data/condor/playbox/), Discover/search/film+series pages, sources sorted by
       seeders (Quick Play avoids 4K/HEVC), Library, downloads to /data/media/0/Movies. Torrents:
       anacrolix/torrent (pure Go, builds 386 without cgo; first `update` compiles ~70 extra
@@ -1152,11 +1152,11 @@ Update this checklist as things are done.
 - Go code in `cli/` (Windows tool) and `os/` (tablet userspace). `gofmt`, `go vet` before commit.
 - The tablet is **32-bit (386)**: before pushing margin-init, `GOOS=linux GOARCH=386 go build` and
   `GOARCH=386 go test ./...` (a 1<<62 constant once broke the tablet's own `update` build).
-- Work in github.com/aminoulogie/margin, branch `main` (the project moved there from the
-  condor-linux folder of aminoulogie/ipakill, which is private now). No model names in commits.
+- Work in github.com/user445879785/margin, branch `main` (the project moved there from the
+  condor-linux folder of user445879785/ipakill, which is private now). No model names in commits.
 - **Merge your own work into `main` yourself** (the user asked, 2026-10-29): once the tests pass
   (`GOARCH=386 go test ./...`), merge the branch or pull request into `main` right away (e.g.
-  `gh api -X PUT repos/aminoulogie/margin/pulls/<n>/merge -f merge_method=merge`), then tell the
+  `gh api -X PUT repos/user445879785/margin/pulls/<n>/merge -f merge_method=merge`), then tell the
   user it's merged and that `update` on the tablet installs it. Don't ask the user to merge.
   **Since 2026-11-01 the user wants bigger batches**: put several items of a batch in one merge
   (docs/MARGIN-BACKLOG.md) rather than one merge per item. Small doc/Clipboard changes can

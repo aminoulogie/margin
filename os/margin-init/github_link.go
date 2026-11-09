@@ -23,7 +23,7 @@ import (
 const githubLinkName = "/github.json"
 
 // defaultResultsRepo is where outputs go unless the phone page says otherwise.
-const defaultResultsRepo = "aminoulogie/margin-results"
+const defaultResultsRepo = "user445879785/margin-results"
 
 type githubLink struct {
 	Token   string `json:"token"`

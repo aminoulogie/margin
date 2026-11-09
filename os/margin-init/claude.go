@@ -55,7 +55,7 @@ type claudeConfig struct {
 	Key         string            `json:"key,omitempty"`
 	Model       string            `json:"model,omitempty"`
 	GitHubToken string            `json:"github_token,omitempty"`
-	Repo        string            `json:"repo,omitempty"`   // owner/name, default aminoulogie/margin
+	Repo        string            `json:"repo,omitempty"`   // owner/name, default user445879785/margin
 	Branch      string            `json:"branch,omitempty"` // default main
 	Connectors  []claudeConnector `json:"connectors,omitempty"`
 }
@@ -828,7 +828,7 @@ func (a *agent) repo() string {
 	if a.cfg.Repo != "" {
 		return a.cfg.Repo
 	}
-	return "aminoulogie/margin"
+	return "user445879785/margin"
 }
 
 func (a *agent) branch() string {
@@ -1257,7 +1257,7 @@ func (a *agent) systemPrompt() string {
 	src := "Margin's code is in " + marginSrc + " (unpacked there by `update`; the repo root, with CLAUDE.md)."
 	if _, err := os.Stat(marginSrc); err != nil {
 		src = marginSrc + " doesn't exist yet: Margin's code gets there when the user runs `update` once in the Shell tab " +
-			"(it downloads github.com/aminoulogie/margin and builds it). Say so if a task needs the code."
+			"(it downloads github.com/user445879785/margin and builds it). Say so if a task needs the code."
 	}
 	conn := ""
 	if len(a.cfg.Connectors) > 0 {

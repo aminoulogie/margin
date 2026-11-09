@@ -5,7 +5,7 @@
 # wifi-update does: a backup, a restart, and the old version put back if the new one
 # doesn't run. margin-init installs this as /usr/local/bin/update in Alpine; the first time
 # (or from an older version) it can also be fetched:
-#   curl -fsSLo /tmp/u https://raw.githubusercontent.com/aminoulogie/margin/main/os/margin-init/update.sh
+#   curl -fsSLo /tmp/u https://raw.githubusercontent.com/user445879785/margin/main/os/margin-init/update.sh
 #   sh /tmp/u
 #
 # The tablet keeps the names its /system startup hook uses: margin-init is installed as
@@ -16,7 +16,7 @@
 #   update --local   build and install the code already in /root/margin-src as it is (fixes
 #                    made on the tablet, by the Terminal's Claude tab, say)
 #   update --force   get GitHub's code even over changes made here that aren't on GitHub
-REPO=aminoulogie/margin
+REPO=user445879785/margin
 BRANCH=main
 SRC=/root/margin-src
 D=/proc/1/root/data/condor # /data/condor as init sees it (we're in Alpine's chroot)

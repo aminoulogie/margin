@@ -1,7 +1,7 @@
 // Package epub reads EPUB books: the archive, the package document, the reading order, and
 // the text of each chapter as paragraphs.
 //
-// Ported from Soma's reader (aminoulogie/kite-bay-otter-topaz, src/lib/epub.ts), keeping its
+// Ported from Soma's reader (user445879785/kite-bay-otter-topaz, src/lib/epub.ts), keeping its
 // rules: the package document is found through META-INF/container.xml (never guessed),
 // manifest hrefs are percent-decoded and resolved against the OPF's folder, spine items marked
 // linear="no" are skipped, metadata is matched on the part after the "dc:" prefix, and the

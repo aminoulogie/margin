@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Playbox: the user's iPhone app (aminoulogie/playbox) on the tablet. A client for
+// Playbox: the user's iPhone app (user445879785/playbox) on the tablet. A client for
 // Stremio-style add-ons: an add-on is a web address answering manifest.json, catalog/,
 // meta/, stream/ and subtitles/ requests in JSON. Cinemeta gives the catalogs and the pages
 // of films and series, Torrentio the sources (most of them torrents), OpenSubtitles the

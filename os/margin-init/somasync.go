@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-// Soma's sync, on the tablet (Soma: aminoulogie/kite-bay-otter-topaz, src/lib/sync). The
+// Soma's sync, on the tablet (Soma: user445879785/kite-bay-otter-topaz, src/lib/sync). The
 // PC and the iPhone keep Soma's data in step through a relay that can't read it: every
 // record is sealed with AES-256-GCM under a key made from one secret (the 56-character
 // recovery code), and named by an HMAC of its name, so the server sees opaque ids. The

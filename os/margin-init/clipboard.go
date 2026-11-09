@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	clipboardURL  = "https://raw.githubusercontent.com/aminoulogie/margin/main/CLIPBOARD.md"
+	clipboardURL  = "https://raw.githubusercontent.com/user445879785/margin/main/CLIPBOARD.md"
 	clipboardFile = marginHome + "/clipboard.md" // the last one fetched, for when there's no internet
 	cbHeadH       = 84
 	cbRowH        = 108
@@ -143,7 +143,7 @@ func (c *console) fetchClipboard() {
 // clipboardAPI is the file through GitHub's API: always the newest commit (raw.githubusercontent
 // keeps a copy for about 5 minutes, so a command pushed a minute ago wasn't there yet). Tests
 // point it at a fake.
-var clipboardAPI = "https://api.github.com/repos/aminoulogie/margin/contents/CLIPBOARD.md?ref=main"
+var clipboardAPI = "https://api.github.com/repos/user445879785/margin/contents/CLIPBOARD.md?ref=main"
 
 // fetchClipboardAPI gets CLIPBOARD.md's newest version from GitHub's API (with the tablet's
 // token when it's linked: more asks an hour).

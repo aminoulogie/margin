@@ -149,7 +149,7 @@ func TestClipboardFetchUsesAPI(t *testing.T) {
 	defer srv.Close()
 	oldClient, oldAPI := webClient, clipboardAPI
 	webClient = func() *http.Client { return srv.Client() }
-	clipboardAPI = srv.URL + "/repos/aminoulogie/margin/contents/CLIPBOARD.md?ref=main"
+	clipboardAPI = srv.URL + "/repos/user445879785/margin/contents/CLIPBOARD.md?ref=main"
 	t.Cleanup(func() { webClient, clipboardAPI = oldClient, oldAPI })
 	b, err := fetchClipboardAPI(context.Background())
 	if err != nil {
@@ -157,7 +157,7 @@ func TestClipboardFetchUsesAPI(t *testing.T) {
 	}
 	items := parseClipboard(string(b))
 	if len(items) != 1 || items[0].cmd != "echo new" || len(asked) != 1 ||
-		!strings.Contains(asked[0], "/repos/aminoulogie/margin/contents/CLIPBOARD.md") || !strings.Contains(asked[0], "vnd.github.raw") {
+		!strings.Contains(asked[0], "/repos/user445879785/margin/contents/CLIPBOARD.md") || !strings.Contains(asked[0], "vnd.github.raw") {
 		t.Fatalf("items %+v, asked %v", items, asked)
 	}
 }
